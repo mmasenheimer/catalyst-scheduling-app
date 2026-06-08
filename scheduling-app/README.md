@@ -1,16 +1,74 @@
-# React + Vite
+# CATalyst Studios — Team Management
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A scheduling and team management web app built for library and service-team environments. Managers can build daily schedules interactively, track events, and manage weekly staffing templates. Employees can view their shifts, request coverage, and receive notifications.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+**Manager**
+- Interactive daily schedule with drag-and-drop shift, desk, and event bars
+- Resize and reposition bars directly on a time grid (30-minute snapping)
+- Drag bars to a trash zone to remove or unschedule them
+- Drag new shift, desk, or event chips from a toolbar onto any employee row
+- View all employees on a given day — scheduled and unscheduled
+- Weekly template editor: define which staff work each day of the week
+- Add and configure events with staff requirements and notes
+- Notifications for coverage requests, shift changes, understaffed days, and approvals
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**Employee**
+- Personal schedule view
+- Shift swap requests
+- Drop shift / time-off requests
+- Shared notification feed
 
-## Expanding the ESLint configuration
+**General**
+- Role-based routing (manager vs. employee views)
+- Live clock and date in the sidebar
+- Notification badge showing unread count
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | React 19 |
+| Build tool | Vite 8 |
+| Routing | React Router DOM v7 |
+| Styling | Tailwind CSS 3 |
+| State | React Context API |
+| Drag and drop | HTML5 Drag and Drop API + mouse events for resize |
+
+---
+
+## Project Structure
+
+```
+src/
+  backend/          # Node/Express server (in progress)
+  data/             # Mock data (staff, events, weekly templates)
+  frontend/
+    components/     # Shared layout and route protection
+    context/        # AuthContext, ScheduleContext, NotificationsContext
+    hooks/          # useSchedule
+    pages/          # One file per route
+    utils/          # Schedule helpers and formatting
+```
+
+---
+
+## Getting Started
+
+```bash
+npm install
+npm run dev
+```
+
+The app runs on `http://localhost:5173` by default. Backend is not yet connected — all data is currently served from mock files in `src/data/`.
+
+---
+
+## Planned Backend
+
+The backend (Node/Express) will expose roughly 35 REST endpoints covering auth, staff management, daily schedule mutations, event CRUD, weekly templates, shift requests, and notifications. See `src/backend/` for the server entry point.
