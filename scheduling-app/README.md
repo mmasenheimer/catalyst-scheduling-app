@@ -2,6 +2,8 @@
 
 A scheduling and team management web app built for library and service-team environments. Managers can build daily schedules interactively, track events, and manage weekly staffing templates. Employees can view their shifts, request coverage, and receive notifications.
 
+Built by Michael Masenheimer
+
 ---
 
 ## Features
