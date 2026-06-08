@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Anthropic-style palette ──────────────────────────────────────────────── */
+:root {
+  --color-bg:            #0d0c0b;   /* warm near-black */
+  --color-surface:       #1a1816;   /* dark warm charcoal */
+  --color-border:        #2c2926;   /* subtle warm border */
+  --color-muted:         #3d3935;   /* raised muted surface */
+  --color-text:          #ede9e0;   /* warm cream */
+  --color-text-dim:      #9c9188;   /* warm medium gray */
+  --color-accent:        #b05030;   /* terracotta — dark enough for white text */
+  --color-accent-bright: #e07050;   /* lighter terracotta for stats/highlights */
+  --color-green:         #4a7c5e;   /* muted sage — shift bars */
+  --color-yellow:        #c89438;   /* warm amber */
+  --color-red:           #c84040;   /* muted red */
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-bright);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
