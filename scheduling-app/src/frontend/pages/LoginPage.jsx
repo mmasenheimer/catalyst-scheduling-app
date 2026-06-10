@@ -122,7 +122,7 @@ export default function LoginPage() {
             )}
             <button
               type="submit"
-              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer"
+              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: 'var(--color-accent)', color: 'white' }}
             >
               Login as Manager
@@ -178,7 +178,7 @@ export default function LoginPage() {
             )}
             <button
               type="submit"
-              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer"
+              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: 'var(--color-accent)', color: 'white' }}
             >
               Login as Employee

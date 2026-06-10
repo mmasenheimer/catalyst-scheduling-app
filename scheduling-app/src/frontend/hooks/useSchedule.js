@@ -10,9 +10,10 @@ export function useSchedule() {
   const [staff, setStaff] = useState(initialStaff);
   const [events, setEvents] = useState(initialEvents);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [daySchedules, setDaySchedules] = useState({});
 
   function addEvent(event) {
-    setEvents(prev => [...prev, { ...event, id: prev.length + 1 }]);
+    setEvents(prev => [...prev, { ...event, id: Date.now() }]);
   }
 
   function updateEvent(id, changes) {
@@ -73,6 +74,14 @@ export function useSchedule() {
     setCurrentDate(new Date(date));
   }
 
+  function saveDaySchedule(dateString, staffArray) {
+    setDaySchedules(prev => ({ ...prev, [dateString]: staffArray }));
+  }
+
+  function getDaySchedule(dateString) {
+    return daySchedules[dateString] ?? null;
+  }
+
   return {
     staff,
     events,
@@ -87,5 +96,7 @@ export function useSchedule() {
     goToNextDay,
     goToPrevDay,
     goToDate,
+    saveDaySchedule,
+    getDaySchedule,
   };
 }

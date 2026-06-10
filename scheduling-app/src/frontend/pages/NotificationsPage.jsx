@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNotifications } from '../context/NotificationsContext';
+import { useAuth } from '../context/AuthContext';
 
 const TYPE_CONFIG = {
   coverage:     { label: 'Coverage',     dot: '#e07050', bg: 'rgba(224, 112, 80, 0.12)',  border: 'rgba(224, 112, 80, 0.3)'  },
@@ -22,8 +23,10 @@ function formatRelativeTime(date) {
   return `${diffDay}d ago`;
 }
 
-function NotificationCard({ notif, onMarkRead, onDismiss }) {
+function NotificationCard({ notif, onMarkRead, onDismiss, onApprove, isManager }) {
   const cfg = TYPE_CONFIG[notif.type];
+  const showApproveButton = isManager && notif.type === 'shift_change' && !notif.approved;
+
   return (
     <div
       className="flex gap-4 p-4 rounded-xl border transition-all"
@@ -52,6 +55,14 @@ function NotificationCard({ notif, onMarkRead, onDismiss }) {
             >
               {cfg.label}
             </span>
+            {notif.approved && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(74,124,94,0.15)', color: '#6ab888', border: '1px solid rgba(74,124,94,0.4)' }}
+              >
+                ✓ Approved
+              </span>
+            )}
           </div>
           <span className="text-xs shrink-0 mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
             {formatRelativeTime(notif.timestamp)}
@@ -61,6 +72,18 @@ function NotificationCard({ notif, onMarkRead, onDismiss }) {
         <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--color-text-dim)' }}>
           {notif.message}
         </p>
+
+        {showApproveButton && (
+          <div className="mb-2">
+            <button
+              onClick={() => onApprove(notif.id)}
+              className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
+              style={{ background: 'rgba(74,124,94,0.2)', color: '#6ab888', border: '1px solid rgba(74,124,94,0.4)' }}
+            >
+              ✓ Approve
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>
@@ -91,7 +114,9 @@ function NotificationCard({ notif, onMarkRead, onDismiss }) {
 }
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, markRead, dismiss, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markRead, dismiss, markAllRead, approve } = useNotifications();
+  const { user } = useAuth();
+  const isManager = user?.role === 'manager';
   const [activeFilter, setActiveFilter] = useState('All');
 
   const filtered = notifications.filter(n => {
@@ -126,7 +151,7 @@ export default function NotificationsPage() {
           <button
             onClick={markAllRead}
             className="text-sm px-4 py-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: 'none' }}
+            style={{ background: 'var(--color-accent)', color: 'white', border: 'none' }}
           >
             Mark all read
           </button>
@@ -181,6 +206,8 @@ export default function NotificationsPage() {
               notif={n}
               onMarkRead={markRead}
               onDismiss={dismiss}
+              onApprove={approve}
+              isManager={isManager}
             />
           ))
         )}

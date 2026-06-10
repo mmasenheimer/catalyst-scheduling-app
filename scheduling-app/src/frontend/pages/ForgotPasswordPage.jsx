@@ -108,6 +108,8 @@ export default function ForgotPasswordPage() {
             onClick={() => navigate('/login')}
             className="text-xs cursor-pointer"
             style={{ color: 'var(--color-text-dim)', background: 'none', border: 'none' }}
+            onMouseEnter={e => e.target.style.color = 'var(--color-text)'}
+            onMouseLeave={e => e.target.style.color = 'var(--color-text-dim)'}
           >
             ← Back to login
           </button>

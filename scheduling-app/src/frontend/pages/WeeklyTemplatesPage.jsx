@@ -30,7 +30,7 @@ function DayCard({ day, template, isSelected, onClick }) {
   );
 }
 
-function DayDetail({ day, template, onSave }) {
+function DayDetail({ day, template, onSave, onApplyToWeek }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editIds, setEditIds] = useState(new Set());
 
@@ -194,13 +194,14 @@ function DayDetail({ day, template, onSave }) {
           <div className="flex gap-2 mt-6">
             <button
               onClick={startEdit}
-              className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
+              className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: 'var(--color-accent)', color: 'white' }}
             >
               Edit Template
             </button>
             <button
-              className="px-4 py-2 rounded-lg text-sm font-medium border cursor-pointer"
+              onClick={() => onApplyToWeek(template.staff)}
+              className="px-4 py-2 rounded-lg text-sm font-medium border cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: 'transparent', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
             >
               Apply to Week
@@ -220,6 +221,16 @@ export default function WeeklyTemplatesPage() {
     setTemplates(prev => ({ ...prev, [day]: updated }));
   }
 
+  function handleApplyToWeek(staff) {
+    setTemplates(prev => {
+      const next = {};
+      for (const [day, t] of Object.entries(prev)) {
+        next[day] = { ...t, staff };
+      }
+      return next;
+    });
+  }
+
   const stats = {
     avgStaff: Math.round(
       Object.values(templates).reduce((sum, t) => sum + t.staff.length, 0) /
@@ -232,7 +243,7 @@ export default function WeeklyTemplatesPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex justify-between items-center p-5 rounded-xl mb-6 border"
+        className="flex flex-wrap justify-between items-center gap-4 p-5 rounded-xl mb-6 border"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         <div>
@@ -255,7 +266,7 @@ export default function WeeklyTemplatesPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-[220px_1fr] gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
         <div className="flex flex-col gap-2">
           {DAYS.map(day => (
             <DayCard
@@ -273,6 +284,7 @@ export default function WeeklyTemplatesPage() {
           day={selectedDay}
           template={templates[selectedDay]}
           onSave={handleSave}
+          onApplyToWeek={handleApplyToWeek}
         />
       </div>
     </div>

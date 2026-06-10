@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
+import { useAuth } from '../context/AuthContext';
 import { weeklyTemplates } from '../../data/mockData';
+
+function fmtT(t) {
+  const h   = Math.floor(t);
+  const m   = Math.round((t % 1) * 60);
+  const suf = h >= 12 ? 'p' : 'a';
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return m === 0 ? `${h12}${suf}` : `${h12}:${String(m).padStart(2, '0')}${suf}`;
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -38,6 +47,24 @@ function getTemplate(date) {
   return weeklyTemplates[DAY_FULL[date.getDay()]] || { staff: [], events: [] };
 }
 
+function getEventsForDate(date, allEvents) {
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const dow = date.getDay();
+  return allEvents.filter(evt => {
+    if (!evt.days?.length) return true;
+    return evt.days.some(d => {
+      if (d === dateStr) return true;
+      if (evt.repeating) {
+        const [y, m, day] = d.split('-').map(Number);
+        const eventDate = new Date(y, m - 1, day);
+        return eventDate.getDay() === dow &&
+               new Date(date.getFullYear(), date.getMonth(), date.getDate()) >= eventDate;
+      }
+      return false;
+    });
+  });
+}
+
 function isSameDay(a, b) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -46,18 +73,19 @@ function isSameDay(a, b) {
   );
 }
 
-function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick }) {
+function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events }) {
   const template = getTemplate(date);
   const staffCount = template.staff.length;
-  const shown = template.events.slice(0, 2);
-  const overflow = template.events.length - shown.length;
+  const dateEvents = getEventsForDate(date, events);
+  const shown = dateEvents.slice(0, 2);
+  const overflow = dateEvents.length - shown.length;
 
   return (
     <div
       onClick={onClick}
       className="relative flex flex-col cursor-pointer"
       style={{
-        minHeight: 100,
+        minHeight: 110,
         padding: '8px',
         borderRight: '1px solid var(--color-border)',
         borderBottom: '1px solid var(--color-border)',
@@ -94,22 +122,47 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick }) {
         )}
       </div>
 
+      {/* Shift / desk indicators */}
+      <div className="flex flex-col gap-0.5 mb-0.5">
+        {myShift && me && (
+          <div
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
+            style={{ background: 'rgba(74,124,94,0.25)', color: 'white', fontSize: 10 }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-green)' }} />
+            <span>{fmtT(me.shiftStart)} – {fmtT(me.shiftEnd)}</span>
+          </div>
+        )}
+        {myDesk && me && me.deskStart != null && (
+          <div
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
+            style={{ background: 'rgba(176,126,40,0.2)', color: 'white', fontSize: 10 }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-yellow)' }} />
+            <span>Desk {fmtT(me.deskStart)} – {fmtT(me.deskEnd)}</span>
+          </div>
+        )}
+      </div>
+
       {/* Events */}
       <div className="flex flex-col gap-0.5 flex-1">
         {shown.map(evt => (
           <div
             key={evt.id}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs leading-tight truncate"
+            className="flex items-start gap-1 px-1.5 py-0.5 rounded leading-tight"
             style={{
               background: evt.type === 'program' ? '#1e1040' : '#241a06',
-              color: evt.type === 'program' ? '#a98ee8' : 'var(--color-yellow)',
+              color: 'white',
             }}
           >
             <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
+              className="w-1.5 h-1.5 rounded-full shrink-0 mt-0.5"
               style={{ background: evt.type === 'program' ? '#7c5cbf' : 'var(--color-yellow)' }}
             />
-            <span className="truncate">{evt.name}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="truncate" style={{ fontSize: 10 }}>{evt.name}</span>
+              <span style={{ fontSize: 9, opacity: 0.7 }}>{fmtT(evt.start)} – {fmtT(evt.end)}</span>
+            </div>
           </div>
         ))}
         {overflow > 0 && (
@@ -138,8 +191,10 @@ export default function CalendarPage() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const { currentDate, goToDate } = useScheduleContext();
+  const { currentDate, goToDate, staff, events } = useScheduleContext();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const me = user?.staffId ? staff.find(s => s.id === user.staffId) : null;
 
   const cells = getCalendarCells(viewYear, viewMonth);
 
@@ -160,7 +215,7 @@ export default function CalendarPage() {
 
   function handleDayClick(date) {
     goToDate(date);
-    navigate('/');
+    navigate(user?.role === 'manager' ? '/' : '/my-schedule');
   }
 
   const isViewingCurrentMonth =
@@ -168,7 +223,7 @@ export default function CalendarPage() {
 
   const totalEventsThisMonth = cells
     .filter(c => c.current)
-    .reduce((sum, c) => sum + getTemplate(c.date).events.length, 0);
+    .reduce((sum, c) => sum + getEventsForDate(c.date, events).length, 0);
 
   const avgStaffThisMonth = Math.round(
     cells.filter(c => c.current).reduce((sum, c) => sum + getTemplate(c.date).staff.length, 0) /
@@ -179,39 +234,19 @@ export default function CalendarPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex justify-between items-center p-5 rounded-xl mb-6 border"
+        className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
-        <div>
+        {/* Title — order 1 on all sizes */}
+        <div className="order-1">
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Calendar</h2>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-            Click any day to open the daily schedule
+            {user?.role === 'manager' ? 'Click any day to open the daily schedule' : 'Click any day to view your schedule for that week'}
           </p>
         </div>
 
-        {/* Month navigation */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={prevMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-          >
-            ◀
-          </button>
-          <span className="text-base font-semibold min-w-44 text-center" style={{ color: 'var(--color-text)' }}>
-            {MONTHS[viewMonth]} {viewYear}
-          </span>
-          <button
-            onClick={nextMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-          >
-            ▶
-          </button>
-        </div>
-
-        {/* Stats + Today */}
-        <div className="flex items-center gap-6">
+        {/* Stats + Today — order 2 on mobile (sits right of title), order 3 on desktop */}
+        <div className="order-2 sm:order-3 flex items-center gap-3 sm:gap-6">
           {[
             { label: 'Avg Staff', value: avgStaffThisMonth },
             { label: 'Events', value: totalEventsThisMonth },
@@ -224,12 +259,33 @@ export default function CalendarPage() {
           {!isViewingCurrentMonth && (
             <button
               onClick={goToToday}
-              className="px-4 py-2 rounded-lg text-sm font-medium border cursor-pointer hover:opacity-80 transition-opacity"
+              className="px-3 py-1.5 rounded-lg text-sm font-medium border cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: 'transparent', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
             >
               Today
             </button>
           )}
+        </div>
+
+        {/* Month navigation — order 3 on mobile (full-width row below), order 2 on desktop */}
+        <div className="order-3 sm:order-2 w-full sm:w-auto flex items-center justify-center gap-2 sm:gap-3">
+          <button
+            onClick={prevMonth}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          >
+            ◀
+          </button>
+          <span className="text-base font-semibold min-w-36 sm:min-w-44 text-center" style={{ color: 'var(--color-text)' }}>
+            {MONTHS[viewMonth]} {viewYear}
+          </span>
+          <button
+            onClick={nextMonth}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          >
+            ▶
+          </button>
         </div>
       </div>
 
@@ -259,28 +315,41 @@ export default function CalendarPage() {
 
         {/* Day cells */}
         <div className="grid grid-cols-7">
-          {cells.map(({ date, current }, i) => (
-            <DayCell
-              key={i}
-              date={date}
-              isCurrentMonth={current}
-              isToday={isSameDay(date, today)}
-              isSelected={isSameDay(date, currentDate)}
-              onClick={() => handleDayClick(date)}
-            />
-          ))}
+          {cells.map(({ date, current }, i) => {
+            const tpl = getTemplate(date);
+            const myShift = me ? tpl.staff.some(s => s.id === me.id) : false;
+            const myDesk  = myShift && me?.deskStart != null;
+            return (
+              <DayCell
+                key={i}
+                date={date}
+                isCurrentMonth={current}
+                isToday={isSameDay(date, today)}
+                isSelected={isSameDay(date, currentDate)}
+                onClick={() => handleDayClick(date)}
+                myShift={myShift}
+                myDesk={myDesk}
+                me={me}
+                events={events}
+              />
+            );
+          })}
         </div>
       </div>
 
       {/* Legend */}
-      <div className="flex gap-5 mt-3 px-1">
+      <div className="flex flex-wrap gap-4 mt-3 px-1">
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
+          <span className="w-5 h-2.5 rounded-sm" style={{ background: 'var(--color-green)', opacity: 0.7 }} />
+          Shift
+        </div>
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
+          <span className="w-5 h-2.5 rounded-sm" style={{ background: 'var(--color-yellow)', opacity: 0.75 }} />
+          Desk
+        </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
           <span className="w-2 h-2 rounded-full" style={{ background: '#7c5cbf' }} />
           Program
-        </div>
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span className="w-2 h-2 rounded-full" style={{ background: 'var(--color-yellow)' }} />
-          Service
         </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
           <span

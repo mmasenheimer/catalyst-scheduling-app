@@ -22,7 +22,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
   const deskFilled = scheduled.filter(s => s.deskStart !== null).length;
   const dateLabel  = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   return (
-    <div className="flex justify-between items-center p-5 rounded-xl mb-6 border"
+    <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Daily Schedule</h2>
@@ -34,14 +34,14 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
           {finalized ? '✓ Finalized' : 'Finalize Schedule'}
         </button>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
           style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>◀</button>
-        <span className="text-sm font-medium min-w-48 text-center">{dateLabel}</span>
+        <span className="text-sm font-medium min-w-36 sm:min-w-48 text-center">{dateLabel}</span>
         <button onClick={onNext} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
           style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>▶</button>
       </div>
-      <div className="flex gap-6">
+      <div className="flex gap-4 sm:gap-6">
         {[
           { label: 'On Shift',     value: scheduled.length },
           { label: 'Desks Filled', value: `${deskFilled}/${scheduled.length}` },
@@ -86,6 +86,7 @@ function ScheduleGrid({
   draggingBarInfo,
   onShiftBarDragStart, onDeskBarDragStart, onEventBarDragStart, onBarDragEnd,
   onBarDragOver, onBarDrop,
+  onBarContextMenu,
 }) {
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
@@ -217,6 +218,7 @@ function ScheduleGrid({
                     }}
                     onDragStart={e => { e.stopPropagation(); !finalized && onShiftBarDragStart(e, i); }}
                     onDragEnd={onBarDragEnd}
+                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'shift', staffIndex: i }); }}
                   >
                     {/* Left resize handle */}
                     {!finalized && (
@@ -238,19 +240,19 @@ function ScheduleGrid({
                   {person.deskStart !== null && (
                     <div
                       draggable={!finalized}
-                      className="absolute top-3 h-8 rounded border-2 overflow-hidden select-none"
+                      className="absolute top-3 h-8 rounded overflow-hidden select-none"
                       style={{
                         ...posStyle(person.deskStart, person.deskEnd),
-                        background: '#3d2c18',
-                        borderColor: isDeskActive ? '#e0b050' : 'var(--color-yellow)',
-                        opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.85),
+                        background: 'var(--color-yellow)',
+                        opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
                         cursor: finalized ? 'default' : 'grab',
-                        boxShadow: isDeskActive ? '0 0 0 2px var(--color-yellow)' : 'none',
+                        boxShadow: isDeskActive ? '0 0 0 2px #e0b050' : 'none',
                         transition: isDeskActive || isDeskDragging ? 'none' : 'box-shadow 0.1s',
                         zIndex: isDeskActive ? 10 : 2,
                       }}
                       onDragStart={e => { e.stopPropagation(); !finalized && onDeskBarDragStart(e, i); }}
                       onDragEnd={onBarDragEnd}
+                      onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'desk', staffIndex: i }); }}
                     >
                       {!finalized && (
                         <div
@@ -289,8 +291,9 @@ function ScheduleGrid({
                           opacity: isEvtDragging ? 0.3 : (isEvtActive ? 1 : 0.9),
                           transition: isEvtActive || isEvtDragging ? 'none' : 'box-shadow 0.1s',
                         }}
-                        onDragStart={e => { e.stopPropagation(); !finalized && onEventBarDragStart(e, evt.id); }}
+                        onDragStart={e => { e.stopPropagation(); !finalized && onEventBarDragStart(e, evt.id, person.id); }}
                         onDragEnd={onBarDragEnd}
+                        onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'event', eventId: evt.id, staffId: person.id }); }}
                         title={evt.name}
                       >
                         {!finalized && (
@@ -330,7 +333,7 @@ function ScheduleGrid({
     <div className="flex items-center gap-5 mt-3 px-1 flex-wrap">
       {[
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: '#3d2c18', border: '2px solid var(--color-yellow)' }} />, label: 'Desk' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: '#3b2a6e', opacity: 0.9 }} />, label: 'Event' },
       ].map(({ swatch, label }) => (
         <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
@@ -369,6 +372,205 @@ function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, 
     >
       <span style={{ pointerEvents: 'none' }}>{icon}</span>
       <span className="truncate" style={{ pointerEvents: 'none' }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Context menu ───────────────────────────────────────────────────────────────
+
+function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) onClose(); }
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+    };
+  }, [onClose]);
+
+  const menuStyle = {
+    position: 'fixed', left: x, top: y, zIndex: 9999, minWidth: 140,
+    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+    borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', overflow: 'hidden',
+  };
+  const btn = (color) => ({
+    display: 'block', width: '100%', padding: '9px 16px', textAlign: 'left',
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontSize: 13, color: color || 'var(--color-text)',
+  });
+
+  return (
+    <div ref={ref} style={menuStyle}>
+      <button
+        style={btn()}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        onClick={onEdit}
+      >
+        ✏️  Edit
+      </button>
+      <div style={{ height: 1, background: 'var(--color-border)' }} />
+      <button
+        style={btn('#f07070')}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(200,64,64,0.1)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        onClick={onDelete}
+      >
+        🗑  Delete
+      </button>
+    </div>
+  );
+}
+
+// ── Edit modal ─────────────────────────────────────────────────────────────────
+
+const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop'];
+const TIME_STEPS  = Array.from({ length: (HOURS_END - HOURS_START) * 2 + 1 }, (_, i) => HOURS_START + i * 0.5);
+
+function TimeSelect({ value, onChange, min, max }) {
+  const opts = TIME_STEPS.filter(t => t >= (min ?? HOURS_START) && t <= (max ?? HOURS_END));
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(parseFloat(e.target.value))}
+      style={{
+        width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13,
+        background: 'var(--color-muted)', border: '1px solid var(--color-border)',
+        color: 'var(--color-text)',
+      }}
+    >
+      {opts.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+    </select>
+  );
+}
+
+function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
+  const [form, setForm] = useState(() => {
+    if (target.type === 'shift') {
+      const p = orderedStaff[target.staffIndex];
+      return { shiftStart: p.shiftStart, shiftEnd: p.shiftEnd };
+    }
+    if (target.type === 'desk') {
+      const p = orderedStaff[target.staffIndex];
+      return { deskStart: p.deskStart, deskEnd: p.deskEnd };
+    }
+    const evt = allEvents.find(e => e.id === target.eventId);
+    return { name: evt?.name || '', type: evt?.type || 'program', start: evt?.start || 9, end: evt?.end || 10, staffNeeded: evt?.staffNeeded || 1, notes: evt?.notes || '' };
+  });
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const title = target.type === 'shift' ? 'Edit Shift' : target.type === 'desk' ? 'Edit Desk Shift' : 'Edit Event';
+  const staffName = (target.type === 'shift' || target.type === 'desk') ? orderedStaff[target.staffIndex]?.name : null;
+  const shiftBounds = target.type === 'desk' ? { min: orderedStaff[target.staffIndex]?.shiftStart, max: orderedStaff[target.staffIndex]?.shiftEnd } : null;
+
+  const fieldLabel = { display: 'block', fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 4 };
+  const textInput = {
+    width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, boxSizing: 'border-box',
+    background: 'var(--color-muted)', border: '1px solid var(--color-border)', color: 'var(--color-text)',
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm mx-4 rounded-xl border p-5"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>{title}</h3>
+            {staffName && <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>{staffName}</p>}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>✕</button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {target.type === 'shift' && (
+            <>
+              <div>
+                <label style={fieldLabel}>Shift Start</label>
+                <TimeSelect value={form.shiftStart} onChange={v => setForm(f => ({ ...f, shiftStart: Math.min(v, f.shiftEnd - 0.5) }))} max={form.shiftEnd - 0.5} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Shift End</label>
+                <TimeSelect value={form.shiftEnd} onChange={v => setForm(f => ({ ...f, shiftEnd: Math.max(v, f.shiftStart + 0.5) }))} min={form.shiftStart + 0.5} />
+              </div>
+            </>
+          )}
+          {target.type === 'desk' && (
+            <>
+              <div>
+                <label style={fieldLabel}>Desk Start</label>
+                <TimeSelect value={form.deskStart} onChange={v => setForm(f => ({ ...f, deskStart: Math.min(v, f.deskEnd - 0.5) }))} min={shiftBounds?.min} max={form.deskEnd - 0.5} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Desk End</label>
+                <TimeSelect value={form.deskEnd} onChange={v => setForm(f => ({ ...f, deskEnd: Math.max(v, f.deskStart + 0.5) }))} min={form.deskStart + 0.5} max={shiftBounds?.max} />
+              </div>
+            </>
+          )}
+          {target.type === 'event' && (
+            <>
+              <div>
+                <label style={fieldLabel}>Event Name</label>
+                <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={textInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Type</label>
+                <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={textInput}>
+                  {EVENT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label style={fieldLabel}>Start</label>
+                  <TimeSelect value={form.start} onChange={v => setForm(f => ({ ...f, start: Math.min(v, f.end - 0.5) }))} max={form.end - 0.5} />
+                </div>
+                <div className="flex-1">
+                  <label style={fieldLabel}>End</label>
+                  <TimeSelect value={form.end} onChange={v => setForm(f => ({ ...f, end: Math.max(v, f.start + 0.5) }))} min={form.start + 0.5} />
+                </div>
+              </div>
+              <div>
+                <label style={fieldLabel}>Staff Needed</label>
+                <input type="number" min={1} max={20} value={form.staffNeeded} onChange={e => setForm(f => ({ ...f, staffNeeded: parseInt(e.target.value) || 1 }))} style={textInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Notes</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...textInput, resize: 'none' }} />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-5 justify-end">
+          <button
+            onClick={onClose}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(form)}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -431,8 +633,32 @@ export default function DailySchedulePage() {
 
   const trashRef = useRef(null);
 
+  const currentDateStr = (() => {
+    const d = schedule.currentDate;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const currentDow = schedule.currentDate.getDay();
+
+  const todayEvents = schedule.events.filter(evt => {
+    if (!evt.days?.length) return true;
+    return evt.days.some(dateStr => {
+      if (dateStr === currentDateStr) return true;
+      if (evt.repeating) {
+        const [y, m, day] = dateStr.split('-').map(Number);
+        const eventDate = new Date(y, m - 1, day);
+        const currentMidnight = new Date(
+          schedule.currentDate.getFullYear(),
+          schedule.currentDate.getMonth(),
+          schedule.currentDate.getDate()
+        );
+        return eventDate.getDay() === currentDow && currentMidnight >= eventDate;
+      }
+      return false;
+    });
+  });
+
   const [orderedStaff,    setOrderedStaff]    = useState(() => {
-    const ids = getScheduledIds(new Date());
+    const ids = getScheduledIds(schedule.currentDate);
     return schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) }));
   });
   const [dragRowIndex,    setDragRowIndex]     = useState(null);
@@ -443,12 +669,31 @@ export default function DailySchedulePage() {
   const [draggingEventId, setDraggingEventId]  = useState(null);
   const [hoverRow,        setHoverRow]         = useState(null);
   const [draggingBarInfo, setDraggingBarInfo]  = useState(null);   // bar HTML5 drag
+  const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
+  const [editModal,       setEditModal]        = useState(null);   // { type, ... }
 
   useEffect(() => {
-    const ids = getScheduledIds(schedule.currentDate);
-    setOrderedStaff(schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) })));
+    const saved = schedule.getDaySchedule(schedule.currentDate.toDateString());
+    if (saved) {
+      setOrderedStaff(saved);
+    } else {
+      const ids = getScheduledIds(schedule.currentDate);
+      setOrderedStaff(schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) })));
+    }
     setFinalized(false);
-  }, [schedule.currentDate.toDateString()]);
+  // schedule.staff intentionally included: if desks are auto-assigned while on this
+  // date, re-derive from the updated staff (saved schedules still take priority).
+  }, [schedule.currentDate.toDateString(), schedule.staff]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handlePrevDay() {
+    schedule.saveDaySchedule(schedule.currentDate.toDateString(), orderedStaff);
+    schedule.goToPrevDay();
+  }
+
+  function handleNextDay() {
+    schedule.saveDaySchedule(schedule.currentDate.toDateString(), orderedStaff);
+    schedule.goToNextDay();
+  }
 
   function endDrag() {
     setActiveDragType(null);
@@ -582,14 +827,64 @@ export default function DailySchedulePage() {
     setDraggingBarInfo({ type: 'desk', staffIndex, duration: p.deskEnd - p.deskStart, shiftStart: p.shiftStart, shiftEnd: p.shiftEnd });
   }
 
-  function handleEventBarDragStart(e, eventId) {
+  function handleEventBarDragStart(e, eventId, staffId) {
     e.dataTransfer.effectAllowed = 'move';
     const evt = schedule.events.find(ev => ev.id === eventId);
-    setDraggingBarInfo({ type: 'event', eventId, duration: evt.end - evt.start });
+    setDraggingBarInfo({ type: 'event', eventId, staffId, duration: evt.end - evt.start });
   }
 
   function handleBarDragEnd() {
     setDraggingBarInfo(null);
+  }
+
+  // ── Bar right-click context menu ─────────────────────────────────────────────
+  function handleBarContextMenu(e, target) {
+    setContextMenu({ x: e.clientX, y: e.clientY, target });
+  }
+
+  function handleContextMenuDelete() {
+    const { target } = contextMenu;
+    setContextMenu(null);
+    if (target.type === 'shift') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        next[target.staffIndex] = { ...next[target.staffIndex], scheduled: false };
+        return next;
+      });
+    } else if (target.type === 'desk') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        next[target.staffIndex] = { ...next[target.staffIndex], deskStart: null, deskEnd: null };
+        return next;
+      });
+    } else if (target.type === 'event') {
+      schedule.unassignStaffFromEvent(target.eventId, target.staffId);
+    }
+  }
+
+  function handleContextMenuEdit() {
+    setEditModal(contextMenu.target);
+    setContextMenu(null);
+  }
+
+  function handleEditSave(data) {
+    const t = editModal;
+    setEditModal(null);
+    if (t.type === 'shift') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        next[t.staffIndex] = { ...next[t.staffIndex], shiftStart: data.shiftStart, shiftEnd: data.shiftEnd };
+        return next;
+      });
+    } else if (t.type === 'desk') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        next[t.staffIndex] = { ...next[t.staffIndex], deskStart: data.deskStart, deskEnd: data.deskEnd };
+        return next;
+      });
+    } else if (t.type === 'event') {
+      schedule.updateEvent(t.eventId, { name: data.name, type: data.type, start: data.start, end: data.end, staffNeeded: data.staffNeeded, notes: data.notes });
+    }
   }
 
   // Live repositioning while dragging a bar over a timeline
@@ -620,10 +915,9 @@ export default function DailySchedulePage() {
         next[staffIndex] = p;
         return next;
       });
-    } else if (type === 'event') {
-      const newStart = snapHalf(clamp(rawHours - duration / 2, HOURS_START, HOURS_END - duration));
-      schedule.updateEvent(eventId, { start: newStart, end: newStart + duration });
     }
+    // Event bars: no live repositioning — drag is only used to drop to trash (unassign).
+    // Use the resize handles on the bar edges to change event timing instead.
   }
 
   function handleBarDrop() { /* position already settled via dragover */ }
@@ -660,11 +954,11 @@ export default function DailySchedulePage() {
   return (
     <div>
       <StatsHeader
-        staff={orderedStaff} events={schedule.events} currentDate={schedule.currentDate}
-        onPrev={schedule.goToPrevDay} onNext={schedule.goToNextDay}
+        staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
+        onPrev={handlePrevDay} onNext={handleNextDay}
         finalized={finalized} onFinalize={() => setFinalized(true)} onUnfinalize={() => setFinalized(false)}
       />
-      <AlertsBar staff={orderedStaff.filter(s => s.scheduled)} events={schedule.events} />
+      <AlertsBar staff={orderedStaff.filter(s => s.scheduled)} events={todayEvents} />
 
       {/* Toolbar */}
       {!finalized && (
@@ -684,10 +978,10 @@ export default function DailySchedulePage() {
               onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('desk'); }}
               onDragEnd={endDrag}
             />
-            {schedule.events.length > 0 && (
+            {todayEvents.length > 0 && (
               <div className="w-px self-stretch" style={{ background: 'var(--color-border)', margin: '0 2px' }} />
             )}
-            {schedule.events.map(evt => (
+            {todayEvents.map(evt => (
               <DragChip
                 key={evt.id} label={evt.name}
                 isActive={activeDragType === 'event' && draggingEventId === evt.id}
@@ -732,7 +1026,7 @@ export default function DailySchedulePage() {
                     return next;
                   });
                 } else if (type === 'event') {
-                  schedule.removeEvent(eventId);
+                  schedule.unassignStaffFromEvent(eventId, draggingBarInfo.staffId);
                 }
                 setDraggingBarInfo(null);
               }
@@ -752,7 +1046,7 @@ export default function DailySchedulePage() {
       )}
 
       <ScheduleGrid
-        staff={orderedStaff} events={schedule.events} finalized={finalized}
+        staff={orderedStaff} events={todayEvents} finalized={finalized}
         dragRowIndex={dragRowIndex}
         onRowDragStart={handleRowDragStart} onRowDragOver={handleRowDragOver} onRowDrop={handleRowDrop}
         onBarMouseDown={handleBarMouseDown}
@@ -768,8 +1062,27 @@ export default function DailySchedulePage() {
         onBarDragEnd={handleBarDragEnd}
         onBarDragOver={handleBarDragOver}
         onBarDrop={handleBarDrop}
+        onBarContextMenu={handleBarContextMenu}
       />
-      <EventsPanel staff={orderedStaff} events={schedule.events} onAddEvent={() => navigate('/add-event')} />
+      <EventsPanel staff={orderedStaff} events={todayEvents} onAddEvent={() => navigate('/add-event')} />
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x} y={contextMenu.y}
+          onEdit={handleContextMenuEdit}
+          onDelete={handleContextMenuDelete}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {editModal && (
+        <EditModal
+          target={editModal}
+          orderedStaff={orderedStaff}
+          allEvents={schedule.events}
+          onSave={handleEditSave}
+          onClose={() => setEditModal(null)}
+        />
+      )}
     </div>
   );
 }

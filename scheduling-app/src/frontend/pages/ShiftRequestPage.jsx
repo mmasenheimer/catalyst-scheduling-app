@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useScheduleContext } from '../context/ScheduleContext';
 import { initialStaff, weeklyTemplates } from '../../data/mockData';
 import { formatTime } from '../utils/scheduleUtils';
 
@@ -254,13 +255,14 @@ function EmptyState({ text }) {
 
 export default function ShiftRequestPage() {
   const { user } = useAuth();
+  const { staff } = useScheduleContext();
   const [tab, setTab] = useState('cover');
   const [selectedDay, setSelectedDay] = useState(null);
   const [pending, setPending] = useState(null);
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
 
-  const me = initialStaff.find(s => s.id === user?.staffId);
+  const me = staff.find(s => s.id === user?.staffId);
 
   if (!me) {
     return (
@@ -281,10 +283,10 @@ export default function ShiftRequestPage() {
   }
 
   const myDays = scheduledDays(me.id);
-  const activeDay = selectedDay ?? myDays[0] ?? 'Monday';
+  const activeDay = selectedDay ?? myDays[0] ?? null;
 
-  const available = notWorkingOn(activeDay, me.id);
-  const alreadyWorking = workingOn(activeDay, me.id);
+  const available = activeDay ? notWorkingOn(activeDay, me.id) : [];
+  const alreadyWorking = activeDay ? workingOn(activeDay, me.id) : [];
 
   const others = initialStaff.filter(s => s.id !== me.id);
   const noOverlapStaff = others.filter(s => !overlaps(me, s));
@@ -408,27 +410,29 @@ export default function ShiftRequestPage() {
               </div>
 
               {/* Not working that day */}
-              <div>
-                <SectionHeading
-                  title={`Not working ${activeDay}`}
-                  sub="available to cover your shift"
-                />
-                {available.length === 0 ? (
-                  <EmptyState text={`Everyone is already scheduled on ${activeDay}.`} />
-                ) : (
-                  <StaffList
-                    people={available}
-                    badge="Not scheduled"
-                    badgeStyle={{ background: '#1a2a1a', color: '#6ab888' }}
-                    actionLabel="Ask to Cover"
-                    onAction={select}
-                    selectedId={pending?.id}
+              {activeDay && (
+                <div>
+                  <SectionHeading
+                    title={`Not working ${activeDay}`}
+                    sub="available to cover your shift"
                   />
-                )}
-              </div>
+                  {available.length === 0 ? (
+                    <EmptyState text={`Everyone is already scheduled on ${activeDay}.`} />
+                  ) : (
+                    <StaffList
+                      people={available}
+                      badge="Not scheduled"
+                      badgeStyle={{ background: '#1a2a1a', color: '#6ab888' }}
+                      actionLabel="Ask to Cover"
+                      onAction={select}
+                      selectedId={pending?.id}
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Already working that day */}
-              {alreadyWorking.length > 0 && (
+              {activeDay && alreadyWorking.length > 0 && (
                 <div>
                   <SectionHeading
                     title={`Already working ${activeDay}`}

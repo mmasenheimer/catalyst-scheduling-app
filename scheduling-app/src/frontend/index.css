@@ -4,23 +4,28 @@
 
 /* ── Anthropic-style palette ──────────────────────────────────────────────── */
 :root {
-  --color-bg:            #0d0c0b;   /* warm near-black */
-  --color-surface:       #1a1816;   /* dark warm charcoal */
-  --color-border:        #2c2926;   /* subtle warm border */
-  --color-muted:         #3d3935;   /* raised muted surface */
-  --color-text:          #ede9e0;   /* warm cream */
-  --color-text-dim:      #9c9188;   /* warm medium gray */
-  --color-accent:        #b05030;   /* terracotta — dark enough for white text */
-  --color-accent-bright: #e07050;   /* lighter terracotta for stats/highlights */
-  --color-green:         #4a7c5e;   /* muted sage — shift bars */
-  --color-yellow:        #c89438;   /* warm amber */
-  --color-red:           #c84040;   /* muted red */
+  --color-bg: #0d0c0b; /* warm near-black */
+  --color-surface: #1a1816; /* dark warm charcoal */
+  --color-border: #2c2926; /* subtle warm border */
+  --color-muted: #3d3935; /* raised muted surface */
+  --color-text: #ede9e0; /* warm cream */
+  --color-text-dim: #9c9188; /* warm medium gray */
+  --color-accent: #b05030; /* terracotta — dark enough for white text */
+  --color-accent-bright: #e07050; /* lighter terracotta for stats/highlights */
+  --color-green: #4a7c5e; /* muted sage — shift bars */
+  --color-yellow: #b07e28; /* warm amber */
+  --color-red: #c84040; /* muted red */
 }
 
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
@@ -52,4 +57,34 @@ body {
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+html.light {
+  --color-bg:           #f5f2ee;
+  --color-surface:      #ffffff;
+  --color-border:       #ddd8d0;
+  --color-muted:        #ede8e2;
+  --color-text:         #1a1614;
+  --color-text-dim:     #6b6158;
+  --color-accent:       #b05030;
+  --color-accent-bright:#c0603a;
+  --color-green:        #3a6b4e;
+  --color-yellow:       #9a6e1a;
+  --color-red:          #c84040;
+}
+
+html.light body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ── Date input calendar icon ─────────────────────────────────────────────── */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+html.light input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
 }

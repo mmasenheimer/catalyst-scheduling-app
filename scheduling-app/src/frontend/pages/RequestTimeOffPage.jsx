@@ -164,7 +164,7 @@ export default function RequestTimeOffPage() {
           </button>
           <button
             type="submit"
-            className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer"
+            className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
             style={{ background: 'var(--color-accent)', color: 'white' }}
           >
             Submit Request
