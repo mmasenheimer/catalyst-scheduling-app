@@ -89,12 +89,12 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
         padding: '8px',
         borderRight: '1px solid var(--color-border)',
         borderBottom: '1px solid var(--color-border)',
-        background: isSelected ? '#1e1a14' : isToday ? '#181410' : 'transparent',
+        background: isSelected ? 'var(--color-muted)' : isToday ? 'rgba(176,80,48,0.08)' : 'transparent',
         opacity: isCurrentMonth ? 1 : 0.3,
         transition: 'background 0.1s',
       }}
       onMouseEnter={e => {
-        if (!isSelected && !isToday) e.currentTarget.style.background = '#151210';
+        if (!isSelected && !isToday) e.currentTarget.style.background = 'var(--color-muted)';
       }}
       onMouseLeave={e => {
         if (!isSelected && !isToday) e.currentTarget.style.background = 'transparent';
@@ -127,7 +127,7 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
         {myShift && me && (
           <div
             className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
-            style={{ background: 'rgba(74,124,94,0.25)', color: 'white', fontSize: 10 }}
+            style={{ background: 'rgba(74,124,94,0.6)', color: 'white', fontSize: 10 }}
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-green)' }} />
             <span>{fmtT(me.shiftStart)} – {fmtT(me.shiftEnd)}</span>
@@ -136,7 +136,7 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
         {myDesk && me && me.deskStart != null && (
           <div
             className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
-            style={{ background: 'rgba(176,126,40,0.2)', color: 'white', fontSize: 10 }}
+            style={{ background: 'rgba(176,126,40,0.65)', color: 'white', fontSize: 10 }}
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-yellow)' }} />
             <span>Desk {fmtT(me.deskStart)} – {fmtT(me.deskEnd)}</span>
@@ -151,7 +151,7 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
             key={evt.id}
             className="flex items-start gap-1 px-1.5 py-0.5 rounded leading-tight"
             style={{
-              background: evt.type === 'program' ? '#1e1040' : '#241a06',
+              background: evt.type === 'program' ? 'rgba(124,92,191,0.65)' : 'rgba(176,126,40,0.65)',
               color: 'white',
             }}
           >
@@ -234,24 +234,45 @@ export default function CalendarPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
+        className="flex items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
-        {/* Title — order 1 on all sizes */}
-        <div className="order-1">
+        {/* Left: title */}
+        <div className="flex-1 min-w-0">
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Calendar</h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
+          <p className="text-sm mt-1 hidden sm:block" style={{ color: 'var(--color-text-dim)' }}>
             {user?.role === 'manager' ? 'Click any day to open the daily schedule' : 'Click any day to view your schedule for that week'}
           </p>
         </div>
 
-        {/* Stats + Today — order 2 on mobile (sits right of title), order 3 on desktop */}
-        <div className="order-2 sm:order-3 flex items-center gap-3 sm:gap-6">
+        {/* Center: month navigation */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <button
+            onClick={prevMonth}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          >
+            ◀
+          </button>
+          <span className="text-base font-semibold min-w-36 text-center" style={{ color: 'var(--color-text)' }}>
+            {MONTHS[viewMonth]} {viewYear}
+          </span>
+          <button
+            onClick={nextMonth}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          >
+            ▶
+          </button>
+        </div>
+
+        {/* Right: stats + today */}
+        <div className="flex-1 flex items-center justify-end gap-3 sm:gap-6 sm:pr-8">
           {[
             { label: 'Avg Staff', value: avgStaffThisMonth },
             { label: 'Events', value: totalEventsThisMonth },
           ].map(({ label, value }) => (
-            <div key={label} className="text-center">
+            <div key={label} className="text-center hidden sm:block">
               <div className="text-xl font-bold" style={{ color: 'var(--color-accent-bright)' }}>{value}</div>
               <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-text-dim)' }}>{label}</div>
             </div>
@@ -265,27 +286,6 @@ export default function CalendarPage() {
               Today
             </button>
           )}
-        </div>
-
-        {/* Month navigation — order 3 on mobile (full-width row below), order 2 on desktop */}
-        <div className="order-3 sm:order-2 w-full sm:w-auto flex items-center justify-center gap-2 sm:gap-3">
-          <button
-            onClick={prevMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
-          >
-            ◀
-          </button>
-          <span className="text-base font-semibold min-w-36 sm:min-w-44 text-center" style={{ color: 'var(--color-text)' }}>
-            {MONTHS[viewMonth]} {viewYear}
-          </span>
-          <button
-            onClick={nextMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
-          >
-            ▶
-          </button>
         </div>
       </div>
 

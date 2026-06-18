@@ -135,8 +135,17 @@ export function NotificationsProvider({ children }) {
     );
   }
 
+  function addNotification(notif) {
+    setNotifications(prev => [{
+      id: Date.now(),
+      timestamp: new Date(),
+      read: false,
+      ...notif,
+    }, ...prev]);
+  }
+
   return (
-    <NotificationsContext.Provider value={{ notifications: visible, unreadCount, markRead, dismiss, markAllRead, approve }}>
+    <NotificationsContext.Provider value={{ notifications: visible, unreadCount, markRead, dismiss, markAllRead, approve, addNotification }}>
       {children}
     </NotificationsContext.Provider>
   );

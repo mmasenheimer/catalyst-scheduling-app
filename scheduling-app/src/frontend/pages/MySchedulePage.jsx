@@ -370,15 +370,6 @@ export default function MySchedulePage() {
       />
       <MyScheduleGrid me={me} weekDays={weekDays} events={events} />
       <MyEventsPanel me={me} weekDays={weekDays} events={events} />
-      <div className="mt-6">
-        <button
-          onClick={() => navigate('/request-time-off')}
-          className="w-full py-3 rounded-xl border text-sm font-medium transition-colors cursor-pointer hover:opacity-80"
-          style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)', background: 'transparent' }}
-        >
-          + Request Time Off / Drop Shift
-        </button>
-      </div>
     </div>
   );
 }

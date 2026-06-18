@@ -1,0 +1,62 @@
+const BASE = 'http://localhost:3001/api';
+
+async function request(path, options = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`${options.method ?? 'GET'} ${BASE}${path} → ${res.status}`);
+  return res.json();
+}
+
+// ── Staff ─────────────────────────────────────────────────────────────────────
+// Routes: GET /api/staff  GET /api/staff/:id  PATCH /api/staff/:id
+
+export const staffApi = {
+  getAll:  ()              => request('/staff'),
+  getOne:  (id)            => request(`/staff/${id}`),
+  update:  (id, body)      => request(`/staff/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+};
+
+// ── Events ────────────────────────────────────────────────────────────────────
+// Uncomment and build routes/events.js when ready
+
+// export const eventsApi = {
+//   getAll:  ()         => request('/events'),
+//   create:  (body)     => request('/events',      { method: 'POST',   body: JSON.stringify(body) }),
+//   update:  (id, body) => request(`/events/${id}`,{ method: 'PATCH',  body: JSON.stringify(body) }),
+//   remove:  (id)       => request(`/events/${id}`,{ method: 'DELETE' }),
+// };
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
+
+export const schedulesApi = {
+  getDay:  (date)       => request(`/schedules/${date}`),
+  saveDay: (date, body) => request(`/schedules/${date}`, { method: 'PUT', body: JSON.stringify(body) }),
+};
+
+// ── Availability ──────────────────────────────────────────────────────────────
+// Uncomment and build routes/availability.js when ready
+
+// export const availabilityApi = {
+//   submit: (body) => request('/availability', { method: 'POST', body: JSON.stringify(body) }),
+//   getAll: ()     => request('/availability'),
+// };
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+// Uncomment and build routes/notifications.js when ready
+
+// export const notificationsApi = {
+//   getAll:   ()   => request('/notifications'),
+//   markRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+//   dismiss:  (id) => request(`/notifications/${id}`,      { method: 'DELETE' }),
+// };
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+// Uncomment and build routes/auth.js when ready
+
+// export const authApi = {
+//   login:  (body) => request('/auth/login',  { method: 'POST', body: JSON.stringify(body) }),
+//   logout: ()     => request('/auth/logout', { method: 'POST' }),
+//   me:     ()     => request('/auth/me'),
+// };

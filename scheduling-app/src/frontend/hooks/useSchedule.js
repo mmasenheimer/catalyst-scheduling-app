@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { initialStaff, initialEvents } from '../../data/mockData';
 import { autoAssignDesks } from '../utils/scheduleUtils';
+import { staffApi } from '../utils/api';
 
-/**
- * Central state for the scheduling app.
- * In a real app this would be replaced with context + API calls.
- */
 export function useSchedule() {
   const [staff, setStaff] = useState(initialStaff);
+
+  // Load staff from the API on mount; fall back to mock data if the server is unreachable.
+  useEffect(() => {
+    staffApi.getAll()
+      .then(data => setStaff(data))
+      .catch(() => { /* backend not running — mock data stays */ });
+  }, []);
   const [events, setEvents] = useState(initialEvents);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [daySchedules, setDaySchedules] = useState({});
@@ -48,6 +52,8 @@ export function useSchedule() {
     setStaff(prev =>
       prev.map(s => s.id === staffId ? { ...s, deskStart, deskEnd } : s)
     );
+    // Persist to API — add more fields to the body as your schema grows
+    staffApi.update(staffId, { deskStart, deskEnd }).catch(() => {});
   }
 
   function runAutoAssignDesks() {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { schedulesApi } from '../utils/api';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -638,8 +639,9 @@ export default function DailySchedulePage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
   const currentDow = schedule.currentDate.getDay();
+  const [localEvents, setLocalEvents] = useState(null); // non-null when a DB schedule is loaded
 
-  const todayEvents = schedule.events.filter(evt => {
+  const todayEvents = localEvents ?? schedule.events.filter(evt => {
     if (!evt.days?.length) return true;
     return evt.days.some(dateStr => {
       if (dateStr === currentDateStr) return true;
@@ -673,16 +675,27 @@ export default function DailySchedulePage() {
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
 
   useEffect(() => {
-    const saved = schedule.getDaySchedule(schedule.currentDate.toDateString());
-    if (saved) {
-      setOrderedStaff(saved);
-    } else {
-      const ids = getScheduledIds(schedule.currentDate);
-      setOrderedStaff(schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) })));
-    }
-    setFinalized(false);
-  // schedule.staff intentionally included: if desks are auto-assigned while on this
-  // date, re-derive from the updated staff (saved schedules still take priority).
+    const dateStr = schedule.currentDate.toISOString().split('T')[0];
+
+    schedulesApi.getDay(dateStr)
+      .then(saved => {
+        // Finalized schedule found in DB — restore it exactly
+        setOrderedStaff(saved.staff);
+        setLocalEvents(saved.events);
+        setFinalized(true);
+      })
+      .catch(() => {
+        // 404 or backend unreachable — fall back to in-memory / weekly template
+        setLocalEvents(null);
+        const inMemory = schedule.getDaySchedule(schedule.currentDate.toDateString());
+        if (inMemory) {
+          setOrderedStaff(inMemory);
+        } else {
+          const ids = getScheduledIds(schedule.currentDate);
+          setOrderedStaff(schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) })));
+        }
+        setFinalized(false);
+      });
   }, [schedule.currentDate.toDateString(), schedule.staff]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handlePrevDay() {
@@ -951,12 +964,22 @@ export default function DailySchedulePage() {
 
   const trashActive = trashHtmlOver;
 
+  async function handleFinalize() {
+    const date = schedule.currentDate.toISOString().split('T')[0];
+    try {
+      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents });
+    } catch (err) {
+      console.warn('Schedule save failed — finalized locally only:', err.message);
+    }
+    setFinalized(true);
+  }
+
   return (
     <div>
       <StatsHeader
         staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
         onPrev={handlePrevDay} onNext={handleNextDay}
-        finalized={finalized} onFinalize={() => setFinalized(true)} onUnfinalize={() => setFinalized(false)}
+        finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => setFinalized(false)}
       />
       <AlertsBar staff={orderedStaff.filter(s => s.scheduled)} events={todayEvents} />
 

@@ -8,9 +8,10 @@ const TYPE_CONFIG = {
   new_event:    { label: 'Event',        dot: '#6a9fd8', bg: 'rgba(106, 159, 216, 0.12)', border: 'rgba(106, 159, 216, 0.3)' },
   alert:        { label: 'Alert',        dot: '#c84040', bg: 'rgba(200, 64, 64, 0.12)',   border: 'rgba(200, 64, 64, 0.3)'   },
   approval:     { label: 'Approval',     dot: '#4a7c5e', bg: 'rgba(74, 124, 94, 0.12)',   border: 'rgba(74, 124, 94, 0.3)'   },
+  availability: { label: 'Availability', dot: '#7ab0d8', bg: 'rgba(122, 176, 216, 0.12)', border: 'rgba(122, 176, 216, 0.3)' },
 };
 
-const FILTERS = ['All', 'Coverage', 'Shift Change', 'Event', 'Alert', 'Approval'];
+const FILTERS = ['All', 'Coverage', 'Shift Change', 'Event', 'Alert', 'Approval', 'Availability'];
 
 function formatRelativeTime(date) {
   const diffMs = Date.now() - date.getTime();
