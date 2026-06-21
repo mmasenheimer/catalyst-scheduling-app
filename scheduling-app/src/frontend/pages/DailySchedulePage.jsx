@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { getAvailability } from '../../data/mockAvailability';
 import { schedulesApi } from '../utils/api';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
@@ -16,11 +17,46 @@ function getScheduledIds(date) {
   return tpl ? new Set(tpl.staff.map(s => s.id)) : new Set();
 }
 
+function normalizeStaff(s) {
+  const shifts = s.shifts ?? (s.scheduled && s.shiftStart != null
+    ? [{ id: `s${s.id}-0`, start: s.shiftStart, end: s.shiftEnd }]
+    : []);
+  const deskShifts = s.deskShifts ?? (s.scheduled && s.deskStart != null
+    ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }]
+    : []);
+  return {
+    ...s,
+    shifts,
+    deskShifts,
+    scheduled: shifts.length > 0,
+    shiftStart: s.shiftStart ?? shifts[0]?.start,
+    shiftEnd:   s.shiftEnd   ?? shifts[0]?.end,
+    deskStart:  s.deskStart  ?? deskShifts[0]?.start ?? null,
+    deskEnd:    s.deskEnd    ?? deskShifts[0]?.end   ?? null,
+  };
+}
+
+function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END) {
+  let start = from;
+  while (start + duration <= to) {
+    if (!bars.some(b => start < b.end && start + duration > b.start)) return start;
+    start = snapHalf(start + 0.5);
+  }
+  return null;
+}
+
+function isShiftOutsideAvailability(start, end, blocks) {
+  if (blocks.length === 0) return true;
+  const availMin = Math.min(...blocks.map(b => b.start));
+  const availMax = Math.max(...blocks.map(b => b.end));
+  return start < availMin || end > availMax;
+}
+
 // ── Stats header ───────────────────────────────────────────────────────────────
 
 function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize }) {
-  const scheduled  = staff.filter(s => s.scheduled);
-  const deskFilled = scheduled.filter(s => s.deskStart !== null).length;
+  const scheduled  = staff.filter(s => s.shifts?.length > 0);
+  const deskFilled = scheduled.filter(s => s.deskShifts?.length > 0).length;
   const dateLabel  = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   return (
     <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
@@ -88,6 +124,8 @@ function ScheduleGrid({
   onShiftBarDragStart, onDeskBarDragStart, onEventBarDragStart, onBarDragEnd,
   onBarDragOver, onBarDrop,
   onBarContextMenu,
+  getPersonAvailability,
+  previewInfo,
 }) {
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
@@ -125,10 +163,6 @@ function ScheduleGrid({
       {/* Staff rows */}
       {staff.map((person, i) => {
         const isRowDragging = dragRowIndex === i;
-        const isBarActive   = activeBar?.type === 'shift' && activeBar?.staffIndex === i;
-        const isDeskActive  = activeBar?.type === 'desk'  && activeBar?.staffIndex === i;
-        const isShiftDragging = draggingBarInfo?.type === 'shift' && draggingBarInfo?.staffIndex === i;
-        const isDeskDragging  = draggingBarInfo?.type === 'desk'  && draggingBarInfo?.staffIndex === i;
 
         return (
           <div
@@ -145,7 +179,7 @@ function ScheduleGrid({
             style={{
               borderColor: 'var(--color-border)',
               minWidth: 972,
-              opacity: isRowDragging ? 0.35 : (person.scheduled ? 1 : 0.5),
+              opacity: isRowDragging ? 0.35 : (person.shifts.length > 0 ? 1 : 0.5),
               transition: 'opacity 0.15s',
               cursor: finalized ? 'default' : 'grab',
             }}
@@ -162,9 +196,11 @@ function ScheduleGrid({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{person.name}</div>
-                {person.scheduled ? (
+                {person.shifts.length > 0 ? (
                   <div className="text-xs truncate mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-                    {formatTime(person.shiftStart)} – {formatTime(person.shiftEnd)}
+                    {person.shifts.length === 1
+                      ? `${formatTime(person.shifts[0].start)} – ${formatTime(person.shifts[0].end)}`
+                      : `${person.shifts.length} shifts`}
                   </div>
                 ) : (
                   <div className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>Unscheduled</div>
@@ -183,7 +219,7 @@ function ScheduleGrid({
                 if (!hasToolbar && !hasBar) return;
                 e.preventDefault();
                 e.stopPropagation();
-                if (hasToolbar) onTimelineDragOver(i);
+                if (hasToolbar) onTimelineDragOver(e, i);
                 if (hasBar)     onBarDragOver(e, i);
               }}
               onDrop={e => {
@@ -196,20 +232,60 @@ function ScheduleGrid({
                 if (hasBar)     onBarDrop(e, i);
               }}
             >
+              {/* Availability background — sits behind all bars */}
+              {getPersonAvailability?.(person.id).map((block, bi) => (
+                <div
+                  key={`avail-${bi}`}
+                  style={{
+                    position: 'absolute',
+                    top: 0, bottom: 0,
+                    ...posStyle(block.start, block.end),
+                    background: 'rgba(96, 165, 250, 0.06)',
+                    border: '1px solid rgba(96, 165, 250, 0.15)',
+                    borderRadius: 4,
+                    zIndex: 0,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
               {/* Toolbar-chip drop highlight */}
               {activeDragType && hoverRow === i && (
                 <div className="absolute inset-0 pointer-events-none rounded-r-lg"
                   style={{ ...toolbarHighlight, border: '1px dashed', zIndex: 20 }} />
               )}
 
-              {person.scheduled ? (
-                <>
-                  {/* Shift bar — HTML5 draggable for move/trash, mouse events for resize */}
+              {/* Placement preview ghost (shift=green, desk=yellow, event=purple, invalid=red) */}
+              {(activeDragType === 'shift' || activeDragType === 'desk' || activeDragType === 'event') &&
+                previewInfo?.staffIndex === i && previewInfo.start !== null && (
+                <div
+                  className="absolute pointer-events-none rounded"
+                  style={{
+                    top: 8, bottom: 8,
+                    left:  `${((previewInfo.start - HOURS_START) / TOTAL_HOURS) * 100}%`,
+                    width: `${((previewInfo.end - previewInfo.start) / TOTAL_HOURS) * 100}%`,
+                    background: previewInfo.valid
+                      ? (activeDragType === 'shift' ? 'rgba(74,124,94,0.35)' : activeDragType === 'desk' ? 'rgba(200,148,56,0.35)' : 'rgba(59,42,110,0.5)')
+                      : 'rgba(200,64,64,0.25)',
+                    border: `2px dashed ${previewInfo.valid
+                      ? (activeDragType === 'shift' ? 'var(--color-green)' : activeDragType === 'desk' ? 'var(--color-yellow)' : '#7c5cbf')
+                      : 'var(--color-red)'}`,
+                    zIndex: 15,
+                  }}
+                />
+              )}
+
+              {/* Shift bars */}
+              {person.shifts.map((shift, si) => {
+                const isBarActive     = activeBar?.type === 'shift' && activeBar?.staffIndex === i && activeBar?.shiftIndex === si;
+                const isShiftDragging = draggingBarInfo?.type === 'shift' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.shiftIndex === si;
+                return (
                   <div
+                    key={shift.id}
                     draggable={!finalized}
                     className="absolute top-3 h-8 rounded overflow-hidden select-none"
                     style={{
-                      ...posStyle(person.shiftStart, person.shiftEnd),
+                      ...posStyle(shift.start, shift.end),
                       background: 'var(--color-green)',
                       opacity: isShiftDragging ? 0.3 : (isBarActive ? 0.85 : 0.6),
                       cursor: finalized ? 'default' : 'grab',
@@ -217,107 +293,112 @@ function ScheduleGrid({
                       transition: isBarActive || isShiftDragging ? 'none' : 'box-shadow 0.1s',
                       zIndex: isBarActive ? 10 : 1,
                     }}
-                    onDragStart={e => { e.stopPropagation(); !finalized && onShiftBarDragStart(e, i); }}
+                    onDragStart={e => { e.stopPropagation(); !finalized && onShiftBarDragStart(e, i, si); }}
                     onDragEnd={onBarDragEnd}
-                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'shift', staffIndex: i }); }}
+                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'shift', staffIndex: i, shiftIndex: si }); }}
                   >
-                    {/* Left resize handle */}
                     {!finalized && (
                       <div
                         style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.18)', zIndex: 2 }}
-                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onBarMouseDown(e, i, 'left'); }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onBarMouseDown(e, i, si, 'left'); }}
                       />
                     )}
-                    {/* Right resize handle */}
                     {!finalized && (
                       <div
                         style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.18)', zIndex: 2 }}
-                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onBarMouseDown(e, i, 'right'); }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onBarMouseDown(e, i, si, 'right'); }}
                       />
                     )}
                   </div>
+                );
+              })}
 
-                  {/* Desk bar — HTML5 draggable for move/trash, mouse events for resize */}
-                  {person.deskStart !== null && (
-                    <div
-                      draggable={!finalized}
-                      className="absolute top-3 h-8 rounded overflow-hidden select-none"
-                      style={{
-                        ...posStyle(person.deskStart, person.deskEnd),
-                        background: 'var(--color-yellow)',
-                        opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
-                        cursor: finalized ? 'default' : 'grab',
-                        boxShadow: isDeskActive ? '0 0 0 2px #e0b050' : 'none',
-                        transition: isDeskActive || isDeskDragging ? 'none' : 'box-shadow 0.1s',
-                        zIndex: isDeskActive ? 10 : 2,
-                      }}
-                      onDragStart={e => { e.stopPropagation(); !finalized && onDeskBarDragStart(e, i); }}
-                      onDragEnd={onBarDragEnd}
-                      onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'desk', staffIndex: i }); }}
-                    >
-                      {!finalized && (
-                        <div
-                          style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
-                          onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onDeskBarMouseDown(e, i, 'left'); }}
-                        />
-                      )}
-                      <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                        style={{ fontSize: 9, color: 'white', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', paddingLeft: 10, paddingRight: 10 }}>
-                        Desk
-                      </span>
-                      {!finalized && (
-                        <div
-                          style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
-                          onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onDeskBarMouseDown(e, i, 'right'); }}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Event bars — HTML5 draggable for move/trash, mouse events for resize */}
-                  {events.filter(e => e.assignedStaff.includes(person.id)).map(evt => {
-                    const isEvtActive   = activeBar?.type === 'event' && activeBar?.eventId === evt.id;
-                    const isEvtDragging = draggingBarInfo?.type === 'event' && draggingBarInfo?.eventId === evt.id;
-                    return (
+              {/* Desk bars */}
+              {person.deskShifts.map((desk, di) => {
+                const isDeskActive    = activeBar?.type === 'desk' && activeBar?.staffIndex === i && activeBar?.deskIndex === di;
+                const isDeskDragging  = draggingBarInfo?.type === 'desk' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.deskIndex === di;
+                return (
+                  <div
+                    key={desk.id}
+                    draggable={!finalized}
+                    className="absolute top-3 h-8 rounded overflow-hidden select-none"
+                    style={{
+                      ...posStyle(desk.start, desk.end),
+                      background: 'var(--color-yellow)',
+                      opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
+                      cursor: finalized ? 'default' : 'grab',
+                      boxShadow: isDeskActive ? '0 0 0 2px #e0b050' : 'none',
+                      transition: isDeskActive || isDeskDragging ? 'none' : 'box-shadow 0.1s',
+                      zIndex: isDeskActive ? 10 : 2,
+                    }}
+                    onDragStart={e => { e.stopPropagation(); !finalized && onDeskBarDragStart(e, i, di); }}
+                    onDragEnd={onBarDragEnd}
+                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'desk', staffIndex: i, deskIndex: di }); }}
+                  >
+                    {!finalized && (
                       <div
-                        key={evt.id}
-                        draggable={!finalized}
-                        className="absolute top-3 h-8 rounded overflow-hidden select-none"
-                        style={{
-                          ...posStyle(evt.start, evt.end),
-                          background: '#3b2a6e',
-                          cursor: finalized ? 'default' : 'grab',
-                          zIndex: isEvtActive ? 10 : 3,
-                          boxShadow: isEvtActive ? '0 0 0 2px #7c5cbf' : 'none',
-                          opacity: isEvtDragging ? 0.3 : (isEvtActive ? 1 : 0.9),
-                          transition: isEvtActive || isEvtDragging ? 'none' : 'box-shadow 0.1s',
-                        }}
-                        onDragStart={e => { e.stopPropagation(); !finalized && onEventBarDragStart(e, evt.id, person.id); }}
-                        onDragEnd={onBarDragEnd}
-                        onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'event', eventId: evt.id, staffId: person.id }); }}
-                        title={evt.name}
-                      >
-                        {!finalized && (
-                          <div
-                            style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
-                            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onEventBarMouseDown(e, evt.id, 'left'); }}
-                          />
-                        )}
-                        <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                          style={{ fontSize: 10, paddingLeft: 10, paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                          {evt.name}
-                        </span>
-                        {!finalized && (
-                          <div
-                            style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
-                            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onEventBarMouseDown(e, evt.id, 'right'); }}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              ) : (
+                        style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onDeskBarMouseDown(e, i, di, 'left'); }}
+                      />
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      style={{ fontSize: 9, color: 'white', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', paddingLeft: 10, paddingRight: 10 }}>
+                      Desk
+                    </span>
+                    {!finalized && (
+                      <div
+                        style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onDeskBarMouseDown(e, i, di, 'right'); }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Event bars — HTML5 draggable for move/trash, mouse events for resize */}
+              {events.filter(e => e.assignedStaff.includes(person.id)).map(evt => {
+                const isEvtActive   = activeBar?.type === 'event' && activeBar?.eventId === evt.id;
+                const isEvtDragging = draggingBarInfo?.type === 'event' && draggingBarInfo?.eventId === evt.id;
+                return (
+                  <div
+                    key={evt.id}
+                    draggable={!finalized}
+                    className="absolute top-3 h-8 rounded overflow-hidden select-none"
+                    style={{
+                      ...posStyle(evt.start, evt.end),
+                      background: '#3b2a6e',
+                      cursor: finalized ? 'default' : 'grab',
+                      zIndex: isEvtActive ? 10 : 3,
+                      boxShadow: isEvtActive ? '0 0 0 2px #7c5cbf' : 'none',
+                      opacity: isEvtDragging ? 0.3 : (isEvtActive ? 1 : 0.9),
+                      transition: isEvtActive || isEvtDragging ? 'none' : 'box-shadow 0.1s',
+                    }}
+                    onDragStart={e => { e.stopPropagation(); !finalized && onEventBarDragStart(e, evt.id, person.id); }}
+                    onDragEnd={onBarDragEnd}
+                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'event', eventId: evt.id, staffId: person.id }); }}
+                    title={evt.name}
+                  >
+                    {!finalized && (
+                      <div
+                        style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onEventBarMouseDown(e, evt.id, 'left'); }}
+                      />
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      style={{ fontSize: 10, paddingLeft: 10, paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      {evt.name}
+                    </span>
+                    {!finalized && (
+                      <div
+                        style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onEventBarMouseDown(e, evt.id, 'right'); }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              {person.shifts.length === 0 && (
                 <div className="absolute inset-0 flex items-center" style={{ paddingLeft: 14 }}>
                   <span className="text-xs italic" style={{ color: 'var(--color-muted)' }}>
                     No shift — drag a shift here to schedule
@@ -452,12 +533,12 @@ function TimeSelect({ value, onChange, min, max }) {
 function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     if (target.type === 'shift') {
-      const p = orderedStaff[target.staffIndex];
-      return { shiftStart: p.shiftStart, shiftEnd: p.shiftEnd };
+      const shift = orderedStaff[target.staffIndex].shifts[target.shiftIndex];
+      return { shiftStart: shift.start, shiftEnd: shift.end };
     }
     if (target.type === 'desk') {
-      const p = orderedStaff[target.staffIndex];
-      return { deskStart: p.deskStart, deskEnd: p.deskEnd };
+      const desk = orderedStaff[target.staffIndex].deskShifts[target.deskIndex];
+      return { deskStart: desk.start, deskEnd: desk.end };
     }
     const evt = allEvents.find(e => e.id === target.eventId);
     return { name: evt?.name || '', type: evt?.type || 'program', start: evt?.start || 9, end: evt?.end || 10, staffNeeded: evt?.staffNeeded || 1, notes: evt?.notes || '' };
@@ -471,7 +552,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
 
   const title = target.type === 'shift' ? 'Edit Shift' : target.type === 'desk' ? 'Edit Desk Shift' : 'Edit Event';
   const staffName = (target.type === 'shift' || target.type === 'desk') ? orderedStaff[target.staffIndex]?.name : null;
-  const shiftBounds = target.type === 'desk' ? { min: orderedStaff[target.staffIndex]?.shiftStart, max: orderedStaff[target.staffIndex]?.shiftEnd } : null;
+  const shiftBounds = null;
 
   const fieldLabel = { display: 'block', fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 4 };
   const textInput = {
@@ -576,6 +657,54 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   );
 }
 
+// ── Availability warning modal ─────────────────────────────────────────────────
+
+function AvailWarningModal({ staffName, onConfirm, onCancel }) {
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onCancel(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm mx-4 rounded-xl border p-5"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <span style={{ fontSize: 22, lineHeight: 1.2 }}>⚠️</span>
+          <div>
+            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Outside Availability</h3>
+            <p className="text-sm mt-1.5 leading-snug" style={{ color: 'var(--color-text-dim)' }}>
+              This shift falls outside <strong style={{ color: 'var(--color-text)' }}>{staffName}</strong>'s submitted availability for today.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+          >
+            Schedule Anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Events panel ───────────────────────────────────────────────────────────────
 
 function EventsPanel({ events, staff, onAddEvent }) {
@@ -661,7 +790,7 @@ export default function DailySchedulePage() {
 
   const [orderedStaff,    setOrderedStaff]    = useState(() => {
     const ids = getScheduledIds(schedule.currentDate);
-    return schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) }));
+    return schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }));
   });
   const [dragRowIndex,    setDragRowIndex]     = useState(null);
   const [activeBar,       setActiveBar]        = useState(null);   // resize-only mouse drag
@@ -673,6 +802,11 @@ export default function DailySchedulePage() {
   const [draggingBarInfo, setDraggingBarInfo]  = useState(null);   // bar HTML5 drag
   const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
+  const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
+  const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
+
+  const orderedStaffRef = useRef(orderedStaff);
+  useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
 
   useEffect(() => {
     const dateStr = schedule.currentDate.toISOString().split('T')[0];
@@ -680,7 +814,7 @@ export default function DailySchedulePage() {
     schedulesApi.getDay(dateStr)
       .then(saved => {
         // Finalized schedule found in DB — restore it exactly
-        setOrderedStaff(saved.staff);
+        setOrderedStaff(saved.staff.map(normalizeStaff));
         setLocalEvents(saved.events);
         setFinalized(true);
       })
@@ -692,7 +826,7 @@ export default function DailySchedulePage() {
           setOrderedStaff(inMemory);
         } else {
           const ids = getScheduledIds(schedule.currentDate);
-          setOrderedStaff(schedule.staff.map(s => ({ ...s, scheduled: ids.has(s.id) })));
+          setOrderedStaff(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) })));
         }
         setFinalized(false);
       });
@@ -712,6 +846,40 @@ export default function DailySchedulePage() {
     setActiveDragType(null);
     setDraggingEventId(null);
     setHoverRow(null);
+    setPreviewInfo(null);
+  }
+
+  // ── Toolbar chip drag-over: track cursor to show placement preview ───────────
+  function handleTimelineDragOver(e, rowIndex) {
+    setHoverRow(rowIndex);
+    if (activeDragType !== 'shift' && activeDragType !== 'desk') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
+    const person = orderedStaff[rowIndex];
+
+    if (activeDragType === 'shift') {
+      const duration = 4;
+      const start = snapHalf(clamp(rawHours - duration / 2, HOURS_START, HOURS_END - duration));
+      const end = start + duration;
+      const valid = !person.shifts.some(s => start < s.end && end > s.start);
+      setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
+    } else if (activeDragType === 'desk') {
+      const duration = 1;
+      const host = person.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+      if (!host) {
+        setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+        return;
+      }
+      const start = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+      const end = start + duration;
+      const valid = !person.deskShifts.some(d => start < d.end && end > d.start);
+      setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
+    } else if (activeDragType === 'event' && draggingEventId !== null) {
+      const evt = todayEvents.find(ev => ev.id === draggingEventId);
+      if (!evt) return;
+      const alreadyAssigned = evt.assignedStaff.includes(person.id);
+      setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid: !alreadyAssigned });
+    }
   }
 
   // ── Row drag (reorder) ───────────────────────────────────────────────────────
@@ -732,14 +900,16 @@ export default function DailySchedulePage() {
   function handleRowDrop() { setDragRowIndex(null); }
 
   // ── Shift bar resize (mouse events only) ─────────────────────────────────────
-  function handleBarMouseDown(e, staffIndex, mode) {
+  function handleBarMouseDown(e, staffIndex, shiftIndex, mode) {
     const timelineEl = e.currentTarget.closest('[data-timeline]');
     const { width: timelineWidth } = timelineEl.getBoundingClientRect();
     const startX       = e.clientX;
-    const initialStart = orderedStaff[staffIndex].shiftStart;
-    const initialEnd   = orderedStaff[staffIndex].shiftEnd;
+    const shift0       = orderedStaff[staffIndex].shifts[shiftIndex];
+    const initialStart = shift0.start;
+    const initialEnd   = shift0.end;
+    const otherShifts  = orderedStaff[staffIndex].shifts.filter((_, j) => j !== shiftIndex);
 
-    setActiveBar({ type: 'shift', staffIndex, mode });
+    setActiveBar({ type: 'shift', staffIndex, shiftIndex, mode });
     document.body.style.cursor     = 'ew-resize';
     document.body.style.userSelect = 'none';
 
@@ -747,9 +917,11 @@ export default function DailySchedulePage() {
       const delta = ((me.clientX - startX) / timelineWidth) * TOTAL_HOURS;
       setOrderedStaff(prev => {
         const next = [...prev];
-        const p = { ...next[staffIndex] };
-        if (mode === 'left')  p.shiftStart = snapHalf(clamp(initialStart + delta, HOURS_START, initialEnd - 0.5));
-        else                   p.shiftEnd   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, HOURS_END));
+        const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
+        const s = { ...p.shifts[shiftIndex] };
+        if (mode === 'left')  s.start = snapHalf(clamp(initialStart + delta, HOURS_START, initialEnd - 0.5));
+        else                   s.end   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, HOURS_END));
+        if (!otherShifts.some(os => s.start < os.end && s.end > os.start)) p.shifts[shiftIndex] = s;
         next[staffIndex] = p;
         return next;
       });
@@ -759,21 +931,47 @@ export default function DailySchedulePage() {
       document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+
+      const current = orderedStaffRef.current[staffIndex];
+      if (current) {
+        const finalShift = current.shifts[shiftIndex];
+        const blocks = getAvailability(current.id, currentDow);
+        if (finalShift && isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
+          setAvailWarning({
+            staffName: current.name,
+            onConfirm: () => setAvailWarning(null),
+            onCancel: () => {
+              setOrderedStaff(prev => {
+                const next = [...prev];
+                const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
+                p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: initialStart, end: initialEnd };
+                next[staffIndex] = p;
+                return next;
+              });
+              setAvailWarning(null);
+            },
+          });
+        }
+      }
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
 
   // ── Desk bar resize (mouse events only) ──────────────────────────────────────
-  function handleDeskBarMouseDown(e, staffIndex, mode) {
+  function handleDeskBarMouseDown(e, staffIndex, deskIndex, mode) {
     const timelineEl = e.currentTarget.closest('[data-timeline]');
     const { width: timelineWidth } = timelineEl.getBoundingClientRect();
     const startX       = e.clientX;
-    const person0      = orderedStaff[staffIndex];
-    const initialStart = person0.deskStart;
-    const initialEnd   = person0.deskEnd;
+    const desk0        = orderedStaff[staffIndex].deskShifts[deskIndex];
+    const initialStart = desk0.start;
+    const initialEnd   = desk0.end;
+    const otherDesks   = orderedStaff[staffIndex].deskShifts.filter((_, j) => j !== deskIndex);
+    const host         = orderedStaff[staffIndex].shifts.find(sh => sh.start <= desk0.start && sh.end >= desk0.end);
+    const shiftLo      = host?.start ?? HOURS_START;
+    const shiftHi      = host?.end   ?? HOURS_END;
 
-    setActiveBar({ type: 'desk', staffIndex, mode });
+    setActiveBar({ type: 'desk', staffIndex, deskIndex, mode });
     document.body.style.cursor     = 'ew-resize';
     document.body.style.userSelect = 'none';
 
@@ -781,9 +979,11 @@ export default function DailySchedulePage() {
       const delta = ((me.clientX - startX) / timelineWidth) * TOTAL_HOURS;
       setOrderedStaff(prev => {
         const next = [...prev];
-        const p = { ...next[staffIndex] };
-        if (mode === 'left')  p.deskStart = snapHalf(clamp(initialStart + delta, person0.shiftStart, initialEnd - 0.5));
-        else                   p.deskEnd   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, person0.shiftEnd));
+        const p = { ...next[staffIndex], deskShifts: [...next[staffIndex].deskShifts] };
+        const d = { ...p.deskShifts[deskIndex] };
+        if (mode === 'left')  d.start = snapHalf(clamp(initialStart + delta, shiftLo, initialEnd - 0.5));
+        else                   d.end   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, shiftHi));
+        if (!otherDesks.some(od => d.start < od.end && d.end > od.start)) p.deskShifts[deskIndex] = d;
         next[staffIndex] = p;
         return next;
       });
@@ -828,16 +1028,16 @@ export default function DailySchedulePage() {
   }
 
   // ── Bar HTML5 drag — move + trash ────────────────────────────────────────────
-  function handleShiftBarDragStart(e, staffIndex) {
+  function handleShiftBarDragStart(e, staffIndex, shiftIndex) {
     e.dataTransfer.effectAllowed = 'move';
-    const p = orderedStaff[staffIndex];
-    setDraggingBarInfo({ type: 'shift', staffIndex, duration: p.shiftEnd - p.shiftStart });
+    const shift = orderedStaff[staffIndex].shifts[shiftIndex];
+    setDraggingBarInfo({ type: 'shift', staffIndex, shiftIndex, duration: shift.end - shift.start, originalStart: shift.start, originalEnd: shift.end });
   }
 
-  function handleDeskBarDragStart(e, staffIndex) {
+  function handleDeskBarDragStart(e, staffIndex, deskIndex) {
     e.dataTransfer.effectAllowed = 'move';
-    const p = orderedStaff[staffIndex];
-    setDraggingBarInfo({ type: 'desk', staffIndex, duration: p.deskEnd - p.deskStart, shiftStart: p.shiftStart, shiftEnd: p.shiftEnd });
+    const desk = orderedStaff[staffIndex].deskShifts[deskIndex];
+    setDraggingBarInfo({ type: 'desk', staffIndex, deskIndex, duration: desk.end - desk.start });
   }
 
   function handleEventBarDragStart(e, eventId, staffId) {
@@ -847,6 +1047,32 @@ export default function DailySchedulePage() {
   }
 
   function handleBarDragEnd() {
+    if (draggingBarInfo?.type === 'shift') {
+      const { staffIndex, shiftIndex, originalStart, originalEnd } = draggingBarInfo;
+      const current = orderedStaffRef.current[staffIndex];
+      if (current) {
+        const finalShift = current.shifts[shiftIndex];
+        const blocks = getAvailability(current.id, currentDow);
+        if (finalShift && isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
+          setDraggingBarInfo(null);
+          setAvailWarning({
+            staffName: current.name,
+            onConfirm: () => setAvailWarning(null),
+            onCancel: () => {
+              setOrderedStaff(prev => {
+                const next = [...prev];
+                const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
+                p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: originalStart, end: originalEnd };
+                next[staffIndex] = p;
+                return next;
+              });
+              setAvailWarning(null);
+            },
+          });
+          return;
+        }
+      }
+    }
     setDraggingBarInfo(null);
   }
 
@@ -861,13 +1087,18 @@ export default function DailySchedulePage() {
     if (target.type === 'shift') {
       setOrderedStaff(prev => {
         const next = [...prev];
-        next[target.staffIndex] = { ...next[target.staffIndex], scheduled: false };
+        const p = { ...next[target.staffIndex] };
+        p.shifts = p.shifts.filter((_, j) => j !== target.shiftIndex);
+        p.scheduled = p.shifts.length > 0;
+        next[target.staffIndex] = p;
         return next;
       });
     } else if (target.type === 'desk') {
       setOrderedStaff(prev => {
         const next = [...prev];
-        next[target.staffIndex] = { ...next[target.staffIndex], deskStart: null, deskEnd: null };
+        const p = { ...next[target.staffIndex] };
+        p.deskShifts = p.deskShifts.filter((_, j) => j !== target.deskIndex);
+        next[target.staffIndex] = p;
         return next;
       });
     } else if (target.type === 'event') {
@@ -886,13 +1117,17 @@ export default function DailySchedulePage() {
     if (t.type === 'shift') {
       setOrderedStaff(prev => {
         const next = [...prev];
-        next[t.staffIndex] = { ...next[t.staffIndex], shiftStart: data.shiftStart, shiftEnd: data.shiftEnd };
+        const p = { ...next[t.staffIndex], shifts: [...next[t.staffIndex].shifts] };
+        p.shifts[t.shiftIndex] = { ...p.shifts[t.shiftIndex], start: data.shiftStart, end: data.shiftEnd };
+        next[t.staffIndex] = p;
         return next;
       });
     } else if (t.type === 'desk') {
       setOrderedStaff(prev => {
         const next = [...prev];
-        next[t.staffIndex] = { ...next[t.staffIndex], deskStart: data.deskStart, deskEnd: data.deskEnd };
+        const p = { ...next[t.staffIndex], deskShifts: [...next[t.staffIndex].deskShifts] };
+        p.deskShifts[t.deskIndex] = { ...p.deskShifts[t.deskIndex], start: data.deskStart, end: data.deskEnd };
+        next[t.staffIndex] = p;
         return next;
       });
     } else if (t.type === 'event') {
@@ -905,32 +1140,35 @@ export default function DailySchedulePage() {
     if (!draggingBarInfo) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
-    const { type, staffIndex, eventId, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, duration } = draggingBarInfo;
 
     if (type === 'shift' && staffIndex === rowIndex) {
       const newStart = snapHalf(clamp(rawHours - duration / 2, HOURS_START, HOURS_END - duration));
       setOrderedStaff(prev => {
         const next = [...prev];
-        const p = { ...next[staffIndex] };
-        p.shiftStart = newStart;
-        p.shiftEnd   = newStart + duration;
+        const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
+        const otherShifts = p.shifts.filter((_, j) => j !== shiftIndex);
+        if (!otherShifts.some(os => newStart < os.end && newStart + duration > os.start)) {
+          p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: newStart, end: newStart + duration };
+        }
         next[staffIndex] = p;
         return next;
       });
     } else if (type === 'desk' && staffIndex === rowIndex) {
-      const { shiftStart, shiftEnd } = draggingBarInfo;
-      const newStart = snapHalf(clamp(rawHours - duration / 2, shiftStart, shiftEnd - duration));
       setOrderedStaff(prev => {
         const next = [...prev];
-        const p = { ...next[staffIndex] };
-        p.deskStart = newStart;
-        p.deskEnd   = newStart + duration;
+        const p = { ...next[staffIndex], deskShifts: [...next[staffIndex].deskShifts] };
+        const host = p.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+        if (!host) return prev;
+        const newStart = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+        const otherDesks = p.deskShifts.filter((_, j) => j !== deskIndex);
+        if (!otherDesks.some(od => newStart < od.end && newStart + duration > od.start)) {
+          p.deskShifts[deskIndex] = { ...p.deskShifts[deskIndex], start: newStart, end: newStart + duration };
+        }
         next[staffIndex] = p;
         return next;
       });
     }
-    // Event bars: no live repositioning — drag is only used to drop to trash (unassign).
-    // Use the resize handles on the bar edges to change event timing instead.
   }
 
   function handleBarDrop() { /* position already settled via dragover */ }
@@ -938,24 +1176,58 @@ export default function DailySchedulePage() {
   // ── Timeline drop (toolbar chips) ────────────────────────────────────────────
   function handleTimelineDrop(staffIndex) {
     if (activeDragType === 'shift') {
-      setOrderedStaff(prev => {
-        const next = [...prev];
-        const p = { ...next[staffIndex] };
-        if (p.scheduled) return prev;
-        p.scheduled = true;
-        next[staffIndex] = p;
-        return next;
-      });
+      const p = orderedStaff[staffIndex];
+      // Use preview cursor position if valid; fall back to first free slot
+      let newStart, newEnd;
+      if (previewInfo?.staffIndex === staffIndex && previewInfo.valid) {
+        newStart = previewInfo.start;
+        newEnd   = previewInfo.end;
+      } else {
+        newStart = firstFreeSlot(p.shifts, 4);
+        if (newStart === null) { endDrag(); return; }
+        newEnd = newStart + 4;
+      }
+      const doPlace = () => {
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const pp = { ...next[staffIndex] };
+          pp.scheduled = true;
+          pp.shifts = [...pp.shifts, { id: `s${Date.now()}`, start: newStart, end: newEnd }];
+          next[staffIndex] = pp;
+          return next;
+        });
+      };
+      const blocks = getAvailability(p.id, currentDow);
+      if (isShiftOutsideAvailability(newStart, newEnd, blocks)) {
+        endDrag();
+        setAvailWarning({
+          staffName: p.name,
+          onConfirm: () => { doPlace(); setAvailWarning(null); },
+          onCancel: () => setAvailWarning(null),
+        });
+        return;
+      }
+      doPlace();
     } else if (activeDragType === 'desk') {
-      setOrderedStaff(prev => {
-        const next = [...prev];
-        const p = { ...next[staffIndex] };
-        if (!p.scheduled || p.deskStart !== null) return prev;
-        p.deskStart = p.shiftStart;
-        p.deskEnd   = Math.min(p.shiftStart + 2, p.shiftEnd);
-        next[staffIndex] = p;
-        return next;
-      });
+      const p = orderedStaff[staffIndex];
+      let newStart = null;
+      if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
+        newStart = previewInfo.start;
+      } else {
+        for (const shift of p.shifts) {
+          const slot = firstFreeSlot(p.deskShifts, 1, shift.start, shift.end);
+          if (slot !== null) { newStart = slot; break; }
+        }
+      }
+      if (newStart !== null) {
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const pp = { ...next[staffIndex] };
+          pp.deskShifts = [...pp.deskShifts, { id: `d${Date.now()}`, start: newStart, end: newStart + 1 }];
+          next[staffIndex] = pp;
+          return next;
+        });
+      }
     } else if (activeDragType === 'event' && draggingEventId !== null) {
       schedule.assignStaffToEvent(draggingEventId, orderedStaff[staffIndex].id);
     }
@@ -981,7 +1253,7 @@ export default function DailySchedulePage() {
         onPrev={handlePrevDay} onNext={handleNextDay}
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => setFinalized(false)}
       />
-      <AlertsBar staff={orderedStaff.filter(s => s.scheduled)} events={todayEvents} />
+      <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} events={todayEvents} />
 
       {/* Toolbar */}
       {!finalized && (
@@ -1028,24 +1300,29 @@ export default function DailySchedulePage() {
               if (dragRowIndex !== null) {
                 setOrderedStaff(prev => {
                   const next = [...prev];
-                  next[dragRowIndex] = { ...next[dragRowIndex], scheduled: false };
+                  next[dragRowIndex] = { ...next[dragRowIndex], scheduled: false, shifts: [], deskShifts: [] };
                   return next;
                 });
                 setDragRowIndex(null);
               }
               // Bar drag → delete/unschedule
               if (draggingBarInfo) {
-                const { type, staffIndex, eventId } = draggingBarInfo;
+                const { type, staffIndex, shiftIndex, deskIndex, eventId } = draggingBarInfo;
                 if (type === 'shift') {
                   setOrderedStaff(prev => {
                     const next = [...prev];
-                    next[staffIndex] = { ...next[staffIndex], scheduled: false };
+                    const p = { ...next[staffIndex] };
+                    p.shifts = p.shifts.filter((_, j) => j !== shiftIndex);
+                    p.scheduled = p.shifts.length > 0;
+                    next[staffIndex] = p;
                     return next;
                   });
                 } else if (type === 'desk') {
                   setOrderedStaff(prev => {
                     const next = [...prev];
-                    next[staffIndex] = { ...next[staffIndex], deskStart: null, deskEnd: null };
+                    const p = { ...next[staffIndex] };
+                    p.deskShifts = p.deskShifts.filter((_, j) => j !== deskIndex);
+                    next[staffIndex] = p;
                     return next;
                   });
                 } else if (type === 'event') {
@@ -1077,7 +1354,8 @@ export default function DailySchedulePage() {
         onEventBarMouseDown={handleEventBarMouseDown}
         activeBar={activeBar}
         activeDragType={activeDragType} hoverRow={hoverRow}
-        onTimelineDragOver={setHoverRow} onTimelineDrop={handleTimelineDrop}
+        onTimelineDragOver={handleTimelineDragOver} onTimelineDrop={handleTimelineDrop}
+        previewInfo={previewInfo}
         draggingBarInfo={draggingBarInfo}
         onShiftBarDragStart={handleShiftBarDragStart}
         onDeskBarDragStart={handleDeskBarDragStart}
@@ -1086,6 +1364,7 @@ export default function DailySchedulePage() {
         onBarDragOver={handleBarDragOver}
         onBarDrop={handleBarDrop}
         onBarContextMenu={handleBarContextMenu}
+        getPersonAvailability={id => getAvailability(id, currentDow)}
       />
       <EventsPanel staff={orderedStaff} events={todayEvents} onAddEvent={() => navigate('/add-event')} />
 
@@ -1104,6 +1383,13 @@ export default function DailySchedulePage() {
           allEvents={schedule.events}
           onSave={handleEditSave}
           onClose={() => setEditModal(null)}
+        />
+      )}
+      {availWarning && (
+        <AvailWarningModal
+          staffName={availWarning.staffName}
+          onConfirm={availWarning.onConfirm}
+          onCancel={availWarning.onCancel}
         />
       )}
     </div>

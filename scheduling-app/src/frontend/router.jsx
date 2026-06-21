@@ -12,6 +12,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import ShiftRequestPage from './pages/ShiftRequestPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
+import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -28,7 +29,8 @@ export const router = createBrowserRouter([
       { path: 'calendar',         element: <CalendarPage /> },
       { path: 'request-time-off', element: <RequestTimeOffPage /> },
       { path: 'shift-requests',   element: <ShiftRequestPage /> },
-      { path: 'availability',     element: <AvailabilityPage /> },
+      { path: 'availability',         element: <AvailabilityPage /> },
+      { path: 'staff-availability',  element: <ProtectedRoute managerOnly><AvailabilityManagerPage /></ProtectedRoute> },
       { path: 'notifications',    element: <NotificationsPage /> },
     ],
   },

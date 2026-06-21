@@ -26,7 +26,8 @@ const managerNav = [
   { to: "/templates",      label: "Weekly Templates" },
   { to: "/my-schedule",    label: "My Schedule" },
   { to: "/add-event",      label: "Add Event" },
-  { to: "/notifications",  label: "Notifications" },
+  { to: "/staff-availability", label: "Staff Availability" },
+  { to: "/notifications",      label: "Notifications" },
 ];
 
 const employeeNav = [
