@@ -36,10 +36,11 @@ function normalizeStaff(s) {
   };
 }
 
-function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END) {
+function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid = []) {
   let start = from;
   while (start + duration <= to) {
-    if (!bars.some(b => start < b.end && start + duration > b.start)) return start;
+    if (!bars.some(b => start < b.end && start + duration > b.start) &&
+        !avoid.some(b => start < b.end && start + duration > b.start)) return start;
     start = snapHalf(start + 0.5);
   }
   return null;
@@ -134,6 +135,8 @@ function ScheduleGrid({
     const width = ((end   - start)       / TOTAL_HOURS) * 100;
     return { left: `${left}%`, width: `${width}%` };
   }
+
+  const currentDragType = activeDragType ?? draggingBarInfo?.type;
 
   const toolbarHighlight = activeDragType === 'shift'
     ? { background: 'rgba(74,124,94,0.15)',  borderColor: 'var(--color-green)' }
@@ -240,8 +243,8 @@ function ScheduleGrid({
                     position: 'absolute',
                     top: 0, bottom: 0,
                     ...posStyle(block.start, block.end),
-                    background: 'rgba(96, 165, 250, 0.06)',
-                    border: '1px solid rgba(96, 165, 250, 0.15)',
+                    background: 'rgba(96, 165, 250, 0.10)',
+                    border: '1px solid rgba(96, 165, 250, 0.22)',
                     borderRadius: 4,
                     zIndex: 0,
                     pointerEvents: 'none',
@@ -256,8 +259,7 @@ function ScheduleGrid({
               )}
 
               {/* Placement preview ghost (shift=green, desk=yellow, event=purple, invalid=red) */}
-              {(activeDragType === 'shift' || activeDragType === 'desk' || activeDragType === 'event') &&
-                previewInfo?.staffIndex === i && previewInfo.start !== null && (
+              {previewInfo?.staffIndex === i && previewInfo.start !== null && (
                 <div
                   className="absolute pointer-events-none rounded"
                   style={{
@@ -265,10 +267,10 @@ function ScheduleGrid({
                     left:  `${((previewInfo.start - HOURS_START) / TOTAL_HOURS) * 100}%`,
                     width: `${((previewInfo.end - previewInfo.start) / TOTAL_HOURS) * 100}%`,
                     background: previewInfo.valid
-                      ? (activeDragType === 'shift' ? 'rgba(74,124,94,0.35)' : activeDragType === 'desk' ? 'rgba(200,148,56,0.35)' : 'rgba(59,42,110,0.5)')
+                      ? (currentDragType === 'shift' ? 'rgba(74,124,94,0.35)' : currentDragType === 'desk' ? 'rgba(200,148,56,0.35)' : 'rgba(59,42,110,0.5)')
                       : 'rgba(200,64,64,0.25)',
                     border: `2px dashed ${previewInfo.valid
-                      ? (activeDragType === 'shift' ? 'var(--color-green)' : activeDragType === 'desk' ? 'var(--color-yellow)' : '#7c5cbf')
+                      ? (currentDragType === 'shift' ? 'var(--color-green)' : currentDragType === 'desk' ? 'var(--color-yellow)' : '#7c5cbf')
                       : 'var(--color-red)'}`,
                     zIndex: 15,
                   }}
@@ -659,7 +661,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
 
 // ── Availability warning modal ─────────────────────────────────────────────────
 
-function AvailWarningModal({ staffName, onConfirm, onCancel }) {
+function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule Anyway', onConfirm, onCancel }) {
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onCancel(); }
     window.addEventListener('keydown', onKey);
@@ -680,9 +682,11 @@ function AvailWarningModal({ staffName, onConfirm, onCancel }) {
         <div className="flex items-start gap-3 mb-4">
           <span style={{ fontSize: 22, lineHeight: 1.2 }}>⚠️</span>
           <div>
-            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Outside Availability</h3>
+            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>
+              {title ?? 'Outside Availability'}
+            </h3>
             <p className="text-sm mt-1.5 leading-snug" style={{ color: 'var(--color-text-dim)' }}>
-              This shift falls outside <strong style={{ color: 'var(--color-text)' }}>{staffName}</strong>'s submitted availability for today.
+              {message ?? <>This shift falls outside <strong style={{ color: 'var(--color-text)' }}>{staffName}</strong>'s submitted availability for today.</>}
             </p>
           </div>
         </div>
@@ -697,7 +701,7 @@ function AvailWarningModal({ staffName, onConfirm, onCancel }) {
             onClick={onConfirm}
             style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
           >
-            Schedule Anyway
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -872,7 +876,9 @@ export default function DailySchedulePage() {
       }
       const start = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
       const end = start + duration;
-      const valid = !person.deskShifts.some(d => start < d.end && end > d.start);
+      const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(person.id));
+      const valid = !person.deskShifts.some(d => start < d.end && end > d.start) &&
+                    !personEvents.some(ev => start < ev.end && end > ev.start);
       setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
     } else if (activeDragType === 'event' && draggingEventId !== null) {
       const evt = todayEvents.find(ev => ev.id === draggingEventId);
@@ -967,6 +973,7 @@ export default function DailySchedulePage() {
     const initialStart = desk0.start;
     const initialEnd   = desk0.end;
     const otherDesks   = orderedStaff[staffIndex].deskShifts.filter((_, j) => j !== deskIndex);
+    const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(orderedStaff[staffIndex].id));
     const host         = orderedStaff[staffIndex].shifts.find(sh => sh.start <= desk0.start && sh.end >= desk0.end);
     const shiftLo      = host?.start ?? HOURS_START;
     const shiftHi      = host?.end   ?? HOURS_END;
@@ -983,7 +990,8 @@ export default function DailySchedulePage() {
         const d = { ...p.deskShifts[deskIndex] };
         if (mode === 'left')  d.start = snapHalf(clamp(initialStart + delta, shiftLo, initialEnd - 0.5));
         else                   d.end   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, shiftHi));
-        if (!otherDesks.some(od => d.start < od.end && d.end > od.start)) p.deskShifts[deskIndex] = d;
+        if (!otherDesks.some(od => d.start < od.end && d.end > od.start) &&
+            !personEvents.some(ev => d.start < ev.end && d.end > ev.start)) p.deskShifts[deskIndex] = d;
         next[staffIndex] = p;
         return next;
       });
@@ -1031,13 +1039,13 @@ export default function DailySchedulePage() {
   function handleShiftBarDragStart(e, staffIndex, shiftIndex) {
     e.dataTransfer.effectAllowed = 'move';
     const shift = orderedStaff[staffIndex].shifts[shiftIndex];
-    setDraggingBarInfo({ type: 'shift', staffIndex, shiftIndex, duration: shift.end - shift.start, originalStart: shift.start, originalEnd: shift.end });
+    setDraggingBarInfo({ type: 'shift', staffIndex, shiftIndex, shiftId: shift.id, duration: shift.end - shift.start, originalStart: shift.start, originalEnd: shift.end });
   }
 
   function handleDeskBarDragStart(e, staffIndex, deskIndex) {
     e.dataTransfer.effectAllowed = 'move';
     const desk = orderedStaff[staffIndex].deskShifts[deskIndex];
-    setDraggingBarInfo({ type: 'desk', staffIndex, deskIndex, duration: desk.end - desk.start });
+    setDraggingBarInfo({ type: 'desk', staffIndex, deskIndex, deskId: desk.id, duration: desk.end - desk.start, originalStart: desk.start, originalEnd: desk.end });
   }
 
   function handleEventBarDragStart(e, eventId, staffId) {
@@ -1047,11 +1055,13 @@ export default function DailySchedulePage() {
   }
 
   function handleBarDragEnd() {
+    setPreviewInfo(null);
     if (draggingBarInfo?.type === 'shift') {
-      const { staffIndex, shiftIndex, originalStart, originalEnd } = draggingBarInfo;
+      const { staffIndex, shiftId, originalStart, originalEnd } = draggingBarInfo;
       const current = orderedStaffRef.current[staffIndex];
       if (current) {
-        const finalShift = current.shifts[shiftIndex];
+        // Find by ID so cross-row removal (index shift) doesn't match the wrong bar
+        const finalShift = current.shifts.find(s => s.id === shiftId);
         const blocks = getAvailability(current.id, currentDow);
         if (finalShift && isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
           setDraggingBarInfo(null);
@@ -1062,7 +1072,8 @@ export default function DailySchedulePage() {
               setOrderedStaff(prev => {
                 const next = [...prev];
                 const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
-                p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: originalStart, end: originalEnd };
+                const idx = p.shifts.findIndex(s => s.id === shiftId);
+                if (idx !== -1) p.shifts[idx] = { ...p.shifts[idx], start: originalStart, end: originalEnd };
                 next[staffIndex] = p;
                 return next;
               });
@@ -1135,43 +1146,185 @@ export default function DailySchedulePage() {
     }
   }
 
-  // Live repositioning while dragging a bar over a timeline
+  // Live repositioning (same row) or ghost preview (cross-row) while dragging a bar
   function handleBarDragOver(e, rowIndex) {
     if (!draggingBarInfo) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
-    const { type, staffIndex, shiftIndex, deskIndex, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId, duration } = draggingBarInfo;
+    const sameRow = staffIndex === rowIndex;
 
-    if (type === 'shift' && staffIndex === rowIndex) {
+    if (type === 'shift') {
       const newStart = snapHalf(clamp(rawHours - duration / 2, HOURS_START, HOURS_END - duration));
-      setOrderedStaff(prev => {
-        const next = [...prev];
-        const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
-        const otherShifts = p.shifts.filter((_, j) => j !== shiftIndex);
-        if (!otherShifts.some(os => newStart < os.end && newStart + duration > os.start)) {
-          p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: newStart, end: newStart + duration };
+      const newEnd   = newStart + duration;
+      if (sameRow) {
+        setPreviewInfo(null);
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
+          const otherShifts = p.shifts.filter((_, j) => j !== shiftIndex);
+          if (!otherShifts.some(os => newStart < os.end && newEnd > os.start)) {
+            p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: newStart, end: newEnd };
+          }
+          next[staffIndex] = p;
+          return next;
+        });
+      } else {
+        const target = orderedStaff[rowIndex];
+        const valid  = !target.shifts.some(s => newStart < s.end && newEnd > s.start);
+        setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
+      }
+
+    } else if (type === 'desk') {
+      if (sameRow) {
+        setPreviewInfo(null);
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p = { ...next[staffIndex], deskShifts: [...next[staffIndex].deskShifts] };
+          const host = p.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+          if (!host) return prev;
+          const newStart   = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+          const newEnd     = newStart + duration;
+          const otherDesks = p.deskShifts.filter((_, j) => j !== deskIndex);
+          const personEvts = todayEvents.filter(ev => ev.assignedStaff.includes(p.id));
+          if (!otherDesks.some(od => newStart < od.end && newEnd > od.start) &&
+              !personEvts.some(ev => newStart < ev.end && newEnd > ev.start)) {
+            p.deskShifts[deskIndex] = { ...p.deskShifts[deskIndex], start: newStart, end: newEnd };
+          }
+          next[staffIndex] = p;
+          return next;
+        });
+      } else {
+        const target = orderedStaff[rowIndex];
+        const host   = target.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+        if (!host) {
+          setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+          return;
         }
-        next[staffIndex] = p;
-        return next;
-      });
-    } else if (type === 'desk' && staffIndex === rowIndex) {
-      setOrderedStaff(prev => {
-        const next = [...prev];
-        const p = { ...next[staffIndex], deskShifts: [...next[staffIndex].deskShifts] };
-        const host = p.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
-        if (!host) return prev;
-        const newStart = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
-        const otherDesks = p.deskShifts.filter((_, j) => j !== deskIndex);
-        if (!otherDesks.some(od => newStart < od.end && newStart + duration > od.start)) {
-          p.deskShifts[deskIndex] = { ...p.deskShifts[deskIndex], start: newStart, end: newStart + duration };
-        }
-        next[staffIndex] = p;
-        return next;
-      });
+        const newStart   = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+        const newEnd     = newStart + duration;
+        const targetEvts = todayEvents.filter(ev => ev.assignedStaff.includes(target.id));
+        const valid      = !target.deskShifts.some(d => newStart < d.end && newEnd > d.start) &&
+                           !targetEvts.some(ev => newStart < ev.end && newEnd > ev.start);
+        setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
+      }
+
+    } else if (type === 'event') {
+      if (!sameRow) {
+        const evt    = todayEvents.find(ev => ev.id === eventId);
+        if (!evt) return;
+        const target = orderedStaff[rowIndex];
+        const valid  = !evt.assignedStaff.includes(target.id);
+        setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid });
+      }
     }
   }
 
-  function handleBarDrop() { /* position already settled via dragover */ }
+  function handleBarDrop(e, rowIndex) {
+    if (!draggingBarInfo) return;
+    const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId, duration } = draggingBarInfo;
+    if (staffIndex === rowIndex) return; // same-row position already settled via dragover
+    if (!previewInfo || previewInfo.staffIndex !== rowIndex || !previewInfo.valid || previewInfo.start === null) return;
+
+    setPreviewInfo(null);
+    setDraggingBarInfo(null);
+    const { start, end } = previewInfo;
+
+    if (type === 'shift') {
+      const targetPerson = orderedStaff[rowIndex];
+      const blocks = getAvailability(targetPerson.id, currentDow);
+      const doTransfer = () => {
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const src = { ...next[staffIndex] };
+          src.shifts    = src.shifts.filter((_, j) => j !== shiftIndex);
+          src.scheduled = src.shifts.length > 0;
+          next[staffIndex] = src;
+          const tgt = { ...next[rowIndex] };
+          tgt.shifts    = [...tgt.shifts, { id: `s${Date.now()}`, start, end }];
+          tgt.scheduled = true;
+          next[rowIndex] = tgt;
+          return next;
+        });
+      };
+      if (isShiftOutsideAvailability(start, end, blocks)) {
+        setAvailWarning({
+          staffName: targetPerson.name,
+          onConfirm: () => { doTransfer(); setAvailWarning(null); },
+          onCancel:  () => setAvailWarning(null),
+        });
+      } else {
+        doTransfer();
+      }
+
+    } else if (type === 'desk') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const src = { ...next[staffIndex] };
+        src.deskShifts = src.deskShifts.filter((_, j) => j !== deskIndex);
+        next[staffIndex] = src;
+        const tgt = { ...next[rowIndex] };
+        tgt.deskShifts = [...tgt.deskShifts, { id: `d${Date.now()}`, start, end }];
+        next[rowIndex] = tgt;
+        return next;
+      });
+
+    } else if (type === 'event') {
+      assignEventWithShiftCheck(eventId, rowIndex, { alsoUnassignStaffId: staffId });
+    }
+  }
+
+  // ── Event assignment with shift-coverage check ────────────────────────────────
+  function assignEventWithShiftCheck(eventId, targetStaffIndex, { alsoUnassignStaffId = null } = {}) {
+    const evt    = todayEvents.find(ev => ev.id === eventId);
+    const person = orderedStaff[targetStaffIndex];
+    if (!evt || !person) return;
+
+    const isCovered = person.shifts.some(s => s.start <= evt.start && s.end >= evt.end);
+
+    const doAssign = () => {
+      if (alsoUnassignStaffId) schedule.unassignStaffFromEvent(eventId, alsoUnassignStaffId);
+      schedule.assignStaffToEvent(eventId, person.id);
+
+      if (!isCovered) {
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p    = { ...next[targetStaffIndex] };
+          // Find a shift that overlaps or is adjacent to the event
+          const hostIdx = p.shifts.findIndex(s => s.start <= evt.end && s.end >= evt.start);
+          if (hostIdx !== -1) {
+            p.shifts = [...p.shifts];
+            p.shifts[hostIdx] = {
+              ...p.shifts[hostIdx],
+              start: Math.min(p.shifts[hostIdx].start, evt.start),
+              end:   Math.max(p.shifts[hostIdx].end,   evt.end),
+            };
+          } else {
+            p.shifts    = [...p.shifts, { id: `s${Date.now()}`, start: evt.start, end: evt.end }];
+            p.scheduled = true;
+          }
+          next[targetStaffIndex] = p;
+          return next;
+        });
+      }
+    };
+
+    if (!isCovered) {
+      const hasPartialShift = person.shifts.some(s => s.start <= evt.end && s.end >= evt.start);
+      setAvailWarning({
+        staffName:    person.name,
+        title:        hasPartialShift ? 'Shift Doesn\'t Cover Event' : 'No Shift During Event',
+        message:      hasPartialShift
+          ? <><strong style={{ color: 'var(--color-text)' }}>{person.name}</strong>'s shift doesn't fully cover <em>{evt.name}</em> ({formatTime(evt.start)}–{formatTime(evt.end)}). Their shift will be extended to cover it.</>
+          : <><strong style={{ color: 'var(--color-text)' }}>{person.name}</strong> has no shift during <em>{evt.name}</em> ({formatTime(evt.start)}–{formatTime(evt.end)}). A new shift will be created.</>,
+        confirmLabel: hasPartialShift ? 'Assign & Extend Shift' : 'Assign & Create Shift',
+        onConfirm: () => { doAssign(); setAvailWarning(null); },
+        onCancel:  () => setAvailWarning(null),
+      });
+    } else {
+      doAssign();
+    }
+  }
 
   // ── Timeline drop (toolbar chips) ────────────────────────────────────────────
   function handleTimelineDrop(staffIndex) {
@@ -1210,12 +1363,13 @@ export default function DailySchedulePage() {
       doPlace();
     } else if (activeDragType === 'desk') {
       const p = orderedStaff[staffIndex];
+      const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(p.id));
       let newStart = null;
       if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
         newStart = previewInfo.start;
       } else {
         for (const shift of p.shifts) {
-          const slot = firstFreeSlot(p.deskShifts, 1, shift.start, shift.end);
+          const slot = firstFreeSlot(p.deskShifts, 1, shift.start, shift.end, personEvents);
           if (slot !== null) { newStart = slot; break; }
         }
       }
@@ -1229,7 +1383,8 @@ export default function DailySchedulePage() {
         });
       }
     } else if (activeDragType === 'event' && draggingEventId !== null) {
-      schedule.assignStaffToEvent(draggingEventId, orderedStaff[staffIndex].id);
+
+      assignEventWithShiftCheck(draggingEventId, staffIndex);
     }
     endDrag();
   }
@@ -1388,6 +1543,9 @@ export default function DailySchedulePage() {
       {availWarning && (
         <AvailWarningModal
           staffName={availWarning.staffName}
+          title={availWarning.title}
+          message={availWarning.message}
+          confirmLabel={availWarning.confirmLabel}
           onConfirm={availWarning.onConfirm}
           onCancel={availWarning.onCancel}
         />

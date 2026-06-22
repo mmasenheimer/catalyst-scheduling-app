@@ -61,8 +61,8 @@ export default function AvailabilityPage() {
   const [grid, setGrid]           = useState(emptyGrid);
   const [mode, setMode]           = useState('available');
   const [hoverCell, setHoverCell] = useState(null);
-  const [note, setNote]           = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [fillError, setFillError] = useState(false);
 
   const isPaintingRef = useRef(false);
   const paintValRef   = useRef(null);
@@ -74,6 +74,7 @@ export default function AvailabilityPage() {
   }, []);
 
   function paint(d, s, value) {
+    setFillError(false);
     setGrid(prev => {
       const next = prev.map(row => [...row]);
       next[d][s] = value;
@@ -102,10 +103,13 @@ export default function AvailabilityPage() {
   }
 
   function handleSubmit() {
+    const hasUnfilled = grid.some(row => row.some(cell => cell === null));
+    if (hasUnfilled) { setFillError(true); return; }
+    setFillError(false);
     addNotification({
       type: 'availability',
       title: 'Availability Template Submitted',
-      message: buildMessage(user?.name ?? 'Staff', grid, note),
+      message: buildMessage(user?.name ?? 'Staff', grid, ''),
       from: user?.name ?? 'Staff',
       recipients: 'manager',
     });
@@ -138,9 +142,8 @@ export default function AvailabilityPage() {
         <p className="text-sm" style={{ color: 'var(--color-text-dim)' }}>
           Your weekly availability template has been sent to the manager.
         </p>
-        {note && <p className="text-xs mt-2 italic" style={{ color: 'var(--color-text-dim)' }}>"{note}"</p>}
         <button
-          onClick={() => { setSubmitted(false); setGrid(emptyGrid()); setNote(''); }}
+          onClick={() => { setSubmitted(false); setGrid(emptyGrid()); }}
           className="mt-6 text-xs underline underline-offset-2 cursor-pointer hover:opacity-80"
           style={{ color: 'var(--color-text-dim)', background: 'none', border: 'none' }}
         >Update availability</button>
@@ -182,6 +185,12 @@ export default function AvailabilityPage() {
           </button>
         ))}
 
+        <button
+          onClick={handleSubmit}
+          className="px-5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
+          style={{ background: 'var(--color-accent)', color: 'white' }}
+        >Send</button>
+
         <div className="flex-1" />
 
         <button
@@ -190,6 +199,15 @@ export default function AvailabilityPage() {
           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}
         >Clear all</button>
       </div>
+
+      {/* Validation error */}
+      {fillError && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg mb-3 text-sm"
+          style={{ background: 'rgba(200,64,64,0.12)', border: '1px solid rgba(200,64,64,0.35)', color: 'var(--color-red)' }}>
+          <span>Please mark every time slot as available or unavailable before sending.</span>
+          <button onClick={() => setFillError(false)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1, opacity: 0.7 }}>✕</button>
+        </div>
+      )}
 
       {/* Grid */}
       <div
@@ -264,37 +282,19 @@ export default function AvailabilityPage() {
         </table>
       </div>
 
-      {/* Bottom: legend + note + send */}
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex items-center gap-3 text-xs pt-2 shrink-0" style={{ color: 'var(--color-text-dim)' }}>
-          {[
-            { bg: 'rgba(74,124,94,0.55)',  border: 'rgba(74,124,94,0.7)',  label: 'Available'   },
-            { bg: 'rgba(200,64,64,0.45)',  border: 'rgba(200,64,64,0.65)', label: 'Unavailable' },
-            { bg: 'var(--color-bg)',        border: 'var(--color-border)',  label: 'Not set'     },
-          ].map(({ bg, border, label }) => (
-            <div key={label} className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: bg, border: `1px solid ${border}` }} />
-              {label}
-            </div>
-          ))}
-          <span style={{ opacity: 0.5 }}>· re-click to erase</span>
-        </div>
-
-        <div className="flex-1 flex gap-3 items-end min-w-0" style={{ minWidth: 240 }}>
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="Optional note to manager..."
-            rows={2}
-            className="flex-1 px-3 py-2 rounded-lg border text-xs outline-none resize-none min-w-0"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-          />
-          <button
-            onClick={handleSubmit}
-            className="px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity shrink-0"
-            style={{ background: 'var(--color-accent)', color: 'white', alignSelf: 'flex-end' }}
-          >Send</button>
-        </div>
+      {/* Legend */}
+      <div className="flex items-center gap-3 text-xs mt-1" style={{ color: 'var(--color-text-dim)' }}>
+        {[
+          { bg: 'rgba(74,124,94,0.55)',  border: 'rgba(74,124,94,0.7)',  label: 'Available'   },
+          { bg: 'rgba(200,64,64,0.45)',  border: 'rgba(200,64,64,0.65)', label: 'Unavailable' },
+          { bg: 'var(--color-bg)',        border: 'var(--color-border)',  label: 'Not set'     },
+        ].map(({ bg, border, label }) => (
+          <div key={label} className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: bg, border: `1px solid ${border}` }} />
+            {label}
+          </div>
+        ))}
+        <span style={{ opacity: 0.5 }}>· re-click to erase</span>
       </div>
     </div>
   );

@@ -30,9 +30,19 @@ export default function RequestTimeOffPage() {
   const [reason, setReason] = useState('Personal');
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [dateError, setDateError] = useState('');
 
   function handleSubmit(e) {
     e.preventDefault();
+    const selected = new Date(shiftDate + 'T00:00:00');
+    const cutoff   = new Date();
+    cutoff.setDate(cutoff.getDate() + 14);
+    cutoff.setHours(0, 0, 0, 0);
+    if (selected < cutoff) {
+      setDateError('Drop requests must be at least 2 weeks from today.');
+      return;
+    }
+    setDateError('');
     setSubmitted(true);
   }
 
@@ -109,11 +119,14 @@ export default function RequestTimeOffPage() {
             type="date"
             value={shiftDate}
             min={minDate}
-            onChange={e => setShiftDate(e.target.value)}
+            onChange={e => { setShiftDate(e.target.value); setDateError(''); }}
             className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-            style={inputStyle}
+            style={{ ...inputStyle, borderColor: dateError ? 'var(--color-red)' : 'var(--color-border)' }}
           />
-          {shiftDate && (
+          {dateError && (
+            <p className="text-xs mt-1.5" style={{ color: 'var(--color-red)' }}>{dateError}</p>
+          )}
+          {shiftDate && !dateError && (
             <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-dim)' }}>
               {formatDisplay(shiftDate)}
             </p>
