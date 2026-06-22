@@ -24,7 +24,7 @@ function formatRelativeTime(date) {
   return `${diffDay}d ago`;
 }
 
-function NotificationCard({ notif, onMarkRead, onDismiss, onApprove, isManager }) {
+function NotificationCard({ notif, onDismiss, onApprove, isManager }) {
   const cfg = TYPE_CONFIG[notif.type];
   const showApproveButton = isManager && notif.type === 'shift_change' && !notif.approved;
 
@@ -90,24 +90,13 @@ function NotificationCard({ notif, onMarkRead, onDismiss, onApprove, isManager }
           <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>
             From: {notif.from}
           </span>
-          <div className="flex gap-2">
-            {!notif.read && (
-              <button
-                onClick={() => onMarkRead(notif.id)}
-                className="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-                style={{ color: 'var(--color-accent-bright)', background: 'transparent', border: 'none' }}
-              >
-                Mark read
-              </button>
-            )}
-            <button
-              onClick={() => onDismiss(notif.id)}
-              className="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ color: 'var(--color-text-dim)', background: 'transparent', border: 'none' }}
-            >
-              Dismiss
-            </button>
-          </div>
+          <button
+            onClick={() => onDismiss(notif.id)}
+            className="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ color: 'var(--color-accent-bright)', background: 'transparent', border: 'none' }}
+          >
+            Dismiss
+          </button>
         </div>
       </div>
     </div>
@@ -115,7 +104,7 @@ function NotificationCard({ notif, onMarkRead, onDismiss, onApprove, isManager }
 }
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, markRead, dismiss, markAllRead, approve } = useNotifications();
+  const { notifications, unreadCount, dismiss, dismissAll, approve } = useNotifications();
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
   const [activeFilter, setActiveFilter] = useState('All');
@@ -148,13 +137,13 @@ export default function NotificationsPage() {
             Shift changes, coverage requests, new events, and alerts
           </p>
         </div>
-        {unreadCount > 0 && (
+        {notifications.length > 0 && (
           <button
-            onClick={markAllRead}
+            onClick={dismissAll}
             className="text-sm px-4 py-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
             style={{ background: 'var(--color-accent)', color: 'white', border: 'none' }}
           >
-            Mark all read
+            Dismiss all
           </button>
         )}
       </div>
@@ -205,7 +194,6 @@ export default function NotificationsPage() {
             <NotificationCard
               key={n.id}
               notif={n}
-              onMarkRead={markRead}
               onDismiss={dismiss}
               onApprove={approve}
               isManager={isManager}

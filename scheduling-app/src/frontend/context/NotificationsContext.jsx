@@ -129,6 +129,10 @@ export function NotificationsProvider({ children }) {
     );
   }
 
+  function dismissAll() {
+    setNotifications(prev => prev.filter(n => !isVisibleTo(n, user)));
+  }
+
   function approve(id) {
     setNotifications(prev =>
       prev.map(n => n.id === id ? { ...n, approved: true, read: true } : n)
@@ -145,7 +149,7 @@ export function NotificationsProvider({ children }) {
   }
 
   return (
-    <NotificationsContext.Provider value={{ notifications: visible, unreadCount, markRead, dismiss, markAllRead, approve, addNotification }}>
+    <NotificationsContext.Provider value={{ notifications: visible, unreadCount, markRead, dismiss, markAllRead, dismissAll, approve, addNotification }}>
       {children}
     </NotificationsContext.Provider>
   );
