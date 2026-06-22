@@ -73,7 +73,7 @@ function isSameDay(a, b) {
   );
 }
 
-function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events }) {
+function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events, isManager }) {
   const template = getTemplate(date);
   const staffCount = template.staff.length;
   const dateEvents = getEventsForDate(date, events);
@@ -150,14 +150,11 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
           <div
             key={evt.id}
             className="flex items-start gap-1 px-1.5 py-0.5 rounded leading-tight"
-            style={{
-              background: evt.type === 'program' ? 'rgba(124,92,191,0.65)' : 'rgba(176,126,40,0.65)',
-              color: 'white',
-            }}
+            style={{ background: 'rgba(124,92,191,0.65)', color: 'white' }}
           >
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0 mt-0.5"
-              style={{ background: evt.type === 'program' ? '#7c5cbf' : 'var(--color-yellow)' }}
+              style={{ background: '#7c5cbf' }}
             />
             <div className="flex flex-col min-w-0">
               <span className="truncate" style={{ fontSize: 10 }}>{evt.name}</span>
@@ -172,8 +169,8 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
         )}
       </div>
 
-      {/* Staff count pill */}
-      {staffCount > 0 && isCurrentMonth && (
+      {/* Staff count pill — manager only */}
+      {isManager && staffCount > 0 && isCurrentMonth && (
         <div className="mt-1.5">
           <span
             className="text-xs px-1.5 py-0.5 rounded"
@@ -230,6 +227,16 @@ export default function CalendarPage() {
     cells.filter(c => c.current).length
   );
 
+  const myShiftsThisMonth = me
+    ? cells.filter(c => c.current && getTemplate(c.date).staff.some(s => s.id === me.id)).length
+    : 0;
+
+  const myHoursThisMonth = me
+    ? cells
+        .filter(c => c.current && getTemplate(c.date).staff.some(s => s.id === me.id))
+        .reduce((sum) => sum + (me.shiftEnd - me.shiftStart), 0)
+    : 0;
+
   return (
     <div>
       {/* Page header */}
@@ -269,7 +276,10 @@ export default function CalendarPage() {
         {/* Right: stats + today */}
         <div className="flex-1 flex items-center justify-end gap-3 sm:gap-6 sm:pr-8">
           {[
-            { label: 'Avg Staff', value: avgStaffThisMonth },
+            ...(user?.role === 'manager'
+              ? [{ label: 'Avg Staff', value: avgStaffThisMonth }]
+              : [{ label: 'Shifts', value: myShiftsThisMonth }, { label: 'Hours', value: myHoursThisMonth }]
+            ),
             { label: 'Events', value: totalEventsThisMonth },
           ].map(({ label, value }) => (
             <div key={label} className="text-center hidden sm:block">
@@ -331,6 +341,7 @@ export default function CalendarPage() {
                 myDesk={myDesk}
                 me={me}
                 events={events}
+                isManager={user?.role === 'manager'}
               />
             );
           })}
@@ -344,12 +355,8 @@ export default function CalendarPage() {
           Shift
         </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span className="w-5 h-2.5 rounded-sm" style={{ background: 'var(--color-yellow)', opacity: 0.75 }} />
-          Desk
-        </div>
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span className="w-2 h-2 rounded-full" style={{ background: '#7c5cbf' }} />
-          Program
+          <span className="w-5 h-2.5 rounded-sm" style={{ background: '#7c5cbf', opacity: 0.8 }} />
+          Event
         </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
           <span

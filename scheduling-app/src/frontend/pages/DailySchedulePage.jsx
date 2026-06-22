@@ -101,11 +101,11 @@ function AlertsBar({ staff, events }) {
   const alerts   = buildAlerts(staff, events);
   const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', blue: 'var(--color-accent-bright)' };
   return (
-    <div className="p-4 rounded-xl mb-6 border"
+    <div className="p-3 rounded-xl mb-5 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-      <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
+      <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
-        <div key={i} className="flex items-center gap-2 py-1 text-sm" style={{ color: 'var(--color-text-dim)' }}>
+        <div key={i} className="flex items-center gap-2 py-0.5 text-sm" style={{ color: 'var(--color-text-dim)' }}>
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dotColor[a.type] }} />
           {a.text}
         </div>
@@ -188,25 +188,25 @@ function ScheduleGrid({
             }}
           >
             {/* Name column */}
-            <div className="w-48 shrink-0 px-2 py-3 text-sm border-r flex items-center gap-2"
+            <div className="w-48 shrink-0 px-2 py-1.5 text-xs border-r flex items-center gap-1.5"
               style={{ borderColor: 'var(--color-border)' }}>
               {!finalized && (
                 <span className="text-xs select-none shrink-0" style={{ color: 'var(--color-muted)', lineHeight: 1 }}>⠿</span>
               )}
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                 style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}>
                 {person.name.split(' ').map(n => n[0]).join('')}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{person.name}</div>
                 {person.shifts.length > 0 ? (
-                  <div className="text-xs truncate mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
+                  <div className="truncate mt-0.5" style={{ color: 'var(--color-text-dim)', fontSize: 10 }}>
                     {person.shifts.length === 1
                       ? `${formatTime(person.shifts[0].start)} – ${formatTime(person.shifts[0].end)}`
                       : `${person.shifts.length} shifts`}
                   </div>
                 ) : (
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>Unscheduled</div>
+                  <div className="mt-0.5" style={{ color: 'var(--color-muted)', fontSize: 10 }}>Unscheduled</div>
                 )}
               </div>
             </div>
@@ -215,7 +215,7 @@ function ScheduleGrid({
             <div
               className="flex-1 relative"
               data-timeline="true"
-              style={{ height: 64 }}
+              style={{ height: 46 }}
               onDragOver={e => {
                 const hasToolbar = !!activeDragType;
                 const hasBar     = !!draggingBarInfo;
@@ -263,7 +263,7 @@ function ScheduleGrid({
                 <div
                   className="absolute pointer-events-none rounded"
                   style={{
-                    top: 8, bottom: 8,
+                    top: '50%', transform: 'translateY(-50%)', height: 28,
                     left:  `${((previewInfo.start - HOURS_START) / TOTAL_HOURS) * 100}%`,
                     width: `${((previewInfo.end - previewInfo.start) / TOTAL_HOURS) * 100}%`,
                     background: previewInfo.valid
@@ -285,9 +285,10 @@ function ScheduleGrid({
                   <div
                     key={shift.id}
                     draggable={!finalized}
-                    className="absolute top-3 h-8 rounded overflow-hidden select-none"
+                    className="absolute h-6 rounded overflow-hidden select-none"
                     style={{
                       ...posStyle(shift.start, shift.end),
+                      top: '50%', transform: 'translateY(-50%)',
                       background: 'var(--color-green)',
                       opacity: isShiftDragging ? 0.3 : (isBarActive ? 0.85 : 0.6),
                       cursor: finalized ? 'default' : 'grab',
@@ -323,9 +324,10 @@ function ScheduleGrid({
                   <div
                     key={desk.id}
                     draggable={!finalized}
-                    className="absolute top-3 h-8 rounded overflow-hidden select-none"
+                    className="absolute h-6 rounded overflow-hidden select-none"
                     style={{
                       ...posStyle(desk.start, desk.end),
+                      top: '50%', transform: 'translateY(-50%)',
                       background: 'var(--color-yellow)',
                       opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
                       cursor: finalized ? 'default' : 'grab',
@@ -365,9 +367,10 @@ function ScheduleGrid({
                   <div
                     key={evt.id}
                     draggable={!finalized}
-                    className="absolute top-3 h-8 rounded overflow-hidden select-none"
+                    className="absolute h-6 rounded overflow-hidden select-none"
                     style={{
                       ...posStyle(evt.start, evt.end),
+                      top: '50%', transform: 'translateY(-50%)',
                       background: '#3b2a6e',
                       cursor: finalized ? 'default' : 'grab',
                       zIndex: isEvtActive ? 10 : 3,
@@ -400,13 +403,6 @@ function ScheduleGrid({
                 );
               })}
 
-              {person.shifts.length === 0 && (
-                <div className="absolute inset-0 flex items-center" style={{ paddingLeft: 14 }}>
-                  <span className="text-xs italic" style={{ color: 'var(--color-muted)' }}>
-                    No shift — drag a shift here to schedule
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         );
@@ -424,12 +420,6 @@ function ScheduleGrid({
           {swatch}{label}
         </div>
       ))}
-      {!finalized && (
-        <div className="flex items-center gap-1.5 text-xs ml-2" style={{ color: 'var(--color-text-dim)' }}>
-          <span style={{ opacity: 0.5 }}>—</span>
-          <span>Drag bars to move · drag edges to resize · drag rows to reorder · drag bars to trash to remove</span>
-        </div>
-      )}
     </div>
     </>
   );
@@ -715,18 +705,18 @@ function EventsPanel({ events, staff, onAddEvent }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
-        <h3 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>Special Events</h3>
+        <h3 className="text-base font-semibold mt-2" style={{ color: 'var(--color-text)' }}>Special Events</h3>
         <button onClick={onAddEvent} className="px-4 py-1.5 rounded-md text-sm font-medium cursor-pointer"
           style={{ background: 'var(--color-accent)', color: 'white' }}>
           + Add Event
         </button>
       </div>
-      <div className="grid gap-3">
+      <div className="grid gap-2">
         {events.map(evt => {
           const assigned = staff.filter(s => evt.assignedStaff.includes(s.id));
           const filled   = assigned.length >= evt.staffNeeded;
           return (
-            <div key={evt.id} className="p-4 rounded-xl border"
+            <div key={evt.id} className="p-3 rounded-xl border"
               style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
               <div className="flex justify-between items-start">
                 <div>
@@ -807,6 +797,7 @@ export default function DailySchedulePage() {
   const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
   const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
+  const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
   const orderedStaffRef = useRef(orderedStaff);
@@ -1391,7 +1382,7 @@ export default function DailySchedulePage() {
 
   const trashActive = trashHtmlOver;
 
-  async function handleFinalize() {
+  async function doFinalize() {
     const date = schedule.currentDate.toISOString().split('T')[0];
     try {
       await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents });
@@ -1399,6 +1390,16 @@ export default function DailySchedulePage() {
       console.warn('Schedule save failed — finalized locally only:', err.message);
     }
     setFinalized(true);
+  }
+
+  function handleFinalize() {
+    const alerts = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), todayEvents);
+    const issues = alerts.filter(a => a.type !== 'blue');
+    if (issues.length > 0) {
+      setFinalizeWarning(issues);
+      return;
+    }
+    doFinalize();
   }
 
   return (
@@ -1548,6 +1549,27 @@ export default function DailySchedulePage() {
           confirmLabel={availWarning.confirmLabel}
           onConfirm={availWarning.onConfirm}
           onCancel={availWarning.onCancel}
+        />
+      )}
+      {finalizeWarning && (
+        <AvailWarningModal
+          title="Schedule Has Issues"
+          message={
+            <div>
+              <p style={{ marginBottom: 8 }}>The following issues were found. You can still finalize, but consider resolving them first:</p>
+              <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {finalizeWarning.map((a, i) => (
+                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'red' ? 'var(--color-red)' : 'var(--color-yellow)', flexShrink: 0, marginTop: 3 }} />
+                    <span style={{ color: 'var(--color-text-dim)' }}>{a.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          }
+          confirmLabel="Finalize Anyway"
+          onConfirm={() => { setFinalizeWarning(null); doFinalize(); }}
+          onCancel={() => setFinalizeWarning(null)}
         />
       )}
     </div>

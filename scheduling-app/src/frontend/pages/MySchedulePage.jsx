@@ -84,9 +84,6 @@ function WeekHeader({ me, weekDays, onPrev, onNext, shiftsCount, hoursCount, eve
           <div className="font-bold text-lg leading-tight" style={{ color: 'var(--color-text)' }}>
             {me.name}
           </div>
-          <div className="text-xs capitalize mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-            {me.role}
-          </div>
         </div>
       </div>
 

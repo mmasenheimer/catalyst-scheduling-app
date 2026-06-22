@@ -151,9 +151,6 @@ function AppLayoutInner() {
       <div className="text-xs font-medium text-center" style={{ color: "var(--color-text)" }}>
         {user?.name}
       </div>
-      <div className="text-xs capitalize mt-0.5 text-center" style={{ color: "var(--color-text-dim)" }}>
-        {user?.role}
-      </div>
       <div className="flex gap-2 mt-2">
         <button
           onClick={handleLogout}

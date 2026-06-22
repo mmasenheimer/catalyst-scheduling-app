@@ -106,7 +106,6 @@ export default function RequestTimeOffPage() {
           </div>
           <div>
             <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{user?.name}</div>
-            <div className="text-xs capitalize" style={{ color: 'var(--color-text-dim)' }}>{user?.role}</div>
           </div>
         </div>
 

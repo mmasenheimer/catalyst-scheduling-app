@@ -4,19 +4,48 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { initialStaff, weeklyTemplates } from '../../data/mockData';
 import { formatTime } from '../utils/scheduleUtils';
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function scheduledDays(staffId) {
-  return DAYS.filter(day => weeklyTemplates[day].staff.some(s => s.id === staffId));
+function getUpcomingDates() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    return d;
+  });
 }
 
-function notWorkingOn(day, staffId) {
-  const busy = new Set(weeklyTemplates[day].staff.map(s => s.id));
+function getDayName(date) {
+  return DAY_NAMES[date.getDay()];
+}
+
+function formatDateLabel(date) {
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function formatDateLong(date) {
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+function scheduledDates(staffId) {
+  return getUpcomingDates().filter(date => {
+    const tpl = weeklyTemplates[getDayName(date)];
+    return tpl?.staff.some(s => s.id === staffId);
+  });
+}
+
+function notWorkingOnDate(date, staffId) {
+  const tpl = weeklyTemplates[getDayName(date)];
+  if (!tpl) return initialStaff.filter(s => s.id !== staffId);
+  const busy = new Set(tpl.staff.map(s => s.id));
   return initialStaff.filter(s => s.id !== staffId && !busy.has(s.id));
 }
 
-function workingOn(day, staffId) {
-  return weeklyTemplates[day].staff.filter(s => s.id !== staffId);
+function workingOnDate(date, staffId) {
+  const tpl = weeklyTemplates[getDayName(date)];
+  if (!tpl) return [];
+  return tpl.staff.filter(s => s.id !== staffId);
 }
 
 function overlaps(a, b) {
@@ -282,11 +311,11 @@ export default function ShiftRequestPage() {
     );
   }
 
-  const myDays = scheduledDays(me.id);
-  const activeDay = selectedDay ?? myDays[0] ?? null;
+  const myDates = scheduledDates(me.id);
+  const activeDay = selectedDay ?? myDates[0] ?? null;
 
-  const available = activeDay ? notWorkingOn(activeDay, me.id) : [];
-  const alreadyWorking = activeDay ? workingOn(activeDay, me.id) : [];
+  const available = activeDay ? notWorkingOnDate(activeDay, me.id) : [];
+  const alreadyWorking = activeDay ? workingOnDate(activeDay, me.id) : [];
 
   const others = initialStaff.filter(s => s.id !== me.id);
   const noOverlapStaff = others.filter(s => !overlaps(me, s));
@@ -298,7 +327,7 @@ export default function ShiftRequestPage() {
   }
 
   function handleSubmit() {
-    setSubmitted({ type: tab, target: pending, day: activeDay, note });
+    setSubmitted({ type: tab, target: pending, day: activeDay ? formatDateLong(activeDay) : '', note });
     setPending(null);
     setNote('');
   }
@@ -319,14 +348,6 @@ export default function ShiftRequestPage() {
         <div className="text-right">
           <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
             {me.name}
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-            {formatTime(me.shiftStart)} – {formatTime(me.shiftEnd)}
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-            {myDays.length > 0
-              ? myDays.map(d => d.slice(0, 3)).join(' · ')
-              : 'No scheduled days'}
           </div>
         </div>
       </div>
@@ -363,7 +384,7 @@ export default function ShiftRequestPage() {
             <RequestForm
               type={tab}
               target={pending}
-              day={activeDay}
+              day={activeDay ? formatDateLong(activeDay) : ''}
               me={me}
               note={note}
               onNoteChange={setNote}
@@ -381,30 +402,33 @@ export default function ShiftRequestPage() {
                   className="text-xs font-semibold uppercase tracking-wide mb-2"
                   style={{ color: 'var(--color-text-dim)' }}
                 >
-                  Your scheduled days
+                  Your scheduled days — next 2 weeks
                 </div>
-                {myDays.length === 0 ? (
+                {myDates.length === 0 ? (
                   <p className="text-sm" style={{ color: 'var(--color-text-dim)' }}>
-                    You are not in any weekly templates.
+                    You have no scheduled shifts in the next 2 weeks.
                   </p>
                 ) : (
                   <div className="flex gap-2 flex-wrap">
-                    {myDays.map(day => (
-                      <button
-                        key={day}
-                        onClick={() => { setSelectedDay(day); setPending(null); }}
-                        className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors"
-                        style={{
-                          background: activeDay === day ? 'var(--color-accent)' : 'var(--color-surface)',
-                          borderWidth: 1,
-                          borderStyle: 'solid',
-                          borderColor: activeDay === day ? 'var(--color-accent)' : 'var(--color-border)',
-                          color: activeDay === day ? 'white' : 'var(--color-text)',
-                        }}
-                      >
-                        {day}
-                      </button>
-                    ))}
+                    {myDates.map(date => {
+                      const isActive = activeDay?.toDateString() === date.toDateString();
+                      return (
+                        <button
+                          key={date.toISOString()}
+                          onClick={() => { setSelectedDay(date); setPending(null); }}
+                          className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors"
+                          style={{
+                            background: isActive ? 'var(--color-accent)' : 'var(--color-surface)',
+                            borderWidth: 1,
+                            borderStyle: 'solid',
+                            borderColor: isActive ? 'var(--color-accent)' : 'var(--color-border)',
+                            color: isActive ? 'white' : 'var(--color-text)',
+                          }}
+                        >
+                          {formatDateLabel(date)}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -413,11 +437,11 @@ export default function ShiftRequestPage() {
               {activeDay && (
                 <div>
                   <SectionHeading
-                    title={`Not working ${activeDay}`}
+                    title={`Not working ${activeDay ? formatDateLong(activeDay) : ''}`}
                     sub="available to cover your shift"
                   />
                   {available.length === 0 ? (
-                    <EmptyState text={`Everyone is already scheduled on ${activeDay}.`} />
+                    <EmptyState text={`Everyone is already scheduled on ${activeDay ? formatDateLong(activeDay) : 'that day'}.`} />
                   ) : (
                     <StaffList
                       people={available}
@@ -435,7 +459,7 @@ export default function ShiftRequestPage() {
               {activeDay && alreadyWorking.length > 0 && (
                 <div>
                   <SectionHeading
-                    title={`Already working ${activeDay}`}
+                    title={`Already working ${activeDay ? formatDateLong(activeDay) : ''}`}
                     sub="can't cover — already scheduled"
                   />
                   <StaffList
