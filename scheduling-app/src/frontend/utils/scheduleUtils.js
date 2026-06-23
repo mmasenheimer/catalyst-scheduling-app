@@ -1,4 +1,4 @@
-import { staffingTargets } from '../../data/mockData';
+import { staffingTargetsByDay } from '../../data/mockData';
 
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */
 export function formatTime(t) {
@@ -9,29 +9,39 @@ export function formatTime(t) {
   return `${h12}:${m === 0 ? '00' : String(m).padStart(2, '0')} ${suffix}`;
 }
 
-/** Return the minimum staff target for a given hour */
-export function getTarget(hour) {
-  for (const rule of staffingTargets) {
+/** Return the minimum staff target for a given hour and day-of-week (0=Sun…6=Sat) */
+export function getTarget(hour, dow = 1) {
+  const rules = dow === 0 ? staffingTargetsByDay.sunday
+              : dow === 6 ? staffingTargetsByDay.saturday
+              : staffingTargetsByDay.weekday;
+  for (const rule of rules) {
     if (hour >= rule.start && hour < rule.end) return rule.min;
   }
   return 0;
 }
 
-/** Count how many staff are on shift at a given hour */
+/** Count how many staff are on shift at a given hour (handles shifts array or legacy shiftStart/shiftEnd) */
 export function getStaffCount(staff, hour) {
-  return staff.filter(s => s.shiftStart <= hour && s.shiftEnd > hour).length;
+  return staff.filter(s => {
+    if (s.shifts?.length) return s.shifts.some(sh => sh.start <= hour && sh.end > hour);
+    return s.shiftStart <= hour && s.shiftEnd > hour;
+  }).length;
 }
 
-/** Return list of conflicts for a person's desk assignment */
+/** Return list of conflicts for a person's desk assignments vs events */
 export function checkDeskConflicts(person, events) {
-  if (person.deskStart === null) return [];
-  return events
-    .filter(evt =>
-      evt.assignedStaff.includes(person.id) &&
-      person.deskStart < evt.end &&
-      person.deskEnd > evt.start
-    )
-    .map(evt => `Overlaps with "${evt.name}"`);
+  const desks = person.deskShifts?.length
+    ? person.deskShifts
+    : (person.deskStart != null ? [{ start: person.deskStart, end: person.deskEnd }] : []);
+  const conflicts = [];
+  for (const desk of desks) {
+    for (const evt of events) {
+      if (evt.assignedStaff.includes(person.id) && desk.start < evt.end && desk.end > evt.start) {
+        conflicts.push(`Desk overlaps with "${evt.name}"`);
+      }
+    }
+  }
+  return conflicts;
 }
 
 /** Return staff members eligible to be assigned to an event */
@@ -57,18 +67,75 @@ export function getEligibleStaff(evt, staff, events) {
 }
 
 /** Build the alerts list from current staff + events */
-export function buildAlerts(staff, events) {
+export function buildAlerts(staff, events, dow = 1) {
   const alerts = [];
   const { HOURS_START, HOURS_END } = { HOURS_START: 7, HOURS_END: 22 };
 
-  for (let h = HOURS_START; h < HOURS_END; h++) {
+  for (let h = HOURS_START; h < HOURS_END; h += 0.5) {
     const count = getStaffCount(staff, h);
-    const target = getTarget(h);
+    const target = getTarget(h, dow);
     if (count < target) {
       alerts.push({
         type: 'red',
-        text: `Understaffed ${formatTime(h)}–${formatTime(h + 1)}: ${count}/${target} staff.`,
+        text: `Understaffed ${formatTime(h)}–${formatTime(h + 0.5)}: ${count}/${target} staff.`,
       });
+    }
+  }
+
+  // Desk coverage gaps: flag stretches when staff are working but nobody is on desk
+  const allShifts = staff.flatMap(s => s.shifts ?? []);
+  if (allShifts.length > 0) {
+    const dayStart = Math.min(...allShifts.map(sh => sh.start));
+    const dayEnd   = Math.max(...allShifts.map(sh => sh.end));
+    let gapStart = null;
+    for (let h = dayStart; h < dayEnd; h += 0.5) {
+      const anyoneWorking = staff.some(s => (s.shifts ?? []).some(sh => sh.start <= h && sh.end > h));
+      if (!anyoneWorking) {
+        if (gapStart !== null) {
+          alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(h)}.` });
+          gapStart = null;
+        }
+        continue;
+      }
+      const onDesk = staff.some(s => (s.deskShifts ?? []).some(d => d.start <= h && d.end > h));
+      if (!onDesk) {
+        if (gapStart === null) gapStart = h;
+      } else {
+        if (gapStart !== null) {
+          alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(h)}.` });
+          gapStart = null;
+        }
+      }
+    }
+    if (gapStart !== null) {
+      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(dayEnd)}.` });
+    }
+  }
+
+  // Concurrent desk: one alert per conflict window listing everyone on desk at that time
+  const withDesks = staff.filter(s => s.deskShifts?.length > 0);
+  if (withDesks.length > 1) {
+    const times = [...new Set(
+      withDesks.flatMap(s => s.deskShifts.flatMap(d => [d.start, d.end]))
+    )].sort((a, b) => a - b);
+
+    const seenKey = new Set();
+    for (let i = 0; i < times.length - 1; i++) {
+      const t = times[i];
+      const onDesk = withDesks.filter(s => s.deskShifts.some(d => d.start <= t && d.end > t));
+      if (onDesk.length > 1) {
+        const key = onDesk.map(s => s.id).sort().join(',');
+        if (!seenKey.has(key)) {
+          seenKey.add(key);
+          const names = onDesk.map(s => s.name);
+          const last  = names.pop();
+          const nameStr = names.length ? `${names.join(', ')} and ${last}` : last;
+          alerts.push({
+            type: 'yellow',
+            text: `${nameStr} are all on desk at ${formatTime(t)}.`,
+          });
+        }
+      }
     }
   }
 
