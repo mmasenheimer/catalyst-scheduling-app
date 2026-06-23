@@ -240,8 +240,8 @@ function ScheduleGrid({
                 />
               ))}
 
-              {/* Toolbar-chip drop highlight */}
-              {activeDragType && hoverRow === i && (
+              {/* Toolbar-chip drop highlight (skip for events — preview ghost is more precise) */}
+              {activeDragType && activeDragType !== 'event' && hoverRow === i && (
                 <div className="absolute inset-0 pointer-events-none rounded-r-lg"
                   style={{ ...toolbarHighlight, border: '1px dashed', zIndex: 20 }} />
               )}
@@ -260,7 +260,7 @@ function ScheduleGrid({
                     border: `2px dashed ${previewInfo.valid
                       ? (currentDragType === 'shift' ? 'var(--color-green)' : currentDragType === 'desk' ? 'var(--color-yellow)' : '#7c5cbf')
                       : 'var(--color-red)'}`,
-                    zIndex: 15,
+                    zIndex: 22,
                   }}
                 />
               )}
@@ -843,7 +843,7 @@ export default function DailySchedulePage() {
   // ── Toolbar chip drag-over: track cursor to show placement preview ───────────
   function handleTimelineDragOver(e, rowIndex) {
     setHoverRow(rowIndex);
-    if (activeDragType !== 'shift' && activeDragType !== 'desk') return;
+    if (activeDragType !== 'shift' && activeDragType !== 'desk' && activeDragType !== 'event') return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const person = orderedStaff[rowIndex];
@@ -870,8 +870,14 @@ export default function DailySchedulePage() {
     } else if (activeDragType === 'event' && draggingEventId !== null) {
       const evt = todayEvents.find(ev => ev.id === draggingEventId);
       if (!evt) return;
-      const alreadyAssigned = evt.assignedStaff.includes(person.id);
-      setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid: !alreadyAssigned });
+      const alreadyAssigned  = evt.assignedStaff.includes(person.id);
+      const hasDeskConflict  = person.deskShifts?.some(d => d.start < evt.end && d.end > evt.start);
+      const hasEventConflict = todayEvents.some(other =>
+        other.id !== evt.id &&
+        other.assignedStaff.includes(person.id) &&
+        other.start < evt.end && other.end > evt.start
+      );
+      setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid: !alreadyAssigned && !hasDeskConflict && !hasEventConflict });
     }
   }
 
@@ -1204,8 +1210,14 @@ export default function DailySchedulePage() {
         const evt    = todayEvents.find(ev => ev.id === eventId);
         if (!evt) return;
         const target = orderedStaff[rowIndex];
-        const valid  = !evt.assignedStaff.includes(target.id);
-        setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid });
+        const alreadyAssigned  = evt.assignedStaff.includes(target.id);
+        const hasDeskConflict  = target.deskShifts?.some(d => d.start < evt.end && d.end > evt.start);
+        const hasEventConflict = todayEvents.some(other =>
+          other.id !== evt.id &&
+          other.assignedStaff.includes(target.id) &&
+          other.start < evt.end && other.end > evt.start
+        );
+        setPreviewInfo({ staffIndex: rowIndex, start: evt.start, end: evt.end, valid: !alreadyAssigned && !hasDeskConflict && !hasEventConflict });
       }
     }
   }
