@@ -134,9 +134,7 @@ export function NotificationsProvider({ children }) {
   }
 
   function approve(id) {
-    setNotifications(prev =>
-      prev.map(n => n.id === id ? { ...n, approved: true, read: true } : n)
-    );
+    setNotifications(prev => prev.filter(n => n.id !== id));
   }
 
   function addNotification(notif) {

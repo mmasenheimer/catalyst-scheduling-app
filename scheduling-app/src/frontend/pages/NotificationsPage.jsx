@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNotifications } from '../context/NotificationsContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -11,7 +10,6 @@ const TYPE_CONFIG = {
   availability: { label: 'Availability', dot: '#7ab0d8', bg: 'rgba(122, 176, 216, 0.12)', border: 'rgba(122, 176, 216, 0.3)' },
 };
 
-const FILTERS = ['All', 'Coverage', 'Shift Change', 'Event', 'Alert', 'Approval', 'Availability'];
 
 function formatRelativeTime(date) {
   const diffMs = Date.now() - date.getTime();
@@ -107,18 +105,12 @@ export default function NotificationsPage() {
   const { notifications, unreadCount, dismiss, dismissAll, approve } = useNotifications();
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
-  const [activeFilter, setActiveFilter] = useState('All');
-
-  const filtered = notifications.filter(n => {
-    if (activeFilter === 'All') return true;
-    return TYPE_CONFIG[n.type].label === activeFilter;
-  });
 
   return (
     <div>
       {/* Header */}
       <div
-        className="flex justify-between items-center p-5 rounded-xl mb-5 border"
+        className="flex justify-between items-center p-5 rounded-xl border"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
       >
         <div>
@@ -148,41 +140,11 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {FILTERS.map(f => {
-          const isActive = activeFilter === f;
-          const count = f === 'All'
-            ? notifications.filter(n => !n.read).length
-            : notifications.filter(n => TYPE_CONFIG[n.type].label === f && !n.read).length;
-          return (
-            <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
-              className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all"
-              style={{
-                background: isActive ? 'rgba(176, 80, 48, 0.15)' : 'var(--color-surface)',
-                color: isActive ? 'var(--color-text)' : 'var(--color-text-dim)',
-                border: `1px solid ${isActive ? 'var(--color-accent)' : 'var(--color-border)'}`,
-              }}
-            >
-              {f}
-              {count > 0 && (
-                <span
-                  className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'var(--color-accent)', color: 'white' }}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <div style={{ height: 1, background: 'var(--color-accent)', opacity: 0.5, margin: '14px 0' }} />
 
       {/* Notification list */}
       <div className="flex flex-col gap-3">
-        {filtered.length === 0 ? (
+        {notifications.length === 0 ? (
           <div
             className="p-10 rounded-xl border text-center"
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
@@ -190,7 +152,7 @@ export default function NotificationsPage() {
             <p style={{ color: 'var(--color-text-dim)' }}>No notifications here.</p>
           </div>
         ) : (
-          filtered.map(n => (
+          notifications.map(n => (
             <NotificationCard
               key={n.id}
               notif={n}
