@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { loadTemplates } from '../../data/mockTemplates';
 import { schedulesApi } from '../utils/api';
@@ -61,9 +61,16 @@ function isShiftOutsideAvailability(start, end, blocks) {
 // ── Stats header ───────────────────────────────────────────────────────────────
 
 function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate }) {
-  const scheduled  = staff.filter(s => s.shifts?.length > 0);
-  const deskFilled = scheduled.filter(s => s.deskShifts?.length > 0).length;
-  const dateLabel  = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const scheduled   = staff.filter(s => s.shifts?.length > 0);
+  const nowHour     = now.getHours() + now.getMinutes() / 60;
+  const onShiftNow  = scheduled.filter(s => s.shifts.some(sh => sh.start <= nowHour && sh.end > nowHour)).length;
+  const dateLabel   = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   return (
     <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
@@ -93,8 +100,8 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
       </div>
       <div className="flex gap-4 sm:gap-6">
         {[
-          { label: 'On Shift',     value: scheduled.length },
-          { label: 'Desks Filled', value: `${deskFilled}/${scheduled.length}` },
+          { label: 'On Shift Today', value: scheduled.length },
+          { label: 'On Shift Now', value: onShiftNow },
           { label: 'Events',       value: events.length },
         ].map(({ label, value }) => (
           <div key={label} className="text-center">
@@ -164,12 +171,30 @@ function ScheduleGrid({
       <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 972 }}>
         <div className="w-48 shrink-0 p-3 text-xs uppercase tracking-wide border-r"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>Staff</div>
-        <div className="flex-1 flex">
+        <div className="flex-1 flex relative">
           {hours.map(h => (
             <div key={h} className="flex-1 p-2 text-xs text-center border-r last:border-r-0"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>
               {formatTime(h)}
             </div>
+          ))}
+          {/* Studio open/close markers */}
+          {[studioHours.open, studioHours.close].map(h => (
+            <div
+              key={h}
+              title={h === studioHours.open ? 'Studio opens' : 'Studio closes'}
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`,
+                width: 2,
+                height: 11,
+                background: 'var(--color-red)',
+                borderRadius: 1,
+                opacity: 0.85,
+                pointerEvents: 'none',
+              }}
+            />
           ))}
         </div>
       </div>
@@ -1734,7 +1759,7 @@ export default function DailySchedulePage() {
           title="Schedule Has Issues"
           message={
             <div>
-              <p style={{ marginBottom: 8 }}>The following issues were found. You can still finalize, but consider resolving them first:</p>
+              <p style={{ marginBottom: 8 }}>The following issues were found:</p>
               <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {finalizeWarning.map((a, i) => (
                   <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>

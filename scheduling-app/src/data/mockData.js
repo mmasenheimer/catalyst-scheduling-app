@@ -2,6 +2,9 @@
 export const HOURS_START = 7;
 export const HOURS_END = 20;
 
+// ── Studio hours ──────────────────────────────────────────────────────────────
+export const studioHours = { open: 8, close: 18 };
+
 // ── Staff ─────────────────────────────────────────────────────────────────────
 export const initialStaff = [
   { id: 1,  name: 'Alex C.',      shiftStart: 7.5,  shiftEnd: 12.5, deskStart: 8.5,  deskEnd: 9.5  },

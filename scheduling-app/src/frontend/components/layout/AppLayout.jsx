@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ScheduleProvider } from "../../context/ScheduleContext";
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
+import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
@@ -93,6 +94,8 @@ function AppLayoutInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
+  const { templates, selectedId, setSelectedId, setTriggerNew } = useTemplates();
+  const isTemplates = location.pathname === '/templates';
 
   // Live clock
   useEffect(() => {
@@ -241,6 +244,85 @@ function AppLayoutInner() {
         {userCard}
       </aside>
 
+      {/* Templates secondary panel — desktop only, shown when on /templates */}
+      {isTemplates && (
+        <div
+          className="hidden lg:flex flex-col shrink-0 overflow-y-auto"
+          style={{
+            width: 200,
+            borderRight: '1px solid var(--color-border)',
+            background: 'var(--color-surface)',
+            padding: '12px 10px',
+            gap: 6,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', marginBottom: 4, paddingLeft: 4 }}>
+            Templates
+          </div>
+
+          <button
+            onClick={() => setTriggerNew(n => n + 1)}
+            style={{
+              width: '100%', padding: '7px 10px', borderRadius: 8, border: 'none',
+              background: 'var(--color-accent)', color: 'white', fontWeight: 600,
+              fontSize: 13, cursor: 'pointer', marginBottom: 4, textAlign: 'center',
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+          >
+            ＋ New Template
+          </button>
+
+          <button
+            onClick={() => {}}
+            style={{
+              width: '100%', padding: '7px 10px', borderRadius: 8,
+              border: '1px solid var(--color-accent)',
+              background: 'transparent', color: 'var(--color-accent)', fontWeight: 600,
+              fontSize: 12, cursor: 'pointer', marginBottom: 4, textAlign: 'center',
+              lineHeight: 1.3,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(176,80,48,0.08)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            ＋ Auto-Generate from Availability
+          </button>
+
+          {templates.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'center', padding: '12px 4px' }}>
+              No templates yet.
+            </div>
+          ) : (
+            templates.map(tpl => {
+              const isSelected = tpl.id === selectedId;
+              return (
+                <div
+                  key={tpl.id}
+                  onClick={() => setSelectedId(tpl.id)}
+                  style={{
+                    padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                    borderLeft: `3px solid ${isSelected ? 'var(--color-accent)' : 'transparent'}`,
+                    background: isSelected ? 'rgba(176,80,48,0.08)' : 'transparent',
+                    transition: 'background 0.12s',
+                  }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {tpl.name || <em style={{ color: 'var(--color-text-dim)', fontWeight: 400 }}>Untitled</em>}
+                  </div>
+                  {tpl.description && (
+                    <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {tpl.description}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
       {/* Right side: top bar + content */}
       <div className="flex flex-col flex-1 min-w-0">
 
@@ -301,7 +383,9 @@ export default function AppLayout() {
   return (
     <ScheduleProvider>
       <NotificationsProvider>
-        <AppLayoutInner />
+        <TemplatesProvider>
+          <AppLayoutInner />
+        </TemplatesProvider>
       </NotificationsProvider>
     </ScheduleProvider>
   );

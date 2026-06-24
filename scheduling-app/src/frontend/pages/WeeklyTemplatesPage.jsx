@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { initialStaff, HOURS_START, HOURS_END } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { buildTemplateAlerts, formatTime } from '../utils/scheduleUtils';
-import { loadTemplates, persistTemplates } from '../../data/mockTemplates';
+import { persistTemplates } from '../../data/mockTemplates';
+import { useTemplates } from '../context/TemplatesContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -570,9 +571,7 @@ function TemplateGrid({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyTemplatesPage() {
-  const [sidebarOpen,   setSidebarOpen]   = useState(false);
-  const [templates,     setTemplates]     = useState(loadTemplates);
-  const [selectedId,    setSelectedId]    = useState(null);
+  const { templates, setTemplates, selectedId, setSelectedId, triggerNew } = useTemplates();
   const [templateName,  setTemplateName]  = useState('');
   const [templateDesc,  setTemplateDesc]  = useState('');
   const [nameError,     setNameError]     = useState('');
@@ -598,6 +597,19 @@ export default function WeeklyTemplatesPage() {
   useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
 
   const currentDow = DAY_DOW[currentDay] ?? 1;
+
+  // When the panel selects a template, load it
+  useEffect(() => {
+    if (!selectedId) return;
+    const tpl = templates.find(t => t.id === selectedId);
+    if (tpl) selectTemplate(tpl);
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When the panel clicks "New Template"
+  useEffect(() => {
+    if (triggerNew === 0) return;
+    createTemplate();
+  }, [triggerNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function sortByShift(arr) {
     return [...arr].sort((a, b) => {
@@ -662,7 +674,8 @@ export default function WeeklyTemplatesPage() {
     setCurrentDay('Monday');
     templateDaysRef.current = Object.fromEntries(TEMPLATE_DAYS.map(d => [d, []]));
     setOrderedStaff([]);
-    setTemplates(prev => [...prev, newTpl]);
+    setTemplates([...templates, newTpl]);
+    persistTemplates([...templates, newTpl]);
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────────
@@ -685,6 +698,7 @@ export default function WeeklyTemplatesPage() {
       : [...templates, fullTemplate];
     setTemplates(newTemplates);
     persistTemplates(newTemplates);
+    setSelectedId(selectedId); // keep panel highlight in sync
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
@@ -694,6 +708,8 @@ export default function WeeklyTemplatesPage() {
     setTemplates(newTemplates);
     persistTemplates(newTemplates);
     setSelectedId(null);
+    setTemplateName('');
+    setTemplateDesc('');
     setOrderedStaff([]);
     setDeleteConfirm(false);
   }
@@ -1147,106 +1163,10 @@ export default function WeeklyTemplatesPage() {
   const selectedTemplate = templates.find(t => t.id === selectedId) ?? null;
 
   return (
-    <div style={{ position: 'relative' }}>
-
-      {/* ── Hamburger button ────────────────────────────────────────────────── */}
-      <button
-        onClick={() => setSidebarOpen(o => !o)}
-        title="Templates"
-        style={{
-          position: 'absolute', top: 0, left: 0, zIndex: 30,
-          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-          borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
-          display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center',
-        }}
-        onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-accent)'}
-        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
-      >
-        <span style={{ display: 'block', width: 18, height: 2, background: 'var(--color-text)', borderRadius: 2 }} />
-        <span style={{ display: 'block', width: 18, height: 2, background: 'var(--color-text)', borderRadius: 2 }} />
-        <span style={{ display: 'block', width: 18, height: 2, background: 'var(--color-text)', borderRadius: 2 }} />
-      </button>
-
-      {/* ── Sidebar drawer ──────────────────────────────────────────────────── */}
-      {sidebarOpen && (
-        <>
-          {/* backdrop */}
-          <div
-            onClick={() => setSidebarOpen(false)}
-            style={{
-              position: 'fixed', inset: 0, zIndex: 40,
-              background: 'rgba(0,0,0,0.25)',
-            }}
-          />
-          <div style={{
-            position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 50,
-            width: 240, background: 'var(--color-bg)',
-            borderRight: '1px solid var(--color-border)',
-            display: 'flex', flexDirection: 'column', gap: 8,
-            padding: 16, overflowY: 'auto',
-            boxShadow: '4px 0 20px rgba(0,0,0,0.3)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)' }}>Templates</span>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}
-              >✕</button>
-            </div>
-
-            <button
-              onClick={() => { createTemplate(); setSidebarOpen(false); }}
-              style={{
-                width: '100%', padding: '8px 12px', borderRadius: 10, border: 'none',
-                background: 'var(--color-accent)', color: 'white', fontWeight: 600,
-                fontSize: 14, cursor: 'pointer', marginBottom: 4,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}
-              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-            >
-              ＋ New Template
-            </button>
-
-            {templates.length === 0 ? (
-              <div style={{ color: 'var(--color-text-dim)', fontSize: 12, textAlign: 'center', padding: '16px 8px' }}>
-                No templates yet. Click "＋ New Template" to create one.
-              </div>
-            ) : (
-              templates.map(tpl => {
-                const isSelected = tpl.id === selectedId;
-                return (
-                  <div
-                    key={tpl.id}
-                    onClick={() => { selectTemplate(tpl); setSidebarOpen(false); }}
-                    className="p-3 rounded-xl border cursor-pointer"
-                    style={{
-                      borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
-                      background:  isSelected ? 'rgba(176,80,48,0.08)' : 'var(--color-surface)',
-                      transition: 'background 0.15s, border-color 0.15s',
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text)', marginBottom: 2 }}>
-                      {tpl.name || <em style={{ color: 'var(--color-text-dim)' }}>Untitled</em>}
-                    </div>
-                    {tpl.description && (
-                      <div style={{
-                        fontSize: 11, color: 'var(--color-text-dim)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {tpl.description}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </>
-      )}
+    <div>
 
       {/* ── Main area ───────────────────────────────────────────────────────── */}
-      <div style={{ paddingLeft: 48 }}>
+      <div>
         {!selectedId ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1262,7 +1182,6 @@ export default function WeeklyTemplatesPage() {
                 <>
                   <span style={{ fontSize: 28 }}>📋</span>
                   <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-accent)' }}>Nothing here… yet.</span>
-                  <span style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>Click ☰ to create your first template.</span>
                 </>
               ) : (
               <>
