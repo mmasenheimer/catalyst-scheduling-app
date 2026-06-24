@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { getAvailability } from '../../data/mockAvailability';
+import { getAvailability, getSubmittedAt } from '../../data/mockAvailability';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { formatTime } from '../utils/scheduleUtils';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
+
+function formatSubmittedAt(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return `Submitted ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
 
 const DAYS = [
   { label: 'Mon', dow: 1 },
@@ -91,6 +97,7 @@ export default function AvailabilityManagerPage() {
         {staff.map(person => {
           const blocks = getAvailability(person.id, selectedDow);
           const isAvailable = blocks.length > 0;
+          const submittedLabel = formatSubmittedAt(getSubmittedAt(person.id));
 
           return (
             <div
@@ -118,6 +125,11 @@ export default function AvailabilityManagerPage() {
                       ? blocks.map(b => `${formatTime(b.start)}–${formatTime(b.end)}`).join(', ')
                       : 'Not available'}
                   </div>
+                  {submittedLabel && (
+                    <div className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-dim)', opacity: 0.6, fontSize: 10 }}>
+                      {submittedLabel}
+                    </div>
+                  )}
                 </div>
               </div>
 

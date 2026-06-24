@@ -157,7 +157,7 @@ export function buildAlerts(staff, events, dow = 1) {
   });
 
   if (alerts.length === 0) {
-    alerts.push({ type: 'blue', text: 'All staffing requirements met! No issues detected.' });
+    alerts.push({ type: 'blue', text: 'No issues here, looks good bro!' });
   }
 
   return alerts;
@@ -178,4 +178,37 @@ export function autoAssignDesks(staff, events) {
     }
     return person;
   });
+}
+
+/** Build alerts for templates — desk gaps + concurrent desk only (no staffing minimums) */
+export function buildTemplateAlerts(staff) {
+  const alerts = [];
+
+  // Concurrent desk
+  const withDesks = staff.filter(s => s.deskShifts?.length > 0);
+  if (withDesks.length > 1) {
+    const times = [...new Set(
+      withDesks.flatMap(s => s.deskShifts.flatMap(d => [d.start, d.end]))
+    )].sort((a, b) => a - b);
+    const seenKey = new Set();
+    for (let i = 0; i < times.length - 1; i++) {
+      const t = times[i];
+      const onDesk = withDesks.filter(s => s.deskShifts.some(d => d.start <= t && d.end > t));
+      if (onDesk.length > 1) {
+        const key = onDesk.map(s => s.id).sort().join(',');
+        if (!seenKey.has(key)) {
+          seenKey.add(key);
+          const names = onDesk.map(s => s.name);
+          const last  = names.pop();
+          const nameStr = names.length ? `${names.join(', ')} and ${last}` : last;
+          alerts.push({ type: 'yellow', text: `${nameStr} are all on desk at ${formatTime(t)}.` });
+        }
+      }
+    }
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({ type: 'blue', text: 'No desk conflicts. Looks good!' });
+  }
+  return alerts;
 }

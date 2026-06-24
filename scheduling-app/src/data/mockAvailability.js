@@ -34,8 +34,31 @@ const mockAvailability = {
   15: days({ start: 12,  end: 18.5 }, { start: 12, end: 18.5 }), // Michael M. shift 13:30–18:30
 };
 
+// ISO timestamp of each staff member's most recent availability submission
+const submittedAt = {
+  1:  '2026-06-20T09:14:00',
+  2:  '2026-06-19T14:32:00',
+  3:  '2026-06-21T11:05:00',
+  4:  '2026-06-18T08:47:00',
+  5:  '2026-06-22T16:20:00',
+  6:  '2026-06-17T13:58:00',
+  7:  '2026-06-20T10:03:00',
+  8:  '2026-06-19T09:41:00',
+  9:  '2026-06-21T15:29:00',
+  10: '2026-06-16T12:00:00',
+  11: '2026-06-22T08:15:00',
+  12: '2026-06-18T17:44:00',
+  13: '2026-06-20T14:11:00',
+  14: '2026-06-19T11:36:00',
+  15: '2026-06-21T09:52:00',
+};
+
 export function getAvailability(staffId, dayOfWeek) {
   return mockAvailability[staffId]?.[dayOfWeek] ?? [];
+}
+
+export function getSubmittedAt(staffId) {
+  return submittedAt[staffId] ?? null;
 }
 
 export default mockAvailability;

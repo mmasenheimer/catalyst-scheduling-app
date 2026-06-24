@@ -4,9 +4,14 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
+import { loadTemplates } from '../../data/mockTemplates';
 import { schedulesApi } from '../utils/api';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
+
+const TEMPLATE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sunday'];
+const DAY_DOW       = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Sunday: 0 };
+const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
 function snapHalf(h)        { return Math.round(h * 2) / 2; }
 function clamp(v, lo, hi)   { return Math.max(lo, Math.min(hi, v)); }
@@ -55,7 +60,7 @@ function isShiftOutsideAvailability(start, end, blocks) {
 
 // ── Stats header ───────────────────────────────────────────────────────────────
 
-function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize }) {
+function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate }) {
   const scheduled  = staff.filter(s => s.shifts?.length > 0);
   const deskFilled = scheduled.filter(s => s.deskShifts?.length > 0).length;
   const dateLabel  = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -71,6 +76,13 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
             : { background: 'var(--color-accent)', color: 'white', border: '1px solid transparent' }}>
           {finalized ? '✓ Finalized' : 'Finalize'}
         </button>
+        {!finalized && (
+          <button onClick={onApplyTemplate}
+            className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80"
+            style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+            Apply Template
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
@@ -637,6 +649,124 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   );
 }
 
+// ── Apply template modal ────────────────────────────────────────────────────────
+
+function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
+  const templates = loadTemplates();
+  const todayDayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
+
+  const [selectedId, setSelectedId] = useState(templates[0]?.id ?? null);
+  const [selectedDay, setSelectedDay] = useState(todayDayName);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const template     = templates.find(t => t.id === selectedId) ?? null;
+  const dayData      = template?.days?.[selectedDay];
+  const tplStaff     = dayData?.staff ?? [];
+  const dow          = DAY_DOW[selectedDay] ?? 1;
+
+  const conflicts = tplStaff.filter(p =>
+    (p.shifts ?? []).some(s => isShiftOutsideAvailability(s.start, s.end, getAvailability(p.id, dow)))
+  );
+
+  function handleApply() {
+    const map = new Map(tplStaff.map(s => [s.id, s]));
+    const next = allStaff.map(person => {
+      const tpl = map.get(person.id);
+      if (tpl) return normalizeStaff({ ...person, shifts: tpl.shifts ?? [], deskShifts: tpl.deskShifts ?? [] });
+      return normalizeStaff({ ...person, shifts: [], deskShifts: [], scheduled: false, shiftStart: null, shiftEnd: null, deskStart: null, deskEnd: null });
+    });
+    onApply(next);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-full max-w-md mx-4 rounded-xl border p-5"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}>
+
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Apply Template</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+
+        {templates.length === 0 ? (
+          <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-dim)' }}>
+            No templates saved yet. Create one in the Weekly Templates page.
+          </p>
+        ) : (
+          <>
+            {/* Template list */}
+            <div className="mb-4" style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {templates.map(t => (
+                <div key={t.id} onClick={() => setSelectedId(t.id)}
+                  className="px-3 py-2 rounded-lg border cursor-pointer"
+                  style={{
+                    borderColor: selectedId === t.id ? 'var(--color-accent)' : 'var(--color-border)',
+                    background: selectedId === t.id ? 'rgba(176,80,48,0.08)' : 'transparent',
+                  }}>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t.name || 'Untitled'}</div>
+                  {t.description && <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>{t.description}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Day picker */}
+            <div className="flex gap-1.5 flex-wrap mb-4">
+              {TEMPLATE_DAYS.map(day => (
+                <button key={day} onClick={() => setSelectedDay(day)}
+                  className="px-3 py-1 rounded-md text-xs font-medium cursor-pointer border"
+                  style={{
+                    background: selectedDay === day ? 'var(--color-accent)' : 'var(--color-muted)',
+                    color: selectedDay === day ? 'white' : 'var(--color-text-dim)',
+                    borderColor: selectedDay === day ? 'var(--color-accent)' : 'var(--color-border)',
+                  }}>
+                  {day.slice(0, 3)}
+                </button>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="rounded-lg p-3 mb-4 text-sm" style={{ background: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
+              {tplStaff.length === 0 ? (
+                <span style={{ color: 'var(--color-text-dim)' }}>No staff in this template day.</span>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ color: 'var(--color-text)' }}>
+                    <strong>{tplStaff.length}</strong> staff · <strong>{tplStaff.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0)}</strong> desk shift{tplStaff.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0) !== 1 ? 's' : ''}
+                  </span>
+                  {conflicts.length > 0 && (
+                    <span style={{ color: 'var(--color-yellow)' }}>
+                      ⚠️ {conflicts.length} shift{conflicts.length !== 1 ? 's' : ''} outside availability
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={onClose}
+                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+                Cancel
+              </button>
+              <button onClick={handleApply} disabled={tplStaff.length === 0}
+                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: tplStaff.length === 0 ? 'not-allowed' : 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none', opacity: tplStaff.length === 0 ? 0.5 : 1 }}>
+                Apply to Schedule
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Availability warning modal ─────────────────────────────────────────────────
 
 function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule Anyway', onConfirm, onCancel }) {
@@ -784,6 +914,7 @@ export default function DailySchedulePage() {
   const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
   const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
+  const [applyTplOpen,    setApplyTplOpen]     = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
@@ -1457,6 +1588,7 @@ export default function DailySchedulePage() {
         staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
         onPrev={handlePrevDay} onNext={handleNextDay}
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => setFinalized(false)}
+        onApplyTemplate={() => setApplyTplOpen(true)}
       />
       <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} events={todayEvents} dow={currentDow} />
 
@@ -1577,6 +1709,14 @@ export default function DailySchedulePage() {
           allEvents={schedule.events}
           onSave={handleEditSave}
           onClose={() => setEditModal(null)}
+        />
+      )}
+      {applyTplOpen && (
+        <ApplyTemplateModal
+          currentDate={schedule.currentDate}
+          allStaff={schedule.staff}
+          onApply={newStaff => setOrderedStaff(sortByShift(newStaff))}
+          onClose={() => setApplyTplOpen(false)}
         />
       )}
       {availWarning && (
