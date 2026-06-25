@@ -4,8 +4,10 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
-import { loadTemplates } from '../../data/mockTemplates';
+import { loadTemplates, persistTemplates } from '../../data/mockTemplates';
+import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
+import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -60,7 +62,7 @@ function isShiftOutsideAvailability(start, end, blocks) {
 
 // ── Stats header ───────────────────────────────────────────────────────────────
 
-function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate }) {
+function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
@@ -90,6 +92,11 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
             Apply Template
           </button>
         )}
+        <button onClick={onSaveAsTemplate}
+          className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80"
+          style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+          Save as Template
+        </button>
       </div>
       <div className="flex items-center gap-2">
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
@@ -177,24 +184,6 @@ function ScheduleGrid({
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>
               {formatTime(h)}
             </div>
-          ))}
-          {/* Studio open/close markers */}
-          {[studioHours.open, studioHours.close].map(h => (
-            <div
-              key={h}
-              title={h === studioHours.open ? 'Studio opens' : 'Studio closes'}
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`,
-                width: 2,
-                height: 11,
-                background: 'var(--color-red)',
-                borderRadius: 1,
-                opacity: 0.85,
-                pointerEvents: 'none',
-              }}
-            />
           ))}
         </div>
       </div>
@@ -674,13 +663,15 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   );
 }
 
-// ── Apply template modal ────────────────────────────────────────────────────────
+// ── Apply template modal (replaced by ApplyTemplateCalendarModal) ──────────────
 
-function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
-  const templates = loadTemplates();
+function ApplyTemplateModal({ currentDate, allStaff, templates, onApply, onClose }) {
   const todayDayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
+  const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
+  const dailyTpls  = templates.filter(t => t.type === 'day' && t.day === todayDayName);
 
-  const [selectedId, setSelectedId] = useState(templates[0]?.id ?? null);
+  const firstId = weeklyTpls[0]?.id ?? dailyTpls[0]?.id ?? null;
+  const [selectedId,  setSelectedId]  = useState(firstId);
   const [selectedDay, setSelectedDay] = useState(todayDayName);
 
   useEffect(() => {
@@ -689,10 +680,12 @@ function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const template     = templates.find(t => t.id === selectedId) ?? null;
-  const dayData      = template?.days?.[selectedDay];
-  const tplStaff     = dayData?.staff ?? [];
-  const dow          = DAY_DOW[selectedDay] ?? 1;
+  const template   = templates.find(t => t.id === selectedId) ?? null;
+  const isDaily    = template?.type === 'day';
+  const tplStaff   = isDaily
+    ? (template?.staff ?? [])
+    : (template?.days?.[selectedDay]?.staff ?? []);
+  const dow        = isDaily ? (DAY_DOW[template.day] ?? 1) : (DAY_DOW[selectedDay] ?? 1);
 
   const conflicts = tplStaff.filter(p =>
     (p.shifts ?? []).some(s => isShiftOutsideAvailability(s.start, s.end, getAvailability(p.id, dow)))
@@ -709,6 +702,27 @@ function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
     onClose();
   }
 
+  const hasAny = weeklyTpls.length > 0 || dailyTpls.length > 0;
+
+  function TemplateCard({ t }) {
+    const isSelected = t.id === selectedId;
+    const badge = t.type === 'day' ? t.day?.slice(0, 3) : 'Week';
+    return (
+      <div onClick={() => setSelectedId(t.id)}
+        className="px-3 py-2 rounded-lg border cursor-pointer"
+        style={{
+          borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
+          background: isSelected ? 'rgba(176,80,48,0.08)' : 'transparent',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t.name || 'Untitled'}</div>
+          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--color-muted)', color: 'var(--color-text-dim)', whiteSpace: 'nowrap' }}>{badge}</span>
+        </div>
+        {t.description && <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>{t.description}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
@@ -721,46 +735,53 @@ function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
         </div>
 
-        {templates.length === 0 ? (
+        {!hasAny ? (
           <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-dim)' }}>
-            No templates saved yet. Create one in the Weekly Templates page.
+            No templates saved yet. Create one from the Weekly View or Save as Template from this page.
           </p>
         ) : (
           <>
             {/* Template list */}
-            <div className="mb-4" style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {templates.map(t => (
-                <div key={t.id} onClick={() => setSelectedId(t.id)}
-                  className="px-3 py-2 rounded-lg border cursor-pointer"
-                  style={{
-                    borderColor: selectedId === t.id ? 'var(--color-accent)' : 'var(--color-border)',
-                    background: selectedId === t.id ? 'rgba(176,80,48,0.08)' : 'transparent',
-                  }}>
-                  <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t.name || 'Untitled'}</div>
-                  {t.description && <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>{t.description}</div>}
-                </div>
-              ))}
+            <div className="mb-4" style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {weeklyTpls.length > 0 && (
+                <>
+                  {(dailyTpls.length > 0) && (
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', paddingLeft: 4, marginBottom: 2 }}>Weekly</div>
+                  )}
+                  {weeklyTpls.map(t => <TemplateCard key={t.id} t={t} />)}
+                </>
+              )}
+              {dailyTpls.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', paddingLeft: 4, marginTop: 4, marginBottom: 2 }}>
+                    Day Templates · {todayDayName}
+                  </div>
+                  {dailyTpls.map(t => <TemplateCard key={t.id} t={t} />)}
+                </>
+              )}
             </div>
 
-            {/* Day picker */}
-            <div className="flex gap-1.5 flex-wrap mb-4">
-              {TEMPLATE_DAYS.map(day => (
-                <button key={day} onClick={() => setSelectedDay(day)}
-                  className="px-3 py-1 rounded-md text-xs font-medium cursor-pointer border"
-                  style={{
-                    background: selectedDay === day ? 'var(--color-accent)' : 'var(--color-muted)',
-                    color: selectedDay === day ? 'white' : 'var(--color-text-dim)',
-                    borderColor: selectedDay === day ? 'var(--color-accent)' : 'var(--color-border)',
-                  }}>
-                  {day.slice(0, 3)}
-                </button>
-              ))}
-            </div>
+            {/* Day picker — only for weekly templates */}
+            {!isDaily && (
+              <div className="flex gap-1.5 flex-wrap mb-4">
+                {TEMPLATE_DAYS.map(day => (
+                  <button key={day} onClick={() => setSelectedDay(day)}
+                    className="px-3 py-1 rounded-md text-xs font-medium cursor-pointer border"
+                    style={{
+                      background: selectedDay === day ? 'var(--color-accent)' : 'var(--color-muted)',
+                      color: selectedDay === day ? 'white' : 'var(--color-text-dim)',
+                      borderColor: selectedDay === day ? 'var(--color-accent)' : 'var(--color-border)',
+                    }}>
+                    {day.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Summary */}
             <div className="rounded-lg p-3 mb-4 text-sm" style={{ background: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
               {tplStaff.length === 0 ? (
-                <span style={{ color: 'var(--color-text-dim)' }}>No staff in this template day.</span>
+                <span style={{ color: 'var(--color-text-dim)' }}>No staff in this template{isDaily ? '' : ' day'}.</span>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ color: 'var(--color-text)' }}>
@@ -787,6 +808,97 @@ function ApplyTemplateModal({ currentDate, allStaff, onApply, onClose }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Save as day template modal ─────────────────────────────────────────────────
+
+function SaveAsDayTemplateModal({ currentDate, staff, templates, onSave, onClose }) {
+  const [name,      setName]      = useState('');
+  const [desc,      setDesc]      = useState('');
+  const [nameError, setNameError] = useState('');
+  const dayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed) { setNameError('Template name is required.'); return; }
+    if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
+      setNameError('A template with this name already exists.'); return;
+    }
+    onSave({
+      id: Date.now(),
+      type: 'day',
+      day: dayName,
+      name: trimmed,
+      description: desc.trim(),
+      createdAt: new Date().toISOString(),
+      staff: staff.filter(s => s.shifts?.length > 0),
+    });
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-full max-w-sm mx-4 rounded-xl border p-5"
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}>
+
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Save as Day Template</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+        <p className="text-xs mb-4" style={{ color: 'var(--color-text-dim)' }}>
+          Saving {staff.filter(s => s.shifts?.length > 0).length} scheduled staff for <strong style={{ color: 'var(--color-text)' }}>{dayName}</strong>
+        </p>
+
+        <div className="mb-3">
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Template Name *</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={e => { setName(e.target.value); setNameError(''); }}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            placeholder={`e.g. Busy ${dayName}`}
+            style={{
+              width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13,
+              background: 'var(--color-muted)', border: `1px solid ${nameError ? 'var(--color-red)' : 'var(--color-border)'}`,
+              color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+          {nameError && <div style={{ fontSize: 11, color: 'var(--color-red)', marginTop: 4 }}>{nameError}</div>}
+        </div>
+        <div className="mb-5">
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Description (optional)</label>
+          <input
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            placeholder="Optional notes"
+            style={{
+              width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13,
+              background: 'var(--color-muted)', border: '1px solid var(--color-border)',
+              color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+            Cancel
+          </button>
+          <button onClick={handleSave}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>
+            Save Template
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -896,6 +1008,7 @@ function EventsPanel({ events, staff, onAddEvent }) {
 
 export default function DailySchedulePage() {
   const schedule = useScheduleContext();
+  const { templates, setTemplates } = useTemplates();
   const navigate = useNavigate();
 
   const trashRef = useRef(null);
@@ -940,6 +1053,7 @@ export default function DailySchedulePage() {
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
   const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
   const [applyTplOpen,    setApplyTplOpen]     = useState(false);
+  const [saveTplOpen,     setSaveTplOpen]      = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
@@ -1614,6 +1728,7 @@ export default function DailySchedulePage() {
         onPrev={handlePrevDay} onNext={handleNextDay}
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => setFinalized(false)}
         onApplyTemplate={() => setApplyTplOpen(true)}
+        onSaveAsTemplate={() => setSaveTplOpen(true)}
       />
       <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} events={todayEvents} dow={currentDow} />
 
@@ -1737,11 +1852,29 @@ export default function DailySchedulePage() {
         />
       )}
       {applyTplOpen && (
-        <ApplyTemplateModal
-          currentDate={schedule.currentDate}
+        <ApplyTemplateCalendarModal
+          templates={templates}
           allStaff={schedule.staff}
-          onApply={newStaff => setOrderedStaff(sortByShift(newStaff))}
+          saveDaySchedule={schedule.saveDaySchedule}
           onClose={() => setApplyTplOpen(false)}
+          onApplyStaff={(newStaff, dateStr) => {
+            if (newStaff && dateStr === schedule.currentDate.toLocaleDateString('en-CA')) {
+              setOrderedStaff(sortByShift(newStaff));
+            }
+          }}
+        />
+      )}
+      {saveTplOpen && (
+        <SaveAsDayTemplateModal
+          currentDate={schedule.currentDate}
+          staff={orderedStaff}
+          templates={templates}
+          onSave={newTpl => {
+            const updated = [...templates, newTpl];
+            setTemplates(updated);
+            persistTemplates(updated);
+          }}
+          onClose={() => setSaveTplOpen(false)}
         />
       )}
       {availWarning && (

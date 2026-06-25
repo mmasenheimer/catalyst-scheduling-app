@@ -578,7 +578,8 @@ export default function WeeklyTemplatesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [currentDay,    setCurrentDay]    = useState('Monday');
   const [orderedStaff,  setOrderedStaff]  = useState([]);
-  const templateDaysRef = useRef({});
+  const templateDaysRef    = useRef({});
+  const lastTriggerRef     = useRef(triggerNew); // tracks the last-processed triggerNew to avoid firing on remount
 
   const [poolDragId,    setPoolDragId]    = useState(null);
   const [activeBar,     setActiveBar]     = useState(null);
@@ -605,9 +606,10 @@ export default function WeeklyTemplatesPage() {
     if (tpl) selectTemplate(tpl);
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When the panel clicks "New Template"
+  // When the panel clicks "New Template" — only fire on actual increments, not on remount
   useEffect(() => {
-    if (triggerNew === 0) return;
+    if (triggerNew === lastTriggerRef.current) return;
+    lastTriggerRef.current = triggerNew;
     createTemplate();
   }, [triggerNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -649,18 +651,25 @@ export default function WeeklyTemplatesPage() {
     setTemplateDesc(tpl.description ?? '');
     setNameError('');
     setDeleteConfirm(false);
-    const day = 'Monday';
-    setCurrentDay(day);
-    templateDaysRef.current = Object.fromEntries(
-      TEMPLATE_DAYS.map(d => [d, (tpl.days?.[d]?.staff ?? []).map(normalizeStaff)])
-    );
-    setOrderedStaff(templateDaysRef.current[day]);
+    if (tpl.type === 'day') {
+      setCurrentDay('_day');
+      templateDaysRef.current = { '_day': (tpl.staff ?? []).map(normalizeStaff) };
+      setOrderedStaff(templateDaysRef.current['_day']);
+    } else {
+      const day = 'Monday';
+      setCurrentDay(day);
+      templateDaysRef.current = Object.fromEntries(
+        TEMPLATE_DAYS.map(d => [d, (tpl.days?.[d]?.staff ?? []).map(normalizeStaff)])
+      );
+      setOrderedStaff(templateDaysRef.current[day]);
+    }
   }
 
   // ── Create new template ───────────────────────────────────────────────────────
   function createTemplate() {
     const newTpl = {
       id: `tpl_${Date.now()}`,
+      type: 'week',
       name: '',
       description: '',
       createdAt: new Date().toISOString(),
@@ -686,13 +695,25 @@ export default function WeeklyTemplatesPage() {
     if (duplicate) { setNameError('A template with this name already exists.'); return; }
     setNameError('');
     templateDaysRef.current[currentDay] = orderedStaff;
-    const fullTemplate = {
-      id: selectedId,
-      name: trimmed,
-      description: templateDesc.trim(),
-      createdAt: templates.find(t => t.id === selectedId)?.createdAt ?? new Date().toISOString(),
-      days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: templateDaysRef.current[d] ?? [] }])),
-    };
+    const existingTpl = templates.find(t => t.id === selectedId);
+    let fullTemplate;
+    if (existingTpl?.type === 'day') {
+      fullTemplate = {
+        ...existingTpl,
+        name: trimmed,
+        description: templateDesc.trim(),
+        staff: templateDaysRef.current[currentDay] ?? orderedStaff,
+      };
+    } else {
+      fullTemplate = {
+        id: selectedId,
+        type: 'week',
+        name: trimmed,
+        description: templateDesc.trim(),
+        createdAt: existingTpl?.createdAt ?? new Date().toISOString(),
+        days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: templateDaysRef.current[d] ?? [] }])),
+      };
+    }
     const newTemplates = templates.some(t => t.id === selectedId)
       ? templates.map(t => t.id === selectedId ? fullTemplate : t)
       : [...templates, fullTemplate];
@@ -1161,6 +1182,9 @@ export default function WeeklyTemplatesPage() {
   }
 
   const selectedTemplate = templates.find(t => t.id === selectedId) ?? null;
+  const visibleDays = selectedTemplate?.type === 'day'
+    ? [] // day templates have no day tabs — single generic day
+    : TEMPLATE_DAYS;
 
   return (
     <div>
@@ -1276,7 +1300,7 @@ export default function WeeklyTemplatesPage() {
 
             {/* Day tabs */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-              {TEMPLATE_DAYS.map(day => {
+              {visibleDays.map(day => {
                 const isActive = day === currentDay;
                 return (
                   <button

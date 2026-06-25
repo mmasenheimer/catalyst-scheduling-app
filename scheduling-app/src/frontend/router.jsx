@@ -13,6 +13,7 @@ import ShiftRequestPage from './pages/ShiftRequestPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
+import WeeklyViewPage from './pages/WeeklyViewPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
     children: [
       { index: true,         element: <ProtectedRoute managerOnly><DailySchedulePage /></ProtectedRoute> },
+      { path: 'weekly',      element: <ProtectedRoute managerOnly><WeeklyViewPage /></ProtectedRoute> },
       { path: 'templates',   element: <ProtectedRoute managerOnly><WeeklyTemplatesPage /></ProtectedRoute> },
       { path: 'my-schedule', element: <MySchedulePage /> },
       { path: 'add-event',        element: <ProtectedRoute managerOnly><AddEventPage /></ProtectedRoute> },

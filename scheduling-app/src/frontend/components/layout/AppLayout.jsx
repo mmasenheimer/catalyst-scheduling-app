@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { ScheduleProvider } from "../../context/ScheduleContext";
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
+import { persistTemplates } from "../../../data/mockTemplates";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
@@ -23,8 +24,9 @@ function useTheme() {
 
 const managerNav = [
   { to: "/",               label: "Daily Schedule" },
+  { to: "/weekly",         label: "Weekly View" },
   { to: "/calendar",       label: "Calendar" },
-  { to: "/templates",      label: "Weekly Templates" },
+  { to: "/templates",      label: "Templates" },
   { to: "/my-schedule",    label: "My Schedule" },
   { to: "/add-event",      label: "Add Event" },
   { to: "/staff-availability", label: "Staff Availability" },
@@ -94,8 +96,32 @@ function AppLayoutInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
-  const { templates, selectedId, setSelectedId, setTriggerNew } = useTemplates();
+  const { templates, setTemplates, selectedId, setSelectedId, setTriggerNew } = useTemplates();
   const isTemplates = location.pathname === '/templates';
+
+  // New-template modal state
+  const [newTplStep,    setNewTplStep]    = useState(null); // null | 'pick' | 'day-form'
+  const [dayTplName,    setDayTplName]    = useState('');
+  const [dayTplDesc,    setDayTplDesc]    = useState('');
+  const [dayTplError,   setDayTplError]   = useState('');
+
+  function openNewTpl() { setDayTplName(''); setDayTplDesc(''); setDayTplError(''); setNewTplStep('pick'); }
+  function closeNewTpl() { setNewTplStep(null); }
+
+  function createDayTemplate() {
+    const trimmed = dayTplName.trim();
+    if (!trimmed) { setDayTplError('Name is required.'); return; }
+    if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
+      setDayTplError('A template with this name already exists.'); return;
+    }
+    const newTpl = { id: Date.now(), type: 'day', name: trimmed, description: dayTplDesc.trim(), createdAt: new Date().toISOString(), staff: [] };
+    const updated = [...templates, newTpl];
+    setTemplates(updated);
+    persistTemplates(updated);
+    setSelectedId(newTpl.id);
+    closeNewTpl();
+    navigate('/templates');
+  }
 
   // Live clock
   useEffect(() => {
@@ -261,7 +287,7 @@ function AppLayoutInner() {
           </div>
 
           <button
-            onClick={() => setTriggerNew(n => n + 1)}
+            onClick={openNewTpl}
             style={{
               width: '100%', padding: '7px 10px', borderRadius: 8, border: 'none',
               background: 'var(--color-accent)', color: 'white', fontWeight: 600,
@@ -288,12 +314,10 @@ function AppLayoutInner() {
             ＋ Auto-Generate from Availability
           </button>
 
-          {templates.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'center', padding: '12px 4px' }}>
-              No templates yet.
-            </div>
-          ) : (
-            templates.map(tpl => {
+          {(() => {
+            const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
+            const dayTpls    = templates.filter(t => t.type === 'day');
+            const renderCard = (tpl) => {
               const isSelected = tpl.id === selectedId;
               return (
                 <div
@@ -311,6 +335,11 @@ function AppLayoutInner() {
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {tpl.name || <em style={{ color: 'var(--color-text-dim)', fontWeight: 400 }}>Untitled</em>}
                   </div>
+                  {tpl.type === 'day' && (
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Day
+                    </div>
+                  )}
                   {tpl.description && (
                     <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {tpl.description}
@@ -318,8 +347,52 @@ function AppLayoutInner() {
                   )}
                 </div>
               );
-            })
-          )}
+            };
+            if (weeklyTpls.length === 0 && dayTpls.length === 0) return (
+              <div style={{ fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'center', padding: '12px 4px' }}>
+                No templates yet.
+              </div>
+            );
+            return (
+              <>
+                {weeklyTpls.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'white', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>Weekly</div>
+                    {weeklyTpls.map(renderCard)}
+                  </>
+                )}
+                {dayTpls.length > 0 && (
+                  <>
+                    {weeklyTpls.length > 0 && <div style={{ height: 1, background: 'var(--color-accent)', opacity: 0.4, margin: '8px 4px' }} />}
+                    <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'white', textAlign: 'center', marginBottom: 2 }}>Day</div>
+                    {dayTpls.map(renderCard)}
+                  </>
+                )}
+              </>
+            );
+          })()}
+
+          <div style={{ flex: 1 }} />
+
+          <button
+            onClick={() => {
+              if (window.confirm('Delete all templates? This cannot be undone.')) {
+                setTemplates([]);
+                persistTemplates([]);
+                setSelectedId(null);
+              }
+            }}
+            style={{
+              width: '100%', padding: '7px 10px', borderRadius: 8,
+              border: '1px solid var(--color-border)',
+              background: 'transparent', color: 'var(--color-text-dim)', fontWeight: 600,
+              fontSize: 12, cursor: 'pointer', marginTop: 8, textAlign: 'center',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-red)'; e.currentTarget.style.color = 'var(--color-red)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-dim)'; }}
+          >
+            Delete All Templates
+          </button>
         </div>
       )}
 
@@ -375,6 +448,104 @@ function AppLayoutInner() {
           <Outlet />
         </main>
       </div>
+
+      {/* New template modal */}
+      {newTplStep && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+          onClick={e => { if (e.target === e.currentTarget) closeNewTpl(); }}
+        >
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 28, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
+
+            {newTplStep === 'pick' && (
+              <>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>New Template</h3>
+                <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--color-text-dim)' }}>What kind of template do you want to create?</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    onClick={() => { setTriggerNew(n => n + 1); closeNewTpl(); }}
+                    style={{
+                      padding: '14px 16px', borderRadius: 10, border: '1px solid var(--color-border)',
+                      background: 'var(--color-muted)', cursor: 'pointer', textAlign: 'left',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-accent)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', marginBottom: 3 }}>Weekly Template</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>A full week of schedules — one staff layout per day (Mon–Sun)</div>
+                  </button>
+                  <button
+                    onClick={() => setNewTplStep('day-form')}
+                    style={{
+                      padding: '14px 16px', borderRadius: 10, border: '1px solid var(--color-border)',
+                      background: 'var(--color-muted)', cursor: 'pointer', textAlign: 'left',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-accent)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', marginBottom: 3 }}>Day Template</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>A single-day schedule you can apply to any specific date</div>
+                  </button>
+                </div>
+                <div style={{ marginTop: 16, textAlign: 'right' }}>
+                  <button onClick={closeNewTpl} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {newTplStep === 'day-form' && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <button onClick={() => setNewTplStep('pick')} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>New Day Template</h3>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Template Name *</label>
+                  <input
+                    autoFocus
+                    value={dayTplName}
+                    onChange={e => { setDayTplName(e.target.value); setDayTplError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && createDayTemplate()}
+                    placeholder="e.g. Busy Day"
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13, boxSizing: 'border-box',
+                      background: 'var(--color-muted)', border: `1px solid ${dayTplError ? 'var(--color-red)' : 'var(--color-border)'}`,
+                      color: 'var(--color-text)', outline: 'none',
+                    }}
+                  />
+                  {dayTplError && <div style={{ fontSize: 11, color: 'var(--color-red)', marginTop: 4 }}>{dayTplError}</div>}
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Description (optional)</label>
+                  <input
+                    value={dayTplDesc}
+                    onChange={e => setDayTplDesc(e.target.value)}
+                    placeholder="Optional notes"
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13, boxSizing: 'border-box',
+                      background: 'var(--color-muted)', border: '1px solid var(--color-border)',
+                      color: 'var(--color-text)', outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={closeNewTpl} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button onClick={createDayTemplate} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Create Day Template
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
