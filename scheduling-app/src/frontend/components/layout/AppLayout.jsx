@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { ScheduleProvider } from "../../context/ScheduleContext";
+import { ScheduleProvider, useScheduleContext } from "../../context/ScheduleContext";
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { persistTemplates } from "../../../data/mockTemplates";
+import ApplyTemplateCalendarModal from "../ApplyTemplateCalendarModal";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
@@ -97,7 +98,9 @@ function AppLayoutInner() {
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
   const { templates, setTemplates, selectedId, setSelectedId, setTriggerNew } = useTemplates();
+  const { staff, saveDaySchedule } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
+  const [applyTplOpen, setApplyTplOpen] = useState(false);
 
   // New-template modal state
   const [newTplStep,    setNewTplStep]    = useState(null); // null | 'pick' | 'day-form'
@@ -282,8 +285,18 @@ function AppLayoutInner() {
             gap: 6,
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', marginBottom: 4, paddingLeft: 4 }}>
-            Templates
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, paddingLeft: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)' }}>
+              Templates
+            </span>
+            <button
+              onClick={() => setApplyTplOpen(true)}
+              style={{ padding: '2px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(176,80,48,0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              Apply
+            </button>
           </div>
 
           <button
@@ -394,6 +407,15 @@ function AppLayoutInner() {
             Delete All Templates
           </button>
         </div>
+      )}
+
+      {applyTplOpen && (
+        <ApplyTemplateCalendarModal
+          templates={templates}
+          allStaff={staff}
+          saveDaySchedule={saveDaySchedule}
+          onClose={() => setApplyTplOpen(false)}
+        />
       )}
 
       {/* Right side: top bar + content */}

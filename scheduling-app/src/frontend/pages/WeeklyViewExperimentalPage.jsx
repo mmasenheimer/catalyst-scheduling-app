@@ -682,6 +682,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     endDrag();
   }
 
+  const hasAnyScheduled = orderedStaff.some(s => s.shifts?.length > 0);
   const alerts         = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow);
   const dayName        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
   const monthDay       = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
@@ -709,8 +710,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           </button>
         </div>
         <div style={{ display:'flex', gap:6 }}>
-          {!finalized && <button onClick={()=>setApplyTplOpen(true)} style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:500, cursor:'pointer', background:'var(--color-muted)', color:'var(--color-text-dim)', border:'1px solid var(--color-border)' }}>Apply Template</button>}
-          <button onClick={()=>setSaveTplOpen(true)} style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:500, cursor:'pointer', background:'var(--color-muted)', color:'var(--color-text-dim)', border:'1px solid var(--color-border)' }}>Save as Template</button>
+          <button onClick={()=>setSaveTplOpen(true)}
+            style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', background:'transparent', color:'var(--color-accent)', border:'1px solid var(--color-accent)' }}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(176,80,48,0.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Save as Template</button>
         </div>
       </div>
 
@@ -719,7 +721,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         <div style={{ padding:'4px 10px', borderBottom:'1px solid var(--color-border)', display:'flex', flexDirection:'column', gap:2 }}>
           {alerts.map((a,i) => (
             <div key={i} style={{ fontSize:11, color:'var(--color-text-dim)', display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:a.type==='red'?'var(--color-red)':a.type==='yellow'?'var(--color-yellow)':'var(--color-accent-bright)', flexShrink:0 }}/>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':a.type==='yellow'?'var(--color-yellow)':'var(--color-accent-bright)', flexShrink:0 }}/>
               {a.text}
             </div>
           ))}
@@ -765,7 +767,16 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       )}
 
-      {/* Time header */}
+      {/* Placeholder when no staff scheduled */}
+      {!hasAnyScheduled && (
+        <div style={{ padding:'14px 12px', fontSize:12, color:'var(--color-text-dim)', fontStyle:'italic', borderTop:'1px solid var(--color-border)' }}>
+          No staff scheduled — apply a template or drag a shift to get started.
+        </div>
+      )}
+
+      {/* Time header + Staff rows — hidden when nothing is scheduled */}
+      <div style={{ display: hasAnyScheduled ? undefined : 'none' }}>
+
       <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)' }}>
         <div style={{ width:NAME_COL, flexShrink:0, padding:'3px 8px', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--color-text-dim)', borderRight:'1px solid var(--color-border)' }}>Staff</div>
         <div style={{ flex:1, display:'flex' }}>
@@ -775,7 +786,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       </div>
 
-      {/* Staff rows */}
       <div>
         {orderedStaff.map((person, i) => (
           <div key={person.id} style={{ display:'flex', borderBottom: i < orderedStaff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts.length>0 ? 1 : 0.38, transition:'opacity 0.15s' }}>
@@ -877,22 +887,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
             </div>
           </div>
         ))}
-
-        {/* Events strip */}
-        {dayEvents.length > 0 && (
-          <div style={{ display:'flex', borderTop:'1px solid var(--color-border)', height:22 }}>
-            <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', paddingLeft:8, borderRight:'1px solid var(--color-border)', fontSize:9, fontWeight:600, color:'var(--color-text-dim)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Events</div>
-            <div style={{ flex:1, position:'relative' }}>
-              {dayEvents.map(evt => (
-                <div key={evt.id} title={`${evt.name}: ${formatTime(evt.start)}–${formatTime(evt.end)}`}
-                  style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', height:14, ...posStyle(evt.start,evt.end), background:'#3b2a6e', opacity:0.85, borderRadius:3, overflow:'hidden', display:'flex', alignItems:'center', paddingLeft:4 }}>
-                  <span style={{ fontSize:9, color:'white', fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', pointerEvents:'none' }}>{evt.name} ({evt.assignedStaff.length}/{evt.staffNeeded})</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      </div>{/* end time header + staff rows wrapper */}
 
       {/* Legend */}
       <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
@@ -919,7 +916,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
               <ul style={{ listStyle:'none', padding:0, display:'flex', flexDirection:'column', gap:4 }}>
                 {finalizeWarn.map((a,i) => (
                   <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:6, fontSize:12 }}>
-                    <span style={{ width:8, height:8, borderRadius:'50%', background:a.type==='red'?'var(--color-red)':'var(--color-yellow)', flexShrink:0, marginTop:3 }}/>
+                    <span style={{ width:8, height:8, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':'var(--color-yellow)', flexShrink:0, marginTop:3 }}/>
                     <span style={{ color:'var(--color-text-dim)' }}>{a.text}</span>
                   </li>
                 ))}
@@ -946,7 +943,8 @@ export default function WeeklyViewExperimentalPage() {
   const [tplName,      setTplName]      = useState('');
   const [tplDesc,      setTplDesc]      = useState('');
   const [nameError,    setNameError]    = useState('');
-  const [finalizeAllWarn, setFinalizeAllWarn] = useState(null);  // [{ label, issues }]
+  const [finalizeAllWarn,  setFinalizeAllWarn]  = useState(null);  // [{ label, issues }]
+  const [weekFinalized,    setWeekFinalized]    = useState(false);
 
   // Imperative handles to each mounted DayEditor, keyed by day string. Lets
   // "Finalize All" read each day's issues / commit it without lifting its
@@ -963,15 +961,18 @@ export default function WeeklyViewExperimentalPage() {
     return weekData.map(d => dayHandles.current[d.key]).filter(h => h && !h.isFinalized());
   }
   function handleFinalizeAll() {
+    if (weekFinalized) { setWeekFinalized(false); pendingDays(); return; }
     const pending = pendingDays();
-    if (pending.length === 0) return;
+    if (pending.length === 0) { setWeekFinalized(true); return; }
     const withIssues = pending.map(h => ({ label: h.label, issues: h.getIssues() })).filter(x => x.issues.length > 0);
     if (withIssues.length > 0) { setFinalizeAllWarn(withIssues); return; }
     pending.forEach(h => h.commit());
+    setWeekFinalized(true);
   }
   function confirmFinalizeAll() {
     pendingDays().forEach(h => h.commit());
     setFinalizeAllWarn(null);
+    setWeekFinalized(true);
   }
 
   const weekDays = useMemo(() => Array.from({ length:7 }, (_,i) => addDays(weekStart,i)), [weekStart]);
@@ -1015,8 +1016,8 @@ export default function WeeklyViewExperimentalPage() {
       .sort((a,b)=>(b.total-b.max)-(a.total-a.max));
   }, [weekDays, daySchedules, getDaySchedule, maxHoursById]);
 
-  function prevWeek() { setWeekStart(d => addDays(d,-7)); }
-  function nextWeek() { setWeekStart(d => addDays(d,7)); }
+  function prevWeek() { setWeekStart(d => addDays(d,-7)); setWeekFinalized(false); }
+  function nextWeek() { setWeekStart(d => addDays(d,7)); setWeekFinalized(false); }
 
   function handleSaveTemplate() {
     const trimmed = tplName.trim();
@@ -1064,9 +1065,10 @@ export default function WeeklyViewExperimentalPage() {
             onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
             Save as Weekly Template
           </button>
-          <button onClick={handleFinalizeAll} style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'var(--color-green)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}
+          <button onClick={handleFinalizeAll}
+            style={{ padding:'6px 14px', borderRadius:8, border:'none', fontSize:13, fontWeight:600, cursor:'pointer', ...(weekFinalized ? { background:'#1a2a1a', color:'#6ab888' } : { background:'var(--color-green)', color:'white' }) }}
             onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-            Finalize All
+            {weekFinalized ? '✓ All Finalized' : 'Finalize All'}
           </button>
         </div>
       </div>

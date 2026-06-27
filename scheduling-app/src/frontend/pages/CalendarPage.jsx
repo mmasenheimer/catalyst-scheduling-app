@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,9 @@ const MONTHS = [
 ];
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop'];
+const H_START = 7, H_END = 20;
+const TIME_STEPS = Array.from({ length: (H_END - H_START) * 2 + 1 }, (_, i) => H_START + i * 0.5);
 
 function getCalendarCells(year, month) {
   const firstDow = new Date(year, month, 1).getDay();
@@ -73,7 +76,128 @@ function isSameDay(a, b) {
   );
 }
 
-function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events, isManager }) {
+function CalTimeSelect({ value, onChange, min, max }) {
+  const opts = TIME_STEPS.filter(t => t >= (min ?? H_START) && t <= (max ?? H_END));
+  const inp = { width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 12, background: 'var(--color-muted)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
+  return (
+    <select value={value} onChange={e => onChange(parseFloat(e.target.value))} style={inp}>
+      {opts.map(t => <option key={t} value={t}>{fmtT(t)}</option>)}
+    </select>
+  );
+}
+
+function EditEventModal({ evt, onSave, onClose }) {
+  const [form, setForm] = useState({ name: evt.name, type: evt.type, start: evt.start, end: evt.end, staffNeeded: evt.staffNeeded, notes: evt.notes || '' });
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const inp = { width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 12, boxSizing: 'border-box', background: 'var(--color-muted)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
+  const lbl = { display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 4 };
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose} onMouseDown={e => e.stopPropagation()}>
+      <div className="w-full max-w-sm mx-4 rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Edit Event</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div><label style={lbl}>Event Name</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inp}/></div>
+          <div><label style={lbl}>Type</label>
+            <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={inp}>
+              {EVENT_TYPES.map(t => <option key={t} value={t}>{t[0].toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1"><label style={lbl}>Start</label><CalTimeSelect value={form.start} onChange={v => setForm(f => ({ ...f, start: Math.min(v, f.end - 0.5) }))} max={form.end - 0.5}/></div>
+            <div className="flex-1"><label style={lbl}>End</label><CalTimeSelect value={form.end} onChange={v => setForm(f => ({ ...f, end: Math.max(v, f.start + 0.5) }))} min={form.start + 0.5}/></div>
+          </div>
+          <div><label style={lbl}>Staff Needed</label><input type="number" min={1} max={20} value={form.staffNeeded} onChange={e => setForm(f => ({ ...f, staffNeeded: parseInt(e.target.value) || 1 }))} style={inp}/></div>
+          <div><label style={lbl}>Notes</label><textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inp, resize: 'none' }}/></div>
+        </div>
+        <div className="flex gap-2 mt-5 justify-end">
+          <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>Cancel</button>
+          <button onClick={() => onSave(form)} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>Save Changes</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEvent, onNavigate }) {
+  const ref = useRef(null);
+  const [top, setTop] = useState(cellBottom + 6);
+
+  useEffect(() => {
+    const onKey  = e => { if (e.key === 'Escape') onClose(); };
+    const onDown = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown); };
+  }, [onClose]);
+
+  // After mount, flip above the cell if the popover would go off the bottom of the viewport
+  useEffect(() => {
+    if (ref.current) {
+      const h = ref.current.getBoundingClientRect().height;
+      if (cellBottom + 6 + h > window.innerHeight - 12) {
+        setTop(cellTop - h - 6);
+      }
+    }
+  }, [cellTop, cellBottom]);
+
+  const label = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const W = 260;
+  const left = Math.min(x, window.innerWidth - W - 12);
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', top, left, width: W, zIndex: 9999,
+      background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+      borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid var(--color-border)' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text)' }}>{label}</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-dim)', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px' }}>
+        {events.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-dim)', padding: '6px 4px' }}>No events scheduled.</div>
+        )}
+        {events.map(evt => (
+          <button key={evt.id} onClick={() => onEditEvent(evt)}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '6px 8px', borderRadius: 7, background: 'rgba(124,92,191,0.12)', border: '1px solid rgba(124,92,191,0.2)', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,92,191,0.22)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,92,191,0.12)'}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#7c5cbf', flexShrink: 0, marginTop: 3 }}/>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>{evt.name}</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>
+                {fmtT(evt.start)} – {fmtT(evt.end)} · {evt.type}
+              </div>
+              {evt.staffNeeded > 0 && (
+                <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 1 }}>
+                  {evt.assignedStaff?.length ?? 0}/{evt.staffNeeded} staff assigned
+                </div>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: '6px 8px 8px', borderTop: '1px solid var(--color-border)' }}>
+        <button onClick={onNavigate}
+          style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>
+          Open Daily Schedule →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events, isManager, onOverflowClick }) {
   const template = getTemplate(date);
   const staffCount = template.staff.length;
   const dateEvents = getEventsForDate(date, events);
@@ -163,9 +287,14 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
           </div>
         ))}
         {overflow > 0 && (
-          <div className="text-xs px-1" style={{ color: 'var(--color-text-dim)' }}>
+          <button
+            onClick={e => { e.stopPropagation(); onOverflowClick(e, date, dateEvents); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: '1px 4px', borderRadius: 4, fontSize: 10, color: 'var(--color-text-dim)', fontWeight: 600 }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-dim)'}
+          >
             +{overflow} more
-          </div>
+          </button>
         )}
       </div>
 
@@ -186,9 +315,11 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
 
 export default function CalendarPage() {
   const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewYear,  setViewYear]  = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const { currentDate, goToDate, staff, events } = useScheduleContext();
+  const [popover,    setPopover]    = useState(null); // { date, events, x, y }
+  const [editingEvt, setEditingEvt] = useState(null);
+  const { currentDate, goToDate, staff, events, updateEvent } = useScheduleContext();
   const { user } = useAuth();
   const navigate = useNavigate();
   const me = user?.staffId ? staff.find(s => s.id === user.staffId) : null;
@@ -210,7 +341,20 @@ export default function CalendarPage() {
     setViewMonth(today.getMonth());
   }
 
-  function handleDayClick(date) {
+  function handleDayClick(e, date) {
+    const dateEvts = getEventsForDate(date, events);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover({ date, events: dateEvts, x: rect.left, cellTop: rect.top, cellBottom: rect.bottom });
+  }
+
+  function handleOverflowClick(e, date, evts) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover({ date, events: evts, x: rect.left, cellTop: rect.top, cellBottom: rect.bottom });
+  }
+
+  function navigateToDay(date) {
+    setPopover(null);
+    setEditingEvt(null);
     goToDate(date);
     navigate(user?.role === 'manager' ? '/' : '/my-schedule');
   }
@@ -248,7 +392,7 @@ export default function CalendarPage() {
         <div className="flex-1 min-w-0">
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Calendar</h2>
           <p className="text-sm mt-1 hidden sm:block" style={{ color: 'var(--color-text-dim)' }}>
-            {user?.role === 'manager' ? 'Click any day to open the daily schedule' : 'Click any day to view your schedule for that week'}
+            {user?.role === 'manager' ? 'Click any day to see events and open the daily schedule' : 'Click any day to view your schedule for that week'}
           </p>
         </div>
 
@@ -336,17 +480,38 @@ export default function CalendarPage() {
                 isCurrentMonth={current}
                 isToday={isSameDay(date, today)}
                 isSelected={isSameDay(date, currentDate)}
-                onClick={() => handleDayClick(date)}
+                onClick={e => handleDayClick(e, date)}
                 myShift={myShift}
                 myDesk={myDesk}
                 me={me}
                 events={events}
                 isManager={user?.role === 'manager'}
+                onOverflowClick={handleOverflowClick}
               />
             );
           })}
         </div>
       </div>
+
+      {popover && (
+        <EventsPopover
+          date={popover.date}
+          events={popover.events}
+          x={popover.x}
+          cellTop={popover.cellTop}
+          cellBottom={popover.cellBottom}
+          onClose={() => setPopover(null)}
+          onEditEvent={evt => { setEditingEvt(evt); }}
+          onNavigate={() => navigateToDay(popover.date)}
+        />
+      )}
+      {editingEvt && (
+        <EditEventModal
+          evt={editingEvt}
+          onSave={form => { updateEvent(editingEvt.id, form); setEditingEvt(null); }}
+          onClose={() => setEditingEvt(null)}
+        />
+      )}
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 mt-3 px-1">

@@ -7,21 +7,21 @@ export const studioHours = { open: 8, close: 18 };
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
 export const initialStaff = [
-  { id: 1,  name: 'Alex C.',      shiftStart: 7.5,  shiftEnd: 12.5, deskStart: 8.5,  deskEnd: 9.5,  maxHoursPerWeek: 20 },
-  { id: 2,  name: 'Anika S.',     shiftStart: 7.5,  shiftEnd: 12.5, deskStart: null, deskEnd: null, maxHoursPerWeek: 15 },
-  { id: 3,  name: 'Elise R.',     shiftStart: 8,    shiftEnd: 13,   deskStart: 9,    deskEnd: 10,   maxHoursPerWeek: 20 },
-  { id: 4,  name: 'Heather M.',   shiftStart: 9,    shiftEnd: 14,   deskStart: null, deskEnd: null, maxHoursPerWeek: 20 },
+  { id: 1,  name: 'Alex C.',      shiftStart: 7.5,  shiftEnd: 12.5, deskStart: 8.5,  deskEnd: 9.5,  maxHoursPerWeek: 30 },
+  { id: 2,  name: 'Anika S.',     shiftStart: 7.5,  shiftEnd: 12.5, deskStart: null, deskEnd: null, maxHoursPerWeek: 20 },
+  { id: 3,  name: 'Elise R.',     shiftStart: 8,    shiftEnd: 13,   deskStart: 9,    deskEnd: 10,   maxHoursPerWeek: 30 },
+  { id: 4,  name: 'Heather M.',   shiftStart: 9,    shiftEnd: 14,   deskStart: null, deskEnd: null, maxHoursPerWeek: 30 },
   { id: 5,  name: 'Helena H.',    shiftStart: 9,    shiftEnd: 14,   deskStart: 10,   deskEnd: 11,   maxHoursPerWeek: 15 },
-  { id: 6,  name: 'Izak M.',      shiftStart: 10,   shiftEnd: 15,   deskStart: null, deskEnd: null, maxHoursPerWeek: 20 },
+  { id: 6,  name: 'Izak M.',      shiftStart: 10,   shiftEnd: 15,   deskStart: null, deskEnd: null, maxHoursPerWeek: 30 },
   { id: 7,  name: 'Jesus Q.',     shiftStart: 10,   shiftEnd: 15,   deskStart: 11,   deskEnd: 12,   maxHoursPerWeek: 20 },
-  { id: 8,  name: 'Jo L.',        shiftStart: 10.5, shiftEnd: 15.5, deskStart: 12,   deskEnd: 13,   maxHoursPerWeek: 20 },
+  { id: 8,  name: 'Jo L.',        shiftStart: 10.5, shiftEnd: 15.5, deskStart: 12,   deskEnd: 13,   maxHoursPerWeek: 30 },
   { id: 9,  name: 'Kara U.',      shiftStart: 11,   shiftEnd: 16,   deskStart: null, deskEnd: null, maxHoursPerWeek: 15 },
-  { id: 10, name: 'Langston C.',  shiftStart: 12,   shiftEnd: 17,   deskStart: 13,   deskEnd: 14,   maxHoursPerWeek: 20 },
+  { id: 10, name: 'Langston C.',  shiftStart: 12,   shiftEnd: 17,   deskStart: 13,   deskEnd: 14,   maxHoursPerWeek: 30 },
   { id: 11, name: 'Lars L.',      shiftStart: 12,   shiftEnd: 17,   deskStart: null, deskEnd: null, maxHoursPerWeek: 20 },
-  { id: 12, name: 'Mariah E.',    shiftStart: 12.5, shiftEnd: 17.5, deskStart: 14,   deskEnd: 15,   maxHoursPerWeek: 20 },
+  { id: 12, name: 'Mariah E.',    shiftStart: 12.5, shiftEnd: 17.5, deskStart: 14,   deskEnd: 15,   maxHoursPerWeek: 30 },
   { id: 13, name: 'Nova N.',      shiftStart: 13,   shiftEnd: 18,   deskStart: 15,   deskEnd: 16,   maxHoursPerWeek: 15 },
-  { id: 14, name: 'Shreyans D.',  shiftStart: 13.5, shiftEnd: 18.5, deskStart: null, deskEnd: null, maxHoursPerWeek: 20 },
-  { id: 15, name: 'Michael M.',   shiftStart: 13.5, shiftEnd: 18.5, deskStart: 16,   deskEnd: 17,   maxHoursPerWeek: 20 },
+  { id: 14, name: 'Shreyans D.',  shiftStart: 13.5, shiftEnd: 18.5, deskStart: null, deskEnd: null, maxHoursPerWeek: 30 },
+  { id: 15, name: 'Michael M.',   shiftStart: 13.5, shiftEnd: 18.5, deskStart: 16,   deskEnd: 17,   maxHoursPerWeek: 30 },
 ];
 
 // ── Staffing targets (by day-of-week group) ───────────────────────────────────

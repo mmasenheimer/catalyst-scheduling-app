@@ -125,7 +125,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
 
 function AlertsBar({ staff, events, dow }) {
   const alerts   = buildAlerts(staff, events, dow);
-  const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', blue: 'var(--color-accent-bright)' };
+  const dotColor = { understaffed: 'var(--color-green)', yellow: 'var(--color-yellow)', event: '#a080e0', blue: 'var(--color-accent-bright)' };
   return (
     <div className="p-3 rounded-xl mb-5 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
@@ -1896,7 +1896,7 @@ export default function DailySchedulePage() {
               <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {finalizeWarning.map((a, i) => (
                   <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'red' ? 'var(--color-red)' : 'var(--color-yellow)', flexShrink: 0, marginTop: 3 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'understaffed' ? 'var(--color-green)' : a.type === 'event' ? '#a080e0' : 'var(--color-yellow)', flexShrink: 0, marginTop: 3 }} />
                     <span style={{ color: 'var(--color-text-dim)' }}>{a.text}</span>
                   </li>
                 ))}

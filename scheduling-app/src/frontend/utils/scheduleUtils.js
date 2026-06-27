@@ -76,7 +76,7 @@ export function buildAlerts(staff, events, dow = 1) {
     const target = getTarget(h, dow);
     if (count < target) {
       alerts.push({
-        type: 'red',
+        type: 'understaffed',
         text: `Understaffed ${formatTime(h)}–${formatTime(h + 0.5)}: ${count}/${target} staff.`,
       });
     }
@@ -150,7 +150,7 @@ export function buildAlerts(staff, events, dow = 1) {
     const gap = evt.staffNeeded - evt.assignedStaff.length;
     if (gap > 0) {
       alerts.push({
-        type: 'yellow',
+        type: 'event',
         text: `Unfilled: "${evt.name}" needs ${gap} more person(s) (${formatTime(evt.start)}–${formatTime(evt.end)}).`,
       });
     }
