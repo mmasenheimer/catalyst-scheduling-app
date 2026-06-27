@@ -134,7 +134,7 @@ export default function AvailabilityManagerPage() {
               </div>
 
               {/* Timeline */}
-              <div className="flex-1 relative" style={{ height: 60 }}>
+              <div className="flex-1 relative" style={{ minHeight: 60 }}>
                 {/* Hour grid lines */}
                 <div className="absolute inset-0 flex pointer-events-none">
                   {hours.map(h => (
@@ -150,25 +150,30 @@ export default function AvailabilityManagerPage() {
                       className="absolute"
                       style={{
                         ...posStyle(block.start, block.end),
-                        top: 10, bottom: 10,
+                        top: 16, bottom: 16,
                         background: 'rgba(96, 165, 250, 0.15)',
                         border: '1px solid rgba(96, 165, 250, 0.32)',
                         borderRadius: 6,
                       }}
                     >
                       <span
-                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                        style={{
+                        className="absolute inset-0 flex items-center pointer-events-none"
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <span style={{
+                          width: '100%',
                           fontSize: 10,
                           color: 'rgba(147, 197, 253, 0.9)',
                           fontWeight: 500,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          textAlign: 'center',
                           paddingLeft: 8,
                           paddingRight: 8,
-                        }}
-                      >
-                        {formatTime(block.start)} – {formatTime(block.end)}
+                        }}>
+                          {formatTime(block.start)} – {formatTime(block.end)}
+                        </span>
                       </span>
                     </div>
                   ))

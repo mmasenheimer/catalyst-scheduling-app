@@ -1211,7 +1211,6 @@ export default function WeeklyTemplatesPage() {
               <>
                 <span style={{ fontSize: 32 }}>🗂️</span>
                 <span style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-accent)' }}>Select a template to get started.</span>
-                <span style={{ fontSize: 13, color: 'var(--color-text-dim)' }}>Open ☰ to pick one or create a new one.</span>
               </>
               )}
             </div>

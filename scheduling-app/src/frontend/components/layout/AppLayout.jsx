@@ -325,12 +325,12 @@ function AppLayoutInner() {
                   onClick={() => setSelectedId(tpl.id)}
                   style={{
                     padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                    borderLeft: `3px solid ${isSelected ? 'var(--color-accent)' : 'transparent'}`,
-                    background: isSelected ? 'rgba(176,80,48,0.08)' : 'transparent',
+                    borderLeft: `3px solid ${isSelected ? 'var(--color-accent)' : '#2a6b65'}`,
+                    background: isSelected ? 'rgba(176,80,48,0.08)' : 'rgba(77,182,172,0.08)',
                     transition: 'background 0.12s',
                   }}
-                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(77,182,172,0.16)'; }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(77,182,172,0.08)'; }}
                 >
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {tpl.name || <em style={{ color: 'var(--color-text-dim)', fontWeight: 400 }}>Untitled</em>}

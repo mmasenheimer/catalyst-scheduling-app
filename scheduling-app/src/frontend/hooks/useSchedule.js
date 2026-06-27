@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialStaff, initialEvents } from '../../data/mockData';
 import { autoAssignDesks } from '../utils/scheduleUtils';
 import { staffApi } from '../utils/api';
@@ -16,19 +16,25 @@ export function useSchedule() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [daySchedules, setDaySchedules] = useState({});
 
-  function addEvent(event) {
+  // Keep a live ref of daySchedules so getDaySchedule can stay a stable
+  // reference (no dependency on the latest state). This lets React.memo'd
+  // consumers like the weekly view skip re-rendering when a sibling saves.
+  const daySchedulesRef = useRef(daySchedules);
+  useEffect(() => { daySchedulesRef.current = daySchedules; }, [daySchedules]);
+
+  const addEvent = useCallback((event) => {
     setEvents(prev => [...prev, { ...event, id: Date.now() }]);
-  }
+  }, []);
 
-  function updateEvent(id, changes) {
+  const updateEvent = useCallback((id, changes) => {
     setEvents(prev => prev.map(e => e.id === id ? { ...e, ...changes } : e));
-  }
+  }, []);
 
-  function removeEvent(id) {
+  const removeEvent = useCallback((id) => {
     setEvents(prev => prev.filter(e => e.id !== id));
-  }
+  }, []);
 
-  function assignStaffToEvent(eventId, staffId) {
+  const assignStaffToEvent = useCallback((eventId, staffId) => {
     setEvents(prev =>
       prev.map(e =>
         e.id === eventId && !e.assignedStaff.includes(staffId)
@@ -36,9 +42,9 @@ export function useSchedule() {
           : e
       )
     );
-  }
+  }, []);
 
-  function unassignStaffFromEvent(eventId, staffId) {
+  const unassignStaffFromEvent = useCallback((eventId, staffId) => {
     setEvents(prev =>
       prev.map(e =>
         e.id === eventId
@@ -46,47 +52,47 @@ export function useSchedule() {
           : e
       )
     );
-  }
+  }, []);
 
-  function updateStaffDesk(staffId, deskStart, deskEnd) {
+  const updateStaffDesk = useCallback((staffId, deskStart, deskEnd) => {
     setStaff(prev =>
       prev.map(s => s.id === staffId ? { ...s, deskStart, deskEnd } : s)
     );
     // Persist to API — add more fields to the body as your schema grows
     staffApi.update(staffId, { deskStart, deskEnd }).catch(() => {});
-  }
+  }, []);
 
-  function runAutoAssignDesks() {
+  const runAutoAssignDesks = useCallback(() => {
     setStaff(prev => autoAssignDesks(prev, events));
-  }
+  }, [events]);
 
-  function goToNextDay() {
+  const goToNextDay = useCallback(() => {
     setCurrentDate(prev => {
       const d = new Date(prev);
       d.setDate(d.getDate() + 1);
       return d;
     });
-  }
+  }, []);
 
-  function goToPrevDay() {
+  const goToPrevDay = useCallback(() => {
     setCurrentDate(prev => {
       const d = new Date(prev);
       d.setDate(d.getDate() - 1);
       return d;
     });
-  }
+  }, []);
 
-  function goToDate(date) {
+  const goToDate = useCallback((date) => {
     setCurrentDate(new Date(date));
-  }
+  }, []);
 
-  function saveDaySchedule(dateString, staffArray) {
+  const saveDaySchedule = useCallback((dateString, staffArray) => {
     setDaySchedules(prev => ({ ...prev, [dateString]: staffArray }));
-  }
+  }, []);
 
-  function getDaySchedule(dateString) {
-    return daySchedules[dateString] ?? null;
-  }
+  const getDaySchedule = useCallback((dateString) => {
+    return daySchedulesRef.current[dateString] ?? null;
+  }, []);
 
   return {
     staff,
@@ -104,5 +110,6 @@ export function useSchedule() {
     goToDate,
     saveDaySchedule,
     getDaySchedule,
+    daySchedules,
   };
 }
