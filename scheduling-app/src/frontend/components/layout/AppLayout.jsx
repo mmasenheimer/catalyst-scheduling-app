@@ -5,7 +5,7 @@ import { ScheduleProvider, useScheduleContext } from "../../context/ScheduleCont
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { persistTemplates } from "../../../data/mockTemplates";
-import ApplyTemplateCalendarModal from "../ApplyTemplateCalendarModal";
+import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
