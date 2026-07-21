@@ -1030,9 +1030,11 @@ export default function DailySchedulePage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
   const currentDow = schedule.currentDate.getDay();
-  const [localEvents, setLocalEvents] = useState(null); // non-null when a DB schedule is loaded
 
-  const todayEvents = localEvents ?? schedule.events.filter(evt => {
+  // Always derived live — events are global and shouldn't freeze just because
+  // the day's staff schedule was finalized (unlike shifts, there's no reason
+  // a finalized day should show a stale/different event list than reality).
+  const todayEvents = schedule.events.filter(evt => {
     if (!evt.days?.length) return true;
     return evt.days.some(dateStr => {
       if (dateStr === currentDateStr) return true;
@@ -1055,7 +1057,7 @@ export default function DailySchedulePage() {
     return schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }));
   });
   const [activeBar,       setActiveBar]        = useState(null);   // resize-only mouse drag
-  const [finalized,       setFinalized]        = useState(false);
+  const [finalized,       setFinalized]        = useState(true);   // days default to finalized until edited
   const [trashHtmlOver,   setTrashHtmlOver]    = useState(false);
   const [activeDragType,  setActiveDragType]   = useState(null);   // toolbar chip drag
   const [draggingEventId, setDraggingEventId]  = useState(null);
@@ -1081,19 +1083,27 @@ export default function DailySchedulePage() {
     });
   }
 
+  // Skips the change-detector's next pass right after a load/finalize, so
+  // restoring saved data isn't mistaken for an edit that should unfinalize the day.
+  const justLoadedRef  = useRef(true);
+  const baselineSigRef = useRef('');
+  const autoSaveTimerRef = useRef(null);
+
   useEffect(() => {
     const dateStr = schedule.currentDate.toISOString().split('T')[0];
 
     schedulesApi.getDay(dateStr)
       .then(saved => {
-        // Finalized schedule found in DB — restore it exactly
+        // Saved schedule found in DB — restore the staff snapshot, respecting its finalized
+        // flag (older docs saved before this field existed default to finalized). Events are
+        // never restored from the snapshot — they're always derived live (see todayEvents).
         setOrderedStaff(saved.staff.map(normalizeStaff));
-        setLocalEvents(saved.events);
-        setFinalized(true);
+        setFinalized(saved.finalized ?? true);
+        justLoadedRef.current = true;
       })
       .catch(() => {
-        // 404 or backend unreachable — fall back to in-memory / weekly template
-        setLocalEvents(null);
+        // 404 or backend unreachable — fall back to in-memory / weekly template.
+        // A never-touched day is the standard template, so it starts finalized.
         const inMemory = schedule.getDaySchedule(schedule.currentDate.toDateString());
         if (inMemory) {
           setOrderedStaff(inMemory);
@@ -1101,9 +1111,31 @@ export default function DailySchedulePage() {
           const ids = getScheduledIds(schedule.currentDate);
           setOrderedStaff(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) })));
         }
-        setFinalized(false);
+        setFinalized(true);
+        justLoadedRef.current = true;
       });
   }, [schedule.currentDate.toDateString(), schedule.staff]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-unfinalize: any real edit to staff/events while finalized flips the day
+  // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
+  useEffect(() => {
+    const sig = JSON.stringify({ staff: orderedStaff, events: todayEvents });
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      baselineSigRef.current = sig;
+      return;
+    }
+    if (sig === baselineSigRef.current) return;
+    baselineSigRef.current = sig;
+
+    if (finalized) setFinalized(false);
+
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      const dateStr = schedule.currentDate.toISOString().split('T')[0];
+      schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: todayEvents, finalized: false }).catch(() => {});
+    }, 600);
+  }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handlePrevDay() {
     schedule.saveDaySchedule(schedule.currentDate.toDateString(), orderedStaff);
@@ -1724,11 +1756,24 @@ export default function DailySchedulePage() {
   async function doFinalize() {
     const date = schedule.currentDate.toISOString().split('T')[0];
     try {
-      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents });
+      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: true });
     } catch (err) {
       console.warn('Schedule save failed — finalized locally only:', err.message);
     }
+    // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
+    justLoadedRef.current = true;
     setFinalized(true);
+  }
+
+  async function handleUnfinalize() {
+    setFinalized(false);
+    const date = schedule.currentDate.toISOString().split('T')[0];
+    try {
+      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: false });
+    } catch (err) {
+      console.warn('Schedule save failed — unfinalized locally only:', err.message);
+    }
+    justLoadedRef.current = true;
   }
 
   function handleFinalize() {
@@ -1746,7 +1791,7 @@ export default function DailySchedulePage() {
       <StatsHeader
         staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
         onPrev={handlePrevDay} onNext={handleNextDay}
-        finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => { setFinalized(false); setLocalEvents(null); }}
+        finalized={finalized} onFinalize={handleFinalize} onUnfinalize={handleUnfinalize}
         onApplyTemplate={() => setApplyTplOpen(true)}
         onSaveAsTemplate={() => setSaveTplOpen(true)}
       />

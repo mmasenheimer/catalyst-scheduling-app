@@ -89,6 +89,39 @@ function pct(h) { return `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`; }
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
+// Compact per-day events list — same info as the Daily view's Special Events
+// panel (name, time, staff-fill count, delete) minus the assigned-staff chips
+// and the Add Event button, since the weekly grid is already dense.
+function DayEventsList({ events, staff, onDelete }) {
+  if (events.length === 0) return null;
+  return (
+    <div style={{ padding:'6px 10px', borderTop:'1px solid var(--color-border)', display:'flex', flexDirection:'column', gap:4 }}>
+      <div style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--color-text-dim)' }}>Special Events</div>
+      {events.map(evt => {
+        const assignedCount = staff.filter(s => evt.assignedStaff.includes(s.id)).length;
+        const filled = assignedCount >= evt.staffNeeded;
+        return (
+          <div key={evt.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, padding:'3px 8px', borderRadius:6, background:'rgba(59,42,110,0.25)', border:'1px solid rgba(124,92,191,0.35)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0, flex:1 }}>
+              <span style={{ fontSize:11, fontWeight:600, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{evt.name}</span>
+              <span style={{ fontSize:9, color:'var(--color-text-dim)', flexShrink:0 }}>{formatTime(evt.start)}–{formatTime(evt.end)}</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+              <span style={{ fontSize:9, fontWeight:600, padding:'1px 5px', borderRadius:4, background: filled ? '#1a2a1a' : '#2a1010', color: filled ? '#6ab888' : '#f07070' }}>
+                {assignedCount}/{evt.staffNeeded}
+              </span>
+              <button onClick={() => onDelete(evt)} title="Delete event"
+                style={{ fontSize:10, lineHeight:1, padding:'2px 5px', borderRadius:4, cursor:'pointer', background:'transparent', color:'var(--color-red)', border:'1px solid var(--color-red)' }}>
+                🗑
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, onDragEnd }) {
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title={label}
@@ -257,13 +290,13 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, templates, setTemplates }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, setTemplates }, ref) {
   const dow     = date.getDay();
   const dateStr = toDateStr(date);
   const isToday = dateStr === toDateStr(new Date());
 
   const [orderedStaff,   setOrderedStaff]   = useState(() => getStaffForDate(date, getDaySchedule, allStaff));
-  const [finalized,      setFinalized]      = useState(false);
+  const [finalized,      setFinalized]      = useState(true);   // days default to finalized until edited
   const [activeBar,      setActiveBar]      = useState(null);
   const [activeDragType, setActiveDragType] = useState(null);
   const [draggingEvtId,  setDraggingEvtId]  = useState(null);
@@ -282,15 +315,65 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const trashRef = useRef(null);
   useEffect(() => { staffRef.current = orderedStaff; }, [orderedStaff]);
 
+  // Skips the change-detector's next pass right after a load/finalize, so
+  // restoring saved data isn't mistaken for an edit that should unfinalize the day.
+  const justLoadedRef    = useRef(true);
+  const baselineSigRef   = useRef('');
+  const autoSaveTimerRef = useRef(null);
+
+  // Load any previously saved schedule for this date from the backend — the
+  // in-memory/template default set above is just the initial guess.
+  useEffect(() => {
+    schedulesApi.getDay(dateStr)
+      .then(saved => {
+        // Older docs saved before the finalized field existed default to finalized.
+        setOrderedStaff(saved.staff.map(normalizeStaff));
+        setFinalized(saved.finalized ?? true);
+        justLoadedRef.current = true;
+      })
+      .catch(() => { /* 404 or backend unreachable — keep the template/in-memory default */ });
+  }, [dateStr]);
+
+  // Auto-unfinalize: any real edit to staff/events while finalized flips the day
+  // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
+  useEffect(() => {
+    const sig = JSON.stringify({ staff: orderedStaff, events: dayEvents });
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      baselineSigRef.current = sig;
+      return;
+    }
+    if (sig === baselineSigRef.current) return;
+    baselineSigRef.current = sig;
+
+    if (finalized) setFinalized(false);
+
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: false }).catch(() => {});
+    }, 600);
+  }, [orderedStaff, dayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Commit this day: persist to in-memory schedule state (both key formats the
-  // rest of the app reads) and push to the backend. Only called on Finalize —
-  // there is no auto-save, so edits live in local state until the user commits.
+  // rest of the app reads) and push to the backend as finalized.
   function commitFinalize() {
     saveDaySchedule(dateStr, orderedStaff);
     saveDaySchedule(date.toDateString(), orderedStaff);
-    schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents })
+    schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: true })
       .catch(err => console.warn('Schedule save failed — finalized locally only:', err.message));
+    // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
+    justLoadedRef.current = true;
     setFinalized(true);
+  }
+
+  async function handleUnfinalize() {
+    setFinalized(false);
+    try {
+      await schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: false });
+    } catch (err) {
+      console.warn('Schedule save failed — unfinalized locally only:', err.message);
+    }
+    justLoadedRef.current = true;
   }
 
   // Let the parent's "Finalize All" inspect and commit this day without lifting
@@ -509,6 +592,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     }
   }
   function handleContextMenuEdit() { setEditModal(contextMenu.target); setContextMenu(null); }
+  async function handleDeleteEvent(evt) {
+    try {
+      await removeEvent(evt.id);
+    } catch (err) {
+      console.warn('Failed to delete event:', err.message);
+    }
+  }
   function handleEditSave(data) {
     const t = editModal; setEditModal(null);
     if (t.type === 'shift') {
@@ -700,7 +790,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:13, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
           {isToday && <span style={{ fontSize:9, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'1px 5px', borderRadius:4 }}>Today</span>}
-          <button onClick={finalized ? ()=>setFinalized(false) : ()=>{
+          <button onClick={finalized ? handleUnfinalize : ()=>{
               const issues=buildAlerts(orderedStaff.filter(s=>s.shifts?.length>0),dayEvents,dow).filter(a=>a.type!=='blue');
               if(issues.length>0){setFinalizeWarn(issues);}else{commitFinalize();}
             }}
@@ -894,6 +984,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         ))}
       </div>
 
+      <DayEventsList events={dayEvents} staff={orderedStaff} onDelete={handleDeleteEvent} />
+
       {/* Modals */}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onEdit={handleContextMenuEdit} onDelete={handleContextMenuDelete} onClose={()=>setContextMenu(null)}/>}
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
@@ -933,13 +1025,14 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.assignStaffToEvent === next.assignStaffToEvent &&
          prev.unassignStaffFromEvent === next.unassignStaffFromEvent &&
          prev.updateEvent === next.updateEvent &&
+         prev.removeEvent === next.removeEvent &&
          prev.setTemplates === next.setTemplates;
 });
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-export default function WeeklyViewExperimentalPage() {
-  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, daySchedules } = useScheduleContext();
+export default function WeeklyViewPage() {
+  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules } = useScheduleContext();
   const { templates, setTemplates } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);
@@ -1104,6 +1197,7 @@ export default function WeeklyViewExperimentalPage() {
             assignStaffToEvent={assignStaffToEvent}
             unassignStaffFromEvent={unassignStaffFromEvent}
             updateEvent={updateEvent}
+            removeEvent={removeEvent}
             templates={templates}
             setTemplates={setTemplates}
           />

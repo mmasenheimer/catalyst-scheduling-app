@@ -19,18 +19,19 @@ router.get("/:date", async (req, res) => {
 });
 
 // PUT /api/schedules/:date
-// This runs when the manager clicks finalize
+// Runs when the manager clicks Finalize, and also whenever the day
+// auto-unfinalizes itself after an edit (finalized: false in that case).
 
 router.put("/:date", async (req, res) => {
   try {
-    const { staff, events } = req.body;
+    const { staff, events, finalized } = req.body;
     const schedule = await Schedule.findOneAndUpdate(
       // FindOneAndUpdate searches for:
       // Document with that date
       // If found, updates it with the new staff/events/timestamp
       // If not found, makes it from scratch, which is the upsert: true
       { date: req.params.date },
-      { staff, events, finalizedAt: new Date() },
+      { staff, events, finalized: finalized ?? true, finalizedAt: new Date() },
       { upsert: true, new: true },
     );
 

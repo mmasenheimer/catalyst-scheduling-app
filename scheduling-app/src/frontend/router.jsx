@@ -14,7 +14,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
 import ManageStaffPage from './pages/ManageStaffPage';
-import WeeklyViewPage from './pages/WeeklyViewExperimentalPage';
+import WeeklyViewPage from './pages/WeeklyViewPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
