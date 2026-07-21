@@ -1,4 +1,26 @@
-import { staffingTargetsByDay } from '../../data/mockData';
+import { staffingTargetsByDay, weeklyTemplates } from '../../data/mockData';
+
+const DOW_TO_TPL = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
+
+/** Format a Date as a local YYYY-MM-DD string (matches the key daySchedules is stored under) */
+export function toDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeStaffShifts(s) {
+  const shifts = s.shifts ?? (s.shiftStart != null ? [{ id: `s${s.id}-0`, start: s.shiftStart, end: s.shiftEnd }] : []);
+  const deskShifts = s.deskShifts ?? (s.deskStart != null ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }] : []);
+  return { ...s, shifts, deskShifts };
+}
+
+/** Build the full staff list for a date — saved override if one exists, else the day's template, with everyone else blank */
+export function getStaffForDate(date, getDaySchedule, allStaff) {
+  const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
+  const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
+  const sourceMap = new Map();
+  (saved ?? tplStaff).forEach(s => sourceMap.set(s.id, normalizeStaffShifts(s)));
+  return allStaff.map(s => sourceMap.get(s.id) ?? normalizeStaffShifts({ ...s, shifts: [], deskShifts: [] }));
+}
 
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */
 export function formatTime(t) {

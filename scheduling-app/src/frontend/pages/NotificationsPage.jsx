@@ -1,4 +1,5 @@
 import { useNotifications } from '../context/NotificationsContext';
+import { useRequests } from '../context/RequestsContext';
 import { useAuth } from '../context/AuthContext';
 
 const TYPE_CONFIG = {
@@ -22,9 +23,9 @@ function formatRelativeTime(date) {
   return `${diffDay}d ago`;
 }
 
-function NotificationCard({ notif, onDismiss, onApprove, isManager }) {
+function NotificationCard({ notif, onDismiss, onApprove, onDeny, isManager, requestStatus }) {
   const cfg = TYPE_CONFIG[notif.type];
-  const showApproveButton = isManager && notif.type === 'shift_change' && !notif.approved;
+  const showActions = isManager && notif.requestId != null && requestStatus === 'pending';
 
   return (
     <div
@@ -54,12 +55,20 @@ function NotificationCard({ notif, onDismiss, onApprove, isManager }) {
             >
               {cfg.label}
             </span>
-            {notif.approved && (
+            {requestStatus === 'approved' && (
               <span
                 className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(74,124,94,0.15)', color: '#6ab888', border: '1px solid rgba(74,124,94,0.4)' }}
               >
                 ✓ Approved
+              </span>
+            )}
+            {requestStatus === 'denied' && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(200,64,64,0.15)', color: '#f07070', border: '1px solid rgba(200,64,64,0.4)' }}
+              >
+                ✕ Denied
               </span>
             )}
           </div>
@@ -72,14 +81,21 @@ function NotificationCard({ notif, onDismiss, onApprove, isManager }) {
           {notif.message}
         </p>
 
-        {showApproveButton && (
-          <div className="mb-2">
+        {showActions && (
+          <div className="flex gap-2 mb-2">
             <button
-              onClick={() => onApprove(notif.id)}
+              onClick={() => onApprove(notif.requestId)}
               className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
               style={{ background: 'rgba(74,124,94,0.2)', color: '#6ab888', border: '1px solid rgba(74,124,94,0.4)' }}
             >
               ✓ Approve
+            </button>
+            <button
+              onClick={() => onDeny(notif.requestId)}
+              className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
+              style={{ background: 'rgba(200,64,64,0.15)', color: '#f07070', border: '1px solid rgba(200,64,64,0.4)' }}
+            >
+              ✕ Deny
             </button>
           </div>
         )}
@@ -102,9 +118,15 @@ function NotificationCard({ notif, onDismiss, onApprove, isManager }) {
 }
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, dismiss, dismissAll, approve } = useNotifications();
+  const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
+  const { requests, approveRequest, denyRequest } = useRequests();
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
+
+  function requestStatusFor(notif) {
+    if (notif.requestId == null) return null;
+    return requests.find(r => r.id === notif.requestId)?.status ?? null;
+  }
 
   return (
     <div>
@@ -157,8 +179,10 @@ export default function NotificationsPage() {
               key={n.id}
               notif={n}
               onDismiss={dismiss}
-              onApprove={approve}
+              onApprove={approveRequest}
+              onDeny={denyRequest}
               isManager={isManager}
+              requestStatus={requestStatusFor(n)}
             />
           ))
         )}

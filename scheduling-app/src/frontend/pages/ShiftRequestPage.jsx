@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleContext } from '../context/ScheduleContext';
+import { useRequests } from '../context/RequestsContext';
 import { initialStaff, weeklyTemplates } from '../../data/mockData';
-import { formatTime } from '../utils/scheduleUtils';
+import { formatTime, toDateStr } from '../utils/scheduleUtils';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -285,6 +286,7 @@ function EmptyState({ text }) {
 export default function ShiftRequestPage() {
   const { user } = useAuth();
   const { staff } = useScheduleContext();
+  const { submitRequest } = useRequests();
   const [tab, setTab] = useState('cover');
   const [selectedDay, setSelectedDay] = useState(null);
   const [pending, setPending] = useState(null);
@@ -327,6 +329,17 @@ export default function ShiftRequestPage() {
   }
 
   function handleSubmit() {
+    const day = activeDay ?? new Date();
+    submitRequest({
+      type: tab,
+      staffId: me.id,
+      staffName: me.name,
+      targetStaffId: pending.id,
+      targetName: pending.name,
+      date: toDateStr(day),
+      dayLabel: formatDateLong(day),
+      note,
+    });
     setSubmitted({ type: tab, target: pending, day: activeDay ? formatDateLong(activeDay) : '', note });
     setPending(null);
     setNote('');

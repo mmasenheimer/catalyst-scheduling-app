@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useRequests } from '../context/RequestsContext';
 
 const REASONS = ['Personal', 'Appointment', 'Family', 'Other'];
 
@@ -24,6 +25,7 @@ function formatDisplay(iso) {
 
 export default function RequestTimeOffPage() {
   const { user } = useAuth();
+  const { submitRequest } = useRequests();
   const navigate = useNavigate();
   const [minDate] = useState(getMinDate);
   const [shiftDate, setShiftDate] = useState(getMinDate);
@@ -43,6 +45,16 @@ export default function RequestTimeOffPage() {
       return;
     }
     setDateError('');
+    submitRequest({
+      type: 'time_off',
+      staffId: user.staffId,
+      staffName: user.name,
+      targetStaffId: null,
+      targetName: null,
+      date: shiftDate,
+      dayLabel: formatDisplay(shiftDate),
+      note: notes,
+    });
     setSubmitted(true);
   }
 

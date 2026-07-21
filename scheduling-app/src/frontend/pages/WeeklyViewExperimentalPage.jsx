@@ -682,7 +682,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     endDrag();
   }
 
-  const hasAnyScheduled = orderedStaff.some(s => s.shifts?.length > 0);
   const alerts         = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow);
   const dayName        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
   const monthDay       = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
@@ -767,15 +766,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       )}
 
-      {/* Placeholder when no staff scheduled */}
-      {!hasAnyScheduled && (
-        <div style={{ padding:'14px 12px', fontSize:12, color:'var(--color-text-dim)', fontStyle:'italic', borderTop:'1px solid var(--color-border)' }}>
-          No staff scheduled — apply a template or drag a shift to get started.
-        </div>
-      )}
-
-      {/* Time header + Staff rows — hidden when nothing is scheduled */}
-      <div style={{ display: hasAnyScheduled ? undefined : 'none' }}>
+      {/* Time header + Staff rows */}
+      <div>
 
       <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)' }}>
         <div style={{ width:NAME_COL, flexShrink:0, padding:'3px 8px', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--color-text-dim)', borderRight:'1px solid var(--color-border)' }}>Staff</div>
@@ -889,7 +881,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         ))}
       </div>
 
-      </div>{/* end time header + staff rows wrapper */}
+      </div>
+      {/* end time header + staff rows wrapper */}
 
       {/* Legend */}
       <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
@@ -930,7 +923,18 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       )}
     </div>
   );
-}));
+}), (prev, next) => {
+  // Custom comparison: only re-render if core props change, ignore templates changes
+  return prev.date === next.date &&
+         prev.allStaff === next.allStaff &&
+         prev.dayEvents === next.dayEvents &&
+         prev.getDaySchedule === next.getDaySchedule &&
+         prev.saveDaySchedule === next.saveDaySchedule &&
+         prev.assignStaffToEvent === next.assignStaffToEvent &&
+         prev.unassignStaffFromEvent === next.unassignStaffFromEvent &&
+         prev.updateEvent === next.updateEvent &&
+         prev.setTemplates === next.setTemplates;
+});
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 

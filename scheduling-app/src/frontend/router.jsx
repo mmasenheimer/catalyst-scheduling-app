@@ -13,6 +13,7 @@ import ShiftRequestPage from './pages/ShiftRequestPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
+import ManageStaffPage from './pages/ManageStaffPage';
 import WeeklyViewPage from './pages/WeeklyViewExperimentalPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
       { path: 'shift-requests',   element: <ShiftRequestPage /> },
       { path: 'availability',         element: <AvailabilityPage /> },
       { path: 'staff-availability',  element: <ProtectedRoute managerOnly><AvailabilityManagerPage /></ProtectedRoute> },
+      { path: 'manage-staff',        element: <ProtectedRoute managerOnly><ManageStaffPage /></ProtectedRoute> },
       { path: 'notifications',    element: <NotificationsPage /> },
     ],
   },

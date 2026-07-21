@@ -2,9 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { formatTime } from '../utils/scheduleUtils';
+import { availabilityApi } from '../utils/api';
 
 // Saturday excluded
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sun'];
+// Grid column index → day-of-week (0=Sun … 6=Sat)
+const DI_TO_DOW = [1, 2, 3, 4, 5, 0];
 
 // 30-min slots 7:00 → 20:00 (26 slots)
 const SLOTS = [];
@@ -39,6 +42,35 @@ function emptyGrid() {
   return Array.from({ length: DAYS.length }, () => new Array(SLOTS.length).fill(null));
 }
 
+/** Convert the paint grid into { [dow]: [{start,end}] } for the backend */
+function gridToDays(grid) {
+  const days = {};
+  grid.forEach((daySlots, di) => {
+    const blocks = [];
+    let start = null;
+    daySlots.forEach((v, si) => {
+      if (v === 'available' && start === null) start = SLOTS[si];
+      if (v !== 'available' && start !== null) {
+        blocks.push({ start, end: SLOTS[si] });
+        start = null;
+      }
+    });
+    if (start !== null) blocks.push({ start, end: 20 });
+    days[DI_TO_DOW[di]] = blocks;
+  });
+  return days;
+}
+
+/** Convert { [dow]: [{start,end}] } from the backend back into a paint grid */
+function daysToGrid(days) {
+  return DI_TO_DOW.map(dow =>
+    SLOTS.map(t => {
+      const blocks = days?.[dow] ?? [];
+      return blocks.some(b => t >= b.start && t < b.end) ? 'available' : 'unavailable';
+    })
+  );
+}
+
 function cellBg(value, isHovering, mode) {
   if (value === 'available')   return 'rgba(74,124,94,0.55)';
   if (value === 'unavailable') return 'rgba(200,64,64,0.45)';
@@ -63,6 +95,8 @@ export default function AvailabilityPage() {
   const [hoverCell, setHoverCell] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [fillError, setFillError] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [saving, setSaving]       = useState(false);
 
   const isPaintingRef = useRef(false);
   const paintValRef   = useRef(null);
@@ -72,6 +106,14 @@ export default function AvailabilityPage() {
     window.addEventListener('mouseup', stop);
     return () => window.removeEventListener('mouseup', stop);
   }, []);
+
+  // Prefill the grid with the staff member's last submitted availability, if any.
+  useEffect(() => {
+    if (!user?.staffId) return;
+    availabilityApi.getOne(user.staffId)
+      .then(data => setGrid(daysToGrid(data.days)))
+      .catch(() => { /* no prior submission — leave grid empty */ });
+  }, [user?.staffId]);
 
   function paint(d, s, value) {
     setFillError(false);
@@ -102,10 +144,20 @@ export default function AvailabilityPage() {
     });
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const hasUnfilled = grid.some(row => row.some(cell => cell === null));
     if (hasUnfilled) { setFillError(true); return; }
     setFillError(false);
+    setSubmitError('');
+    setSaving(true);
+    try {
+      await availabilityApi.submit(user.staffId, { days: gridToDays(grid) });
+    } catch (err) {
+      setSubmitError(err.message || 'Failed to submit availability. Please try again.');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
     addNotification({
       type: 'availability',
       title: 'Availability Template Submitted',
@@ -143,7 +195,7 @@ export default function AvailabilityPage() {
           Your weekly availability template has been sent to the manager.
         </p>
         <button
-          onClick={() => { setSubmitted(false); setGrid(emptyGrid()); }}
+          onClick={() => setSubmitted(false)}
           className="mt-6 text-xs underline underline-offset-2 cursor-pointer hover:opacity-80"
           style={{ color: 'var(--color-text-dim)', background: 'none', border: 'none' }}
         >Update availability</button>
@@ -187,9 +239,10 @@ export default function AvailabilityPage() {
 
         <button
           onClick={handleSubmit}
+          disabled={saving}
           className="px-5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white' }}
-        >Send</button>
+          style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
+        >{saving ? 'Sending…' : 'Send'}</button>
 
         <div className="flex-1" />
 
@@ -199,6 +252,15 @@ export default function AvailabilityPage() {
           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}
         >Clear all</button>
       </div>
+
+      {/* Submit error */}
+      {submitError && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg mb-3 text-sm"
+          style={{ background: 'rgba(200,64,64,0.12)', border: '1px solid rgba(200,64,64,0.35)', color: 'var(--color-red)' }}>
+          <span>{submitError}</span>
+          <button onClick={() => setSubmitError('')} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1, opacity: 0.7 }}>✕</button>
+        </div>
+      )}
 
       {/* Validation error */}
       {fillError && (

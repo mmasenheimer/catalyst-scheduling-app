@@ -88,3 +88,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 html.light input[type="date"]::-webkit-calendar-picker-indicator {
   filter: none;
 }
+
+/* ── Number input without spinner arrows ──────────────────────────────────── */
+input.no-spinner::-webkit-inner-spin-button,
+input.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

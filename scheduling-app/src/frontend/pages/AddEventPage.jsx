@@ -58,6 +58,7 @@ export default function AddEventPage() {
   const [activeStaffDate, setActiveStaffDate] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function set(field, value) {
     setForm(prev => {
@@ -120,7 +121,7 @@ export default function AddEventPage() {
 
   const sortedStaff = [...staff].sort((a, b) => availTier(b) - availTier(a));
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     if (!form.name.trim()) {
@@ -136,7 +137,15 @@ export default function AddEventPage() {
       return;
     }
     const assignedStaff = [...new Set(Object.values(form.assignedByDate).flat())];
-    addEvent({ ...form, assignedStaff });
+    setSaving(true);
+    try {
+      await addEvent({ ...form, assignedStaff });
+    } catch (err) {
+      setError(err.message || 'Failed to save event.');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
     setSubmitted(true);
     setTimeout(() => navigate('/'), 1500);
   }
@@ -438,10 +447,11 @@ export default function AddEventPage() {
           </button>
           <button
             type="submit"
+            disabled={saving}
             className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: 'var(--color-accent)', color: 'white' }}
+            style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
           >
-            Add Event
+            {saving ? 'Adding…' : 'Add Event'}
           </button>
         </div>
       </form>

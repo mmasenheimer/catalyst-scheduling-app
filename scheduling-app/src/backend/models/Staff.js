@@ -10,6 +10,7 @@ const staffSchema = new Schema(
     shiftEnd: { type: Number, required: true },
     deskStart: { type: Number, default: null },
     deskEnd: { type: Number, default: null },
+    maxHoursPerWeek: { type: Number, default: null },
   },
   {
     // Rename _id → id and strip __v in every JSON response.

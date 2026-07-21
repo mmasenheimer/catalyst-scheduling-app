@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ScheduleProvider, useScheduleContext } from "../../context/ScheduleContext";
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
+import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { persistTemplates } from "../../../data/mockTemplates";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
@@ -28,9 +29,9 @@ const managerNav = [
   { to: "/weekly",         label: "Weekly View" },
   { to: "/calendar",       label: "Calendar" },
   { to: "/templates",      label: "Templates" },
-  { to: "/my-schedule",    label: "My Schedule" },
   { to: "/add-event",      label: "Add Event" },
   { to: "/staff-availability", label: "Staff Availability" },
+  { to: "/manage-staff",       label: "Manage Staff" },
   { to: "/notifications",      label: "Notifications" },
 ];
 
@@ -73,7 +74,7 @@ function IconSun() {
 function IconMoon() {
   return (
     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-      <path d="M12.5 9.5A6 6 0 015.5 2.5a6 6 0 100 10 6 6 0 007-3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M13 9.5A6 6 0 015.5 2a6.5 6.5 0 100 11A6 6 0 0013 9.5z" fill="currentColor"/>
     </svg>
   );
 }
@@ -576,9 +577,11 @@ export default function AppLayout() {
   return (
     <ScheduleProvider>
       <NotificationsProvider>
-        <TemplatesProvider>
-          <AppLayoutInner />
-        </TemplatesProvider>
+        <RequestsProvider>
+          <TemplatesProvider>
+            <AppLayoutInner />
+          </TemplatesProvider>
+        </RequestsProvider>
       </NotificationsProvider>
     </ScheduleProvider>
   );

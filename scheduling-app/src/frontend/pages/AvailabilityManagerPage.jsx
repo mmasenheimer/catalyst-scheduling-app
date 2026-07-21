@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { getAvailability, getSubmittedAt } from '../../data/mockAvailability';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { formatTime } from '../utils/scheduleUtils';
+import { availabilityApi } from '../utils/api';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -30,6 +30,21 @@ function posStyle(start, end) {
 export default function AvailabilityManagerPage() {
   const { staff } = useScheduleContext();
   const [selectedDow, setSelectedDow] = useState(1);
+  const [byStaffId, setByStaffId] = useState({});
+
+  useEffect(() => {
+    availabilityApi.getAll()
+      .then(list => setByStaffId(Object.fromEntries(list.map(a => [a.staffId, a]))))
+      .catch(() => { /* backend not running — everyone shows as unavailable */ });
+  }, []);
+
+  function getAvailability(staffId, dow) {
+    return byStaffId[staffId]?.days?.[dow] ?? [];
+  }
+
+  function getSubmittedAt(staffId) {
+    return byStaffId[staffId]?.submittedAt ?? null;
+  }
 
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
@@ -44,10 +59,6 @@ export default function AvailabilityManagerPage() {
             Weekly availability submitted by staff — reference this when building the daily schedule
           </p>
         </div>
-        <span className="text-xs px-2 py-1 rounded border"
-          style={{ color: 'var(--color-text-dim)', borderColor: 'var(--color-border)', background: 'var(--color-muted)' }}>
-          Mock data
-        </span>
       </div>
 
       {/* Day picker */}

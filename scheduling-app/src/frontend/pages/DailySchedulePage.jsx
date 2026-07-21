@@ -87,14 +87,18 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
         </button>
         {!finalized && (
           <button onClick={onApplyTemplate}
-            className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80"
-            style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+            className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer"
+            style={{ background: 'var(--color-muted)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-accent)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text)'; }}>
             Apply Template
           </button>
         )}
         <button onClick={onSaveAsTemplate}
-          className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80"
-          style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+          className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer"
+          style={{ background: 'var(--color-muted)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-accent)'; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text)'; }}>
           Save as Template
         </button>
       </div>
@@ -956,7 +960,7 @@ function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule
 
 // ── Events panel ───────────────────────────────────────────────────────────────
 
-function EventsPanel({ events, staff, onAddEvent }) {
+function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
@@ -979,10 +983,18 @@ function EventsPanel({ events, staff, onAddEvent }) {
                   <span className="ml-2 text-xs px-2 py-0.5 rounded"
                     style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}>{evt.type}</span>
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded font-medium"
-                  style={{ background: filled ? '#1a2a1a' : '#2a1010', color: filled ? '#6ab888' : '#f07070' }}>
-                  {assigned.length}/{evt.staffNeeded} staff
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs px-2 py-0.5 rounded font-medium"
+                    style={{ background: filled ? '#1a2a1a' : '#2a1010', color: filled ? '#6ab888' : '#f07070' }}>
+                    {assigned.length}/{evt.staffNeeded} staff
+                  </span>
+                  <button onClick={() => onDeleteEvent(evt)}
+                    title="Delete event"
+                    className="text-xs px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{ background: 'transparent', color: 'var(--color-red)', border: '1px solid var(--color-red)' }}>
+                    🗑
+                  </button>
+                </div>
               </div>
               <div className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
                 {formatTime(evt.start)} – {formatTime(evt.end)}
@@ -1701,6 +1713,14 @@ export default function DailySchedulePage() {
 
   const trashActive = trashHtmlOver;
 
+  async function handleDeleteEvent(evt) {
+    try {
+      await schedule.removeEvent(evt.id);
+    } catch (err) {
+      console.warn('Failed to delete event:', err.message);
+    }
+  }
+
   async function doFinalize() {
     const date = schedule.currentDate.toISOString().split('T')[0];
     try {
@@ -1726,7 +1746,7 @@ export default function DailySchedulePage() {
       <StatsHeader
         staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
         onPrev={handlePrevDay} onNext={handleNextDay}
-        finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => setFinalized(false)}
+        finalized={finalized} onFinalize={handleFinalize} onUnfinalize={() => { setFinalized(false); setLocalEvents(null); }}
         onApplyTemplate={() => setApplyTplOpen(true)}
         onSaveAsTemplate={() => setSaveTplOpen(true)}
       />
@@ -1832,7 +1852,7 @@ export default function DailySchedulePage() {
         onBarContextMenu={handleBarContextMenu}
         getPersonAvailability={id => getAvailability(id, currentDow)}
       />
-      <EventsPanel staff={orderedStaff} events={todayEvents} onAddEvent={() => navigate('/add-event')} />
+      <EventsPanel staff={orderedStaff} events={todayEvents} onAddEvent={() => navigate('/add-event')} onDeleteEvent={handleDeleteEvent} />
 
       {contextMenu && (
         <ContextMenu
