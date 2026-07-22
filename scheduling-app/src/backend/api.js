@@ -16,6 +16,7 @@ app.use("/api/staff", require("./routes/staff"));
 app.use("/api/schedules", require("./routes/schedules"));
 app.use("/api/events", require("./routes/events"));
 app.use("/api/availability", require("./routes/availability"));
+app.use("/api/templates", require("./routes/templates"));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;

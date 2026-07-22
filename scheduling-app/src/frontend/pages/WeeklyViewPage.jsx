@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { buildAlerts, formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
-import { persistTemplates } from '../../data/mockTemplates';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 
@@ -47,12 +46,24 @@ function sortByShift(arr) {
   });
 }
 
+// Merge live staff identity/metadata (name, maxHoursPerWeek, etc.) with a saved/
+// cached/template shift override list. Staff removed from the roster since the
+// override was captured are dropped; staff added since show up blank/unscheduled;
+// everyone else keeps their saved shifts but current live metadata.
+function mergeStaffOverrides(liveStaff, overrides) {
+  const overrideMap = new Map((overrides ?? []).map(s => [s.id, s]));
+  return liveStaff.map(person => {
+    const override = overrideMap.get(person.id);
+    if (!override) return blankStaff(person);
+    const { shifts, deskShifts } = normalizeStaff(override);
+    return normalizeStaff({ ...person, shifts, deskShifts });
+  });
+}
+
 function getStaffForDate(date, getDaySchedule, allStaff) {
   const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
   const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
-  const sourceMap = new Map();
-  (saved ?? tplStaff).forEach(s => sourceMap.set(s.id, normalizeStaff(s)));
-  return sortByShift(allStaff.map(s => sourceMap.get(s.id) ?? blankStaff(s)));
+  return sortByShift(mergeStaffOverrides(allStaff, saved ?? tplStaff));
 }
 
 function getEventsForDate(date, events) {
@@ -252,12 +263,16 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  function handleSave() {
+  async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
     if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) { setNameError('A template with this name already exists.'); return; }
-    onSave({ id: Date.now(), type: 'day', name: trimmed, description: desc.trim(), createdAt: new Date().toISOString(), staff: staff.filter(s => s.shifts?.length > 0) });
-    onClose();
+    try {
+      await onSave({ type: 'day', name: trimmed, description: desc.trim(), staff: staff.filter(s => s.shifts?.length > 0) });
+      onClose();
+    } catch (err) {
+      setNameError(err.message || 'Failed to save template.');
+    }
   }
   const ti = { width:'100%', padding:'8px 10px', borderRadius:7, fontSize:13, background:'var(--color-muted)', border:'1px solid var(--color-border)', color:'var(--color-text)', outline:'none', boxSizing:'border-box' };
   return (
@@ -290,7 +305,7 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, setTemplates }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange }, ref) {
   const dow     = date.getDay();
   const dateStr = toDateStr(date);
   const isToday = dateStr === toDateStr(new Date());
@@ -324,15 +339,19 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // Load any previously saved schedule for this date from the backend — the
   // in-memory/template default set above is just the initial guess.
   useEffect(() => {
+    onLoadingChange(dateStr, true);
     schedulesApi.getDay(dateStr)
       .then(saved => {
-        // Older docs saved before the finalized field existed default to finalized.
-        setOrderedStaff(saved.staff.map(normalizeStaff));
+        // Merge saved shift overrides onto the live roster (not the raw snapshot) so
+        // staff added/removed/edited via Manage Staff since this was saved show up
+        // correctly. Older docs saved before the finalized field existed default to finalized.
+        setOrderedStaff(sortByShift(mergeStaffOverrides(allStaff, saved.staff)));
         setFinalized(saved.finalized ?? true);
         justLoadedRef.current = true;
       })
-      .catch(() => { /* 404 or backend unreachable — keep the template/in-memory default */ });
-  }, [dateStr]);
+      .catch(() => { /* 404 or backend unreachable — keep the template/in-memory default */ })
+      .finally(() => onLoadingChange(dateStr, false));
+  }, [dateStr, allStaff, onLoadingChange]);
 
   // Auto-unfinalize: any real edit to staff/events while finalized flips the day
   // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
@@ -376,6 +395,12 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     justLoadedRef.current = true;
   }
 
+  // Report this day's finalized state to the parent so "Finalize All" stays
+  // accurate — including when this day auto-unfinalizes itself from an edit.
+  useEffect(() => {
+    onFinalizedChange(dateStr, finalized);
+  }, [finalized, dateStr, onFinalizedChange]);
+
   // Let the parent's "Finalize All" inspect and commit this day without lifting
   // its (local) editing state up. The handle is rebuilt every render, so each
   // method always closes over the day's current state.
@@ -383,6 +408,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     isFinalized: () => finalized,
     getIssues:   () => buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow).filter(a => a.type !== 'blue'),
     commit:      commitFinalize,
+    unfinalize:  handleUnfinalize,
     label:       `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} · ${date.toLocaleDateString('en-US', { month:'short', day:'numeric' })}`,
   }));
 
@@ -991,7 +1017,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {availWarning && <AvailWarningModal staffName={availWarning.staffName} title={availWarning.title} message={availWarning.message} confirmLabel={availWarning.confirmLabel} onConfirm={availWarning.onConfirm} onCancel={availWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff&&ds===dateStr)setOrderedStaff(sortByShift(newStaff));}}/>}
-      {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} templates={templates} onSave={newTpl=>{const updated=[...templates,newTpl];setTemplates(updated);persistTemplates(updated);}} onClose={()=>setSaveTplOpen(false)}/>}
+      {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} templates={templates} onSave={addTemplate} onClose={()=>setSaveTplOpen(false)}/>}
       {finalizeWarn && (
         <AvailWarningModal
           title="Schedule Has Issues"
@@ -1026,14 +1052,16 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.unassignStaffFromEvent === next.unassignStaffFromEvent &&
          prev.updateEvent === next.updateEvent &&
          prev.removeEvent === next.removeEvent &&
-         prev.setTemplates === next.setTemplates;
+         prev.addTemplate === next.addTemplate &&
+         prev.onFinalizedChange === next.onFinalizedChange &&
+         prev.onLoadingChange === next.onLoadingChange;
 });
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyViewPage() {
-  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules } = useScheduleContext();
-  const { templates, setTemplates } = useTemplates();
+  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading } = useScheduleContext();
+  const { templates, addTemplate } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);
   const [applyTplOpen, setApplyTplOpen] = useState(false);
@@ -1041,7 +1069,21 @@ export default function WeeklyViewPage() {
   const [tplDesc,      setTplDesc]      = useState('');
   const [nameError,    setNameError]    = useState('');
   const [finalizeAllWarn,  setFinalizeAllWarn]  = useState(null);  // [{ label, issues }]
-  const [weekFinalized,    setWeekFinalized]    = useState(false);
+
+  // Each DayEditor reports its own finalized state here (via onFinalizedChange)
+  // whenever it changes — including auto-unfinalizing itself from an edit — so
+  // "Finalize All" always reflects the real state instead of a stale toggle.
+  const [finalizedMap, setFinalizedMap] = useState({});
+  const handleFinalizedChange = useCallback((key, isFinalized) => {
+    setFinalizedMap(prev => prev[key] === isFinalized ? prev : { ...prev, [key]: isFinalized });
+  }, []);
+
+  // Each DayEditor reports whether it's still loading its saved schedule from
+  // the backend — drives the header spinner while any day is fetching.
+  const [loadingMap, setLoadingMap] = useState({});
+  const handleLoadingChange = useCallback((key, isLoading) => {
+    setLoadingMap(prev => prev[key] === isLoading ? prev : { ...prev, [key]: isLoading });
+  }, []);
 
   // Imperative handles to each mounted DayEditor, keyed by day string. Lets
   // "Finalize All" read each day's issues / commit it without lifting its
@@ -1054,22 +1096,23 @@ export default function WeeklyViewPage() {
     if (!refSetters.current[key]) refSetters.current[key] = el => { dayHandles.current[key] = el; };
     return refSetters.current[key];
   }
+  function allDayHandles() {
+    return weekData.map(d => dayHandles.current[d.key]).filter(Boolean);
+  }
   function pendingDays() {
-    return weekData.map(d => dayHandles.current[d.key]).filter(h => h && !h.isFinalized());
+    return allDayHandles().filter(h => !h.isFinalized());
   }
   function handleFinalizeAll() {
-    if (weekFinalized) { setWeekFinalized(false); pendingDays(); return; }
+    if (weekFinalized) { allDayHandles().forEach(h => h.unfinalize()); return; }
     const pending = pendingDays();
-    if (pending.length === 0) { setWeekFinalized(true); return; }
+    if (pending.length === 0) return;
     const withIssues = pending.map(h => ({ label: h.label, issues: h.getIssues() })).filter(x => x.issues.length > 0);
     if (withIssues.length > 0) { setFinalizeAllWarn(withIssues); return; }
     pending.forEach(h => h.commit());
-    setWeekFinalized(true);
   }
   function confirmFinalizeAll() {
     pendingDays().forEach(h => h.commit());
     setFinalizeAllWarn(null);
-    setWeekFinalized(true);
   }
 
   const weekDays = useMemo(() => Array.from({ length:7 }, (_,i) => addDays(weekStart,i)), [weekStart]);
@@ -1093,6 +1136,22 @@ export default function WeeklyViewPage() {
     return next;
   }, [weekDays, events]);
 
+  // A day that hasn't reported in yet defaults to finalized, matching each
+  // DayEditor's own default — so the button doesn't flash "Finalize All" on load.
+  const weekFinalized = weekData.every(d => finalizedMap[d.key] ?? true);
+  // A day that hasn't reported in yet defaults to still-loading — otherwise the very
+  // first render (before any DayEditor's fetch effect has fired) would read as "not
+  // loading" and immediately clear the spinner set the instant the nav link was clicked.
+  const weekLoading    = weekData.some(d => loadingMap[d.key] ?? true);
+
+  // Mirror the loading state into shared context so the sidebar nav link can show
+  // a spinner while this page isn't necessarily mounted to read it directly. Clear
+  // it on unmount so navigating away doesn't leave the sidebar spinner stuck on.
+  useEffect(() => {
+    setWeeklyViewLoading(weekLoading);
+  }, [weekLoading, setWeeklyViewLoading]);
+  useEffect(() => () => setWeeklyViewLoading(false), [setWeeklyViewLoading]);
+
   const maxHoursById = useMemo(() => {
     const m = new Map(); staff.forEach(s => { if(s.maxHoursPerWeek!=null) m.set(s.id,s.maxHoursPerWeek); }); return m;
   }, [staff]);
@@ -1113,10 +1172,10 @@ export default function WeeklyViewPage() {
       .sort((a,b)=>(b.total-b.max)-(a.total-a.max));
   }, [weekDays, daySchedules, getDaySchedule, maxHoursById]);
 
-  function prevWeek() { setWeekStart(d => addDays(d,-7)); setWeekFinalized(false); }
-  function nextWeek() { setWeekStart(d => addDays(d,7)); setWeekFinalized(false); }
+  function prevWeek() { setWeekStart(d => addDays(d,-7)); }
+  function nextWeek() { setWeekStart(d => addDays(d,7)); }
 
-  function handleSaveTemplate() {
+  async function handleSaveTemplate() {
     const trimmed = tplName.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
     if (templates.some(t=>t.name.toLowerCase()===trimmed.toLowerCase())) { setNameError('A template with this name already exists.'); return; }
@@ -1125,9 +1184,12 @@ export default function WeeklyViewPage() {
       const src   = saved ?? (weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? []);
       return [ALL_DAYS[i], { staff: src.map(normalizeStaff).filter(s=>s.shifts?.length>0) }];
     }));
-    const newTpl = { id:Date.now(), type:'week', name:trimmed, description:tplDesc.trim(), createdAt:new Date().toISOString(), days };
-    const updated = [...templates, newTpl];
-    setTemplates(updated); persistTemplates(updated);
+    try {
+      await addTemplate({ type:'week', name:trimmed, description:tplDesc.trim(), days });
+    } catch (err) {
+      setNameError(err.message || 'Failed to save template.');
+      return;
+    }
     setSaveModal(false); setTplName(''); setTplDesc(''); setNameError('');
   }
 
@@ -1199,7 +1261,9 @@ export default function WeeklyViewPage() {
             updateEvent={updateEvent}
             removeEvent={removeEvent}
             templates={templates}
-            setTemplates={setTemplates}
+            addTemplate={addTemplate}
+            onFinalizedChange={handleFinalizedChange}
+            onLoadingChange={handleLoadingChange}
           />
         ))}
       </div>

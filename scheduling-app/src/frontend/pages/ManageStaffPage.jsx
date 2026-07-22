@@ -45,12 +45,11 @@ export default function ManageStaffPage() {
   }
 
   async function handleRemove(person) {
-    if (!window.confirm(`Remove ${person.name} from the roster? This cannot be undone.`)) return;
     setRemovingId(person.id);
     try {
       await removeStaff(person.id);
     } catch (err) {
-      window.alert(err.message || 'Failed to remove staff member.');
+      console.warn('Failed to remove staff member:', err.message);
     } finally {
       setRemovingId(null);
     }

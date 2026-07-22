@@ -5,8 +5,8 @@ import { ScheduleProvider, useScheduleContext } from "../../context/ScheduleCont
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
 import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
-import { persistTemplates } from "../../../data/mockTemplates";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
+import { LoaderCircleIcon } from "../LoaderCircleIcon";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
@@ -98,8 +98,8 @@ function AppLayoutInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
-  const { templates, setTemplates, selectedId, setSelectedId, setTriggerNew } = useTemplates();
-  const { staff, saveDaySchedule } = useScheduleContext();
+  const { templates, selectedId, setSelectedId, setTriggerNew, addTemplate, removeAllTemplates } = useTemplates();
+  const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
   const [applyTplOpen, setApplyTplOpen] = useState(false);
 
@@ -112,19 +112,20 @@ function AppLayoutInner() {
   function openNewTpl() { setDayTplName(''); setDayTplDesc(''); setDayTplError(''); setNewTplStep('pick'); }
   function closeNewTpl() { setNewTplStep(null); }
 
-  function createDayTemplate() {
+  async function createDayTemplate() {
     const trimmed = dayTplName.trim();
     if (!trimmed) { setDayTplError('Name is required.'); return; }
     if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
       setDayTplError('A template with this name already exists.'); return;
     }
-    const newTpl = { id: Date.now(), type: 'day', name: trimmed, description: dayTplDesc.trim(), createdAt: new Date().toISOString(), staff: [] };
-    const updated = [...templates, newTpl];
-    setTemplates(updated);
-    persistTemplates(updated);
-    setSelectedId(newTpl.id);
-    closeNewTpl();
-    navigate('/templates');
+    try {
+      const created = await addTemplate({ type: 'day', name: trimmed, description: dayTplDesc.trim(), staff: [] });
+      setSelectedId(created.id);
+      closeNewTpl();
+      navigate('/templates');
+    } catch (err) {
+      setDayTplError(err.message || 'Failed to create template.');
+    }
   }
 
   // Live clock
@@ -160,6 +161,9 @@ function AppLayoutInner() {
       key={to}
       to={to}
       end={to === "/"}
+      onClick={() => {
+        if (to === "/weekly" && location.pathname !== "/weekly") setWeeklyViewLoading(true);
+      }}
       className="relative py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
       style={({ isActive }) => ({
         background:  isActive ? "rgba(176, 80, 48, 0.1)" : "transparent",
@@ -174,6 +178,11 @@ function AppLayoutInner() {
           style={{ background: "#c84040", color: "white", lineHeight: 1 }}
         >
           {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+      {to === "/weekly" && weeklyViewLoading && (
+        <span className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center">
+          <LoaderCircleIcon size={14} style={{ color: "var(--color-text-dim)" }} />
         </span>
       )}
     </NavLink>
@@ -389,10 +398,13 @@ function AppLayoutInner() {
           <div style={{ flex: 1 }} />
 
           <button
-            onClick={() => {
+            onClick={async () => {
               if (window.confirm('Delete all templates? This cannot be undone.')) {
-                setTemplates([]);
-                persistTemplates([]);
+                try {
+                  await removeAllTemplates();
+                } catch (err) {
+                  window.alert(err.message || 'Failed to delete templates.');
+                }
                 setSelectedId(null);
               }
             }}

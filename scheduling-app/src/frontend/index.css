@@ -100,3 +100,9 @@ input.no-spinner {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* ── Loader spin ───────────────────────────────────────────────────────────── */
+@keyframes loader-circle-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

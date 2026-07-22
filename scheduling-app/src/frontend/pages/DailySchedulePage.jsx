@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
-import { loadTemplates, persistTemplates } from '../../data/mockTemplates';
 import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
@@ -831,22 +830,24 @@ function SaveAsDayTemplateModal({ currentDate, staff, templates, onSave, onClose
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  function handleSave() {
+  async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
     if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
       setNameError('A template with this name already exists.'); return;
     }
-    onSave({
-      id: Date.now(),
-      type: 'day',
-      day: dayName,
-      name: trimmed,
-      description: desc.trim(),
-      createdAt: new Date().toISOString(),
-      staff: staff.filter(s => s.shifts?.length > 0),
-    });
-    onClose();
+    try {
+      await onSave({
+        type: 'day',
+        day: dayName,
+        name: trimmed,
+        description: desc.trim(),
+        staff: staff.filter(s => s.shifts?.length > 0),
+      });
+      onClose();
+    } catch (err) {
+      setNameError(err.message || 'Failed to save template.');
+    }
   }
 
   return (
@@ -1020,7 +1021,7 @@ function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
 
 export default function DailySchedulePage() {
   const schedule = useScheduleContext();
-  const { templates, setTemplates } = useTemplates();
+  const { templates, addTemplate } = useTemplates();
   const navigate = useNavigate();
 
   const trashRef = useRef(null);
@@ -1094,10 +1095,12 @@ export default function DailySchedulePage() {
 
     schedulesApi.getDay(dateStr)
       .then(saved => {
-        // Saved schedule found in DB — restore the staff snapshot, respecting its finalized
-        // flag (older docs saved before this field existed default to finalized). Events are
-        // never restored from the snapshot — they're always derived live (see todayEvents).
-        setOrderedStaff(saved.staff.map(normalizeStaff));
+        // Saved schedule found in DB — restore shift/desk overrides, but merge them onto
+        // the live staff roster so staff added/removed/edited since this was saved are
+        // reflected correctly, respecting the finalized flag (older docs saved before
+        // this field existed default to finalized). Events are never restored from the
+        // snapshot — they're always derived live (see todayEvents).
+        setOrderedStaff(mergeStaffOverrides(schedule.staff, saved.staff).map(normalizeStaff));
         setFinalized(saved.finalized ?? true);
         justLoadedRef.current = true;
       })
@@ -1106,7 +1109,7 @@ export default function DailySchedulePage() {
         // A never-touched day is the standard template, so it starts finalized.
         const inMemory = schedule.getDaySchedule(schedule.currentDate.toDateString());
         if (inMemory) {
-          setOrderedStaff(inMemory);
+          setOrderedStaff(mergeStaffOverrides(schedule.staff, inMemory).map(normalizeStaff));
         } else {
           const ids = getScheduledIds(schedule.currentDate);
           setOrderedStaff(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) })));
@@ -1934,11 +1937,7 @@ export default function DailySchedulePage() {
           currentDate={schedule.currentDate}
           staff={orderedStaff}
           templates={templates}
-          onSave={newTpl => {
-            const updated = [...templates, newTpl];
-            setTemplates(updated);
-            persistTemplates(updated);
-          }}
+          onSave={addTemplate}
           onClose={() => setSaveTplOpen(false)}
         />
       )}

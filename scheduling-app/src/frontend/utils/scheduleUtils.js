@@ -13,13 +13,29 @@ function normalizeStaffShifts(s) {
   return { ...s, shifts, deskShifts };
 }
 
+/**
+ * Merge the live staff roster with a saved/cached/template shift override
+ * list. Identity and metadata (name, maxHoursPerWeek, etc.) always come from
+ * the live roster — only shifts/deskShifts come from the override — so
+ * staff added or removed since the override was captured, or edited via
+ * Manage Staff afterward, are always reflected correctly. Staff no longer
+ * on the live roster are dropped entirely.
+ */
+export function mergeStaffOverrides(liveStaff, overrides) {
+  const overrideMap = new Map((overrides ?? []).map(s => [s.id, s]));
+  return liveStaff.map(person => {
+    const override = overrideMap.get(person.id);
+    if (!override) return normalizeStaffShifts({ ...person, shifts: [], deskShifts: [] });
+    const { shifts, deskShifts } = normalizeStaffShifts(override);
+    return { ...person, shifts, deskShifts };
+  });
+}
+
 /** Build the full staff list for a date — saved override if one exists, else the day's template, with everyone else blank */
 export function getStaffForDate(date, getDaySchedule, allStaff) {
   const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
   const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
-  const sourceMap = new Map();
-  (saved ?? tplStaff).forEach(s => sourceMap.set(s.id, normalizeStaffShifts(s)));
-  return allStaff.map(s => sourceMap.get(s.id) ?? normalizeStaffShifts({ ...s, shifts: [], deskShifts: [] }));
+  return mergeStaffOverrides(allStaff, saved ?? tplStaff);
 }
 
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */

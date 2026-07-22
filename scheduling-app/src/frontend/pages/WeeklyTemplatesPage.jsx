@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { initialStaff, HOURS_START, HOURS_END } from '../../data/mockData';
+import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { buildTemplateAlerts, formatTime } from '../utils/scheduleUtils';
-import { persistTemplates } from '../../data/mockTemplates';
 import { useTemplates } from '../context/TemplatesContext';
+import { useScheduleContext } from '../context/ScheduleContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -571,7 +571,8 @@ function TemplateGrid({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyTemplatesPage() {
-  const { templates, setTemplates, selectedId, setSelectedId, triggerNew } = useTemplates();
+  const { templates, selectedId, setSelectedId, triggerNew, addTemplate, updateTemplate, removeTemplate } = useTemplates();
+  const { staff } = useScheduleContext();
   const [templateName,  setTemplateName]  = useState('');
   const [templateDesc,  setTemplateDesc]  = useState('');
   const [nameError,     setNameError]     = useState('');
@@ -623,12 +624,12 @@ export default function WeeklyTemplatesPage() {
 
   // ── Pool ──────────────────────────────────────────────────────────────────────
   const poolStaff = useMemo(
-    () => initialStaff.filter(s => !orderedStaff.some(os => os.id === s.id)),
-    [orderedStaff]
+    () => staff.filter(s => !orderedStaff.some(os => os.id === s.id)),
+    [staff, orderedStaff]
   );
 
   function addToDay(personId) {
-    const person = initialStaff.find(s => s.id === personId);
+    const person = staff.find(s => s.id === personId);
     if (!person || orderedStaff.some(s => s.id === personId)) return;
     setOrderedStaff(prev => sortByShift([...prev, normalizeStaff(person)]));
   }
@@ -645,6 +646,16 @@ export default function WeeklyTemplatesPage() {
   }
 
   // ── Template selection ────────────────────────────────────────────────────────
+  // Reconcile a saved template day's placed staff against the live roster — drops
+  // anyone removed since, and uses current identity/metadata (name, maxHoursPerWeek)
+  // rather than whatever was captured when the template was saved.
+  function reconcileTemplateStaff(tplStaff, liveStaff) {
+    const liveMap = new Map(liveStaff.map(s => [s.id, s]));
+    return (tplStaff ?? [])
+      .filter(s => liveMap.has(s.id))
+      .map(s => normalizeStaff({ ...liveMap.get(s.id), shifts: s.shifts, deskShifts: s.deskShifts }));
+  }
+
   function selectTemplate(tpl) {
     setSelectedId(tpl.id);
     setTemplateName(tpl.name);
@@ -653,29 +664,27 @@ export default function WeeklyTemplatesPage() {
     setDeleteConfirm(false);
     if (tpl.type === 'day') {
       setCurrentDay('_day');
-      templateDaysRef.current = { '_day': (tpl.staff ?? []).map(normalizeStaff) };
+      templateDaysRef.current = { '_day': reconcileTemplateStaff(tpl.staff, staff) };
       setOrderedStaff(templateDaysRef.current['_day']);
     } else {
       const day = 'Monday';
       setCurrentDay(day);
       templateDaysRef.current = Object.fromEntries(
-        TEMPLATE_DAYS.map(d => [d, (tpl.days?.[d]?.staff ?? []).map(normalizeStaff)])
+        TEMPLATE_DAYS.map(d => [d, reconcileTemplateStaff(tpl.days?.[d]?.staff, staff)])
       );
       setOrderedStaff(templateDaysRef.current[day]);
     }
   }
 
   // ── Create new template ───────────────────────────────────────────────────────
-  function createTemplate() {
-    const newTpl = {
-      id: `tpl_${Date.now()}`,
+  async function createTemplate() {
+    const created = await addTemplate({
       type: 'week',
       name: '',
       description: '',
-      createdAt: new Date().toISOString(),
       days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: [] }])),
-    };
-    setSelectedId(newTpl.id);
+    });
+    setSelectedId(created.id);
     setTemplateName('');
     setTemplateDesc('');
     setNameError('');
@@ -683,12 +692,10 @@ export default function WeeklyTemplatesPage() {
     setCurrentDay('Monday');
     templateDaysRef.current = Object.fromEntries(TEMPLATE_DAYS.map(d => [d, []]));
     setOrderedStaff([]);
-    setTemplates([...templates, newTpl]);
-    persistTemplates([...templates, newTpl]);
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────────
-  function handleSave() {
+  async function handleSave() {
     const trimmed = templateName.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
     const duplicate = templates.some(t => t.id !== selectedId && t.name.toLowerCase() === trimmed.toLowerCase());
@@ -696,38 +703,25 @@ export default function WeeklyTemplatesPage() {
     setNameError('');
     templateDaysRef.current[currentDay] = orderedStaff;
     const existingTpl = templates.find(t => t.id === selectedId);
-    let fullTemplate;
-    if (existingTpl?.type === 'day') {
-      fullTemplate = {
-        ...existingTpl,
-        name: trimmed,
-        description: templateDesc.trim(),
-        staff: templateDaysRef.current[currentDay] ?? orderedStaff,
-      };
-    } else {
-      fullTemplate = {
-        id: selectedId,
-        type: 'week',
-        name: trimmed,
-        description: templateDesc.trim(),
-        createdAt: existingTpl?.createdAt ?? new Date().toISOString(),
-        days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: templateDaysRef.current[d] ?? [] }])),
-      };
+    const changes = existingTpl?.type === 'day'
+      ? { name: trimmed, description: templateDesc.trim(), staff: templateDaysRef.current[currentDay] ?? orderedStaff }
+      : { name: trimmed, description: templateDesc.trim(), days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: templateDaysRef.current[d] ?? [] }])) };
+    try {
+      await updateTemplate(selectedId, changes);
+    } catch (err) {
+      setNameError(err.message || 'Failed to save template.');
     }
-    const newTemplates = templates.some(t => t.id === selectedId)
-      ? templates.map(t => t.id === selectedId ? fullTemplate : t)
-      : [...templates, fullTemplate];
-    setTemplates(newTemplates);
-    persistTemplates(newTemplates);
-    setSelectedId(selectedId); // keep panel highlight in sync
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
-    const newTemplates = templates.filter(t => t.id !== selectedId);
-    setTemplates(newTemplates);
-    persistTemplates(newTemplates);
+    try {
+      await removeTemplate(selectedId);
+    } catch (err) {
+      window.alert(err.message || 'Failed to delete template.');
+      return;
+    }
     setSelectedId(null);
     setTemplateName('');
     setTemplateDesc('');

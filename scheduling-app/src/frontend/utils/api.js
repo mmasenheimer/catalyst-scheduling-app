@@ -59,6 +59,18 @@ export const availabilityApi = {
     }),
 };
 
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+export const templatesApi = {
+  getAll: () => request("/templates"),
+  create: (body) =>
+    request("/templates", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) =>
+    request(`/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id) => request(`/templates/${id}`, { method: "DELETE" }),
+  removeAll: () => request("/templates", { method: "DELETE" }),
+};
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 // Uncomment and build routes/notifications.js when ready
 
