@@ -305,7 +305,7 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange, onReloadDay }, ref) {
   const dow     = date.getDay();
   const dateStr = toDateStr(date);
   const isToday = dateStr === toDateStr(new Date());
@@ -325,9 +325,34 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const [applyTplOpen,   setApplyTplOpen]   = useState(false);
   const [saveTplOpen,    setSaveTplOpen]    = useState(false);
   const [finalizeWarn,   setFinalizeWarn]   = useState(null);   // alert list
+  const [now,            setNow]            = useState(() => new Date());
+
+  // Only today's box needs a live clock for "on shift now" — the other 6 don't tick.
+  useEffect(() => {
+    if (!isToday) return;
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, [isToday]);
 
   const staffRef = useRef(orderedStaff);
   const trashRef = useRef(null);
+
+  // Timeline row rects only change when the layout actually changes (window
+  // resize), not on every dragover tick — caching avoids forcing a synchronous
+  // reflow on every mousemove-equivalent event during a drag.
+  const rowRectCacheRef = useRef(new Map());
+  function getRowRect(e, rowIdx) {
+    const cached = rowRectCacheRef.current.get(rowIdx);
+    if (cached && cached.el === e.currentTarget) return cached.rect;
+    const rect = e.currentTarget.getBoundingClientRect();
+    rowRectCacheRef.current.set(rowIdx, { el: e.currentTarget, rect });
+    return rect;
+  }
+  useEffect(() => {
+    function onResize() { rowRectCacheRef.current.clear(); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   useEffect(() => { staffRef.current = orderedStaff; }, [orderedStaff]);
 
   // Skips the change-detector's next pass right after a load/finalize, so
@@ -336,11 +361,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const baselineSigRef   = useRef('');
   const autoSaveTimerRef = useRef(null);
 
-  // Load any previously saved schedule for this date from the backend — the
-  // in-memory/template default set above is just the initial guess.
-  useEffect(() => {
+  // Fetch the saved schedule for this date from the backend — the in-memory/
+  // template default set above is just the initial guess. Also exposed via the
+  // imperative handle so an external change (e.g. a template applied to this
+  // date from elsewhere) can force a re-sync without remounting the day.
+  const reloadFromBackend = useCallback(() => {
     onLoadingChange(dateStr, true);
-    schedulesApi.getDay(dateStr)
+    return schedulesApi.getDay(dateStr)
       .then(saved => {
         // Merge saved shift overrides onto the live roster (not the raw snapshot) so
         // staff added/removed/edited via Manage Staff since this was saved show up
@@ -352,6 +379,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       .catch(() => { /* 404 or backend unreachable — keep the template/in-memory default */ })
       .finally(() => onLoadingChange(dateStr, false));
   }, [dateStr, allStaff, onLoadingChange]);
+
+  useEffect(() => { reloadFromBackend(); }, [reloadFromBackend]);
 
   // Auto-unfinalize: any real edit to staff/events while finalized flips the day
   // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
@@ -409,6 +438,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     getIssues:   () => buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow).filter(a => a.type !== 'blue'),
     commit:      commitFinalize,
     unfinalize:  handleUnfinalize,
+    reload:      reloadFromBackend,
     label:       `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} · ${date.toLocaleDateString('en-US', { month:'short', day:'numeric' })}`,
   }));
 
@@ -425,7 +455,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   function handleTimelineDragOver(e, rowIdx) {
     setHoverRow(rowIdx);
     if (!activeDragType) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = getRowRect(e, rowIdx);
     const raw  = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const p    = orderedStaff[rowIdx];
     if (activeDragType === 'shift') {
@@ -647,7 +677,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // ── Bar drag-over (live reposition + cross-row ghost) ───────────────────────
   function handleBarDragOver(e, rowIdx) {
     if (!draggingBarInfo) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = getRowRect(e, rowIdx);
     const raw  = HOURS_START + ((e.clientX-rect.left)/rect.width)*TOTAL_HOURS;
     const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, staffId, duration } = draggingBarInfo;
     const same = si === rowIdx;
@@ -801,6 +831,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const alerts         = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow);
   const dayName        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
   const monthDay       = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  const scheduledToday = orderedStaff.filter(s => s.shifts?.length > 0);
+  const nowHour        = now.getHours() + now.getMinutes() / 60;
+  const onShiftNow     = scheduledToday.filter(s => s.shifts.some(sh => sh.start <= nowHour && sh.end > nowHour)).length;
   const currentDragT   = activeDragType ?? draggingBarInfo?.type;
   const tbHighlight    = activeDragType==='shift'
     ? { background:'rgba(74,124,94,0.15)', borderColor:'var(--color-green)' }
@@ -809,7 +842,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       : { background:'rgba(59,42,110,0.2)',   borderColor:'#7c5cbf' };
 
   return (
-    <div style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, background:'var(--color-surface)', overflow:'hidden' }}>
+    <div style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, background:'var(--color-surface)', overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 10px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
@@ -824,7 +857,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
             {finalized?'✓ Finalized':'Finalize'}
           </button>
         </div>
-        <div style={{ display:'flex', gap:6 }}>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          {isToday && (
+            <div style={{ display:'flex', gap:10, fontSize:11, color:'var(--color-text-dim)' }}>
+              <span><strong style={{ color:'var(--color-accent-bright)' }}>{scheduledToday.length}</strong> on shift today</span>
+              <span><strong style={{ color:'var(--color-accent-bright)' }}>{onShiftNow}</strong> on shift now</span>
+            </div>
+          )}
           <button onClick={()=>setSaveTplOpen(true)}
             style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', background:'transparent', color:'var(--color-accent)', border:'1px solid var(--color-accent)' }}
             onMouseEnter={e=>e.currentTarget.style.background='rgba(176,80,48,0.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Save as Template</button>
@@ -1016,7 +1055,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onEdit={handleContextMenuEdit} onDelete={handleContextMenuDelete} onClose={()=>setContextMenu(null)}/>}
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {availWarning && <AvailWarningModal staffName={availWarning.staffName} title={availWarning.title} message={availWarning.message} confirmLabel={availWarning.confirmLabel} onConfirm={availWarning.onConfirm} onCancel={availWarning.onCancel}/>}
-      {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff&&ds===dateStr)setOrderedStaff(sortByShift(newStaff));}}/>}
+      {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
       {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} templates={templates} onSave={addTemplate} onClose={()=>setSaveTplOpen(false)}/>}
       {finalizeWarn && (
         <AvailWarningModal
@@ -1054,7 +1093,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.removeEvent === next.removeEvent &&
          prev.addTemplate === next.addTemplate &&
          prev.onFinalizedChange === next.onFinalizedChange &&
-         prev.onLoadingChange === next.onLoadingChange;
+         prev.onLoadingChange === next.onLoadingChange &&
+         prev.onReloadDay === next.onReloadDay;
 });
 
 // ── Page ───────────────────────────────────────────────────────────────────────
@@ -1096,6 +1136,15 @@ export default function WeeklyViewPage() {
     if (!refSetters.current[key]) refSetters.current[key] = el => { dayHandles.current[key] = el; };
     return refSetters.current[key];
   }
+
+  // Lets any ApplyTemplateCalendarModal instance (whichever day's "Apply
+  // Template" button opened it) force a re-sync of a *different* day's data
+  // from the backend — needed since applying a template can touch dates other
+  // than the one the modal happened to be opened from.
+  const reloadDay = useCallback((key) => {
+    dayHandles.current[key]?.reload();
+  }, []);
+
   function allDayHandles() {
     return weekData.map(d => dayHandles.current[d.key]).filter(Boolean);
   }
@@ -1264,6 +1313,7 @@ export default function WeeklyViewPage() {
             addTemplate={addTemplate}
             onFinalizedChange={handleFinalizedChange}
             onLoadingChange={handleLoadingChange}
+            onReloadDay={reloadDay}
           />
         ))}
       </div>
@@ -1292,7 +1342,7 @@ export default function WeeklyViewPage() {
       )}
 
       {applyTplOpen && (
-        <ApplyTemplateCalendarModal templates={templates} allStaff={staff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)}/>
+        <ApplyTemplateCalendarModal templates={templates} allStaff={staff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) reloadDay(ds);}}/>
       )}
 
       {finalizeAllWarn && (

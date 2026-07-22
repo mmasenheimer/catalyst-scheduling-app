@@ -33,8 +33,10 @@ export default function RequestTimeOffPage() {
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [dateError, setDateError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const selected = new Date(shiftDate + 'T00:00:00');
     const cutoff   = new Date();
@@ -45,16 +47,25 @@ export default function RequestTimeOffPage() {
       return;
     }
     setDateError('');
-    submitRequest({
-      type: 'time_off',
-      staffId: user.staffId,
-      staffName: user.name,
-      targetStaffId: null,
-      targetName: null,
-      date: shiftDate,
-      dayLabel: formatDisplay(shiftDate),
-      note: notes,
-    });
+    setSubmitError('');
+    setSaving(true);
+    try {
+      await submitRequest({
+        type: 'time_off',
+        staffId: user.staffId,
+        staffName: user.name,
+        targetStaffId: null,
+        targetName: null,
+        date: shiftDate,
+        dayLabel: formatDisplay(shiftDate),
+        note: notes,
+      });
+    } catch (err) {
+      setSubmitError(err.message || 'Failed to submit request. Please try again.');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
     setSubmitted(true);
   }
 
@@ -177,6 +188,10 @@ export default function RequestTimeOffPage() {
           />
         </div>
 
+        {submitError && (
+          <p className="text-sm" style={{ color: 'var(--color-red)' }}>{submitError}</p>
+        )}
+
         <div className="flex gap-3 pt-1">
           <button
             type="button"
@@ -188,10 +203,11 @@ export default function RequestTimeOffPage() {
           </button>
           <button
             type="submit"
+            disabled={saving}
             className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-accent)', color: 'white' }}
+            style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
           >
-            Submit Request
+            {saving ? 'Submitting…' : 'Submit Request'}
           </button>
         </div>
       </form>

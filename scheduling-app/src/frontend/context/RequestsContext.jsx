@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useScheduleContext } from './ScheduleContext';
 import { useNotifications } from './NotificationsContext';
 import { getStaffForDate } from '../utils/scheduleUtils';
+import { requestsApi } from '../utils/api';
 
 // type: 'time_off' | 'cover' | 'swap'
 // { id, type, status: 'pending'|'approved'|'denied', staffId, staffName,
@@ -16,11 +17,18 @@ export function RequestsProvider({ children }) {
   const { addNotification } = useNotifications();
   const [requests, setRequests] = useState([]);
 
-  const submitRequest = useCallback((req) => {
-    const id = Date.now();
-    setRequests(prev => [{ id, status: 'pending', createdAt: new Date().toISOString(), ...req }, ...prev]);
+  // Load requests from the API on mount; stay empty if the server is unreachable.
+  useEffect(() => {
+    requestsApi.getAll()
+      .then(data => setRequests(data))
+      .catch(() => { /* backend not running */ });
+  }, []);
+
+  const submitRequest = useCallback(async (req) => {
+    const created = await requestsApi.create(req);
+    setRequests(prev => [created, ...prev]);
     addNotification({
-      requestId: id,
+      requestId: created.id,
       type: req.type === 'time_off' ? 'coverage' : 'shift_change',
       title: req.type === 'time_off' ? 'Drop Shift Request' : req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
       message: req.type === 'time_off'
@@ -30,8 +38,8 @@ export function RequestsProvider({ children }) {
           : `${req.staffName} proposed a shift swap with ${req.targetName} on ${req.dayLabel}.`,
       from: req.staffName,
       recipients: 'manager',
-    });
-    return id;
+    }).catch(() => {});
+    return created.id;
   }, [addNotification]);
 
   const applyScheduleChange = useCallback((dateStr, mutate) => {
@@ -79,7 +87,7 @@ export function RequestsProvider({ children }) {
       message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} has been approved.`,
       from: 'Manager',
       recipients: [req.staffId],
-    });
+    }).catch(() => {});
     if (req.targetStaffId) {
       addNotification({
         type: 'shift_change',
@@ -89,10 +97,11 @@ export function RequestsProvider({ children }) {
           : `Your shift swap with ${req.staffName} on ${req.dayLabel} has been confirmed.`,
         from: 'Manager',
         recipients: [req.targetStaffId],
-      });
+      }).catch(() => {});
     }
 
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
+    requestsApi.update(id, { status: 'approved' }).catch(() => {});
   }, [requests, applyScheduleChange, addNotification]);
 
   const denyRequest = useCallback((id) => {
@@ -105,9 +114,10 @@ export function RequestsProvider({ children }) {
       message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} was denied.`,
       from: 'Manager',
       recipients: [req.staffId],
-    });
+    }).catch(() => {});
 
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'denied' } : r));
+    requestsApi.update(id, { status: 'denied' }).catch(() => {});
   }, [requests, addNotification]);
 
   return (

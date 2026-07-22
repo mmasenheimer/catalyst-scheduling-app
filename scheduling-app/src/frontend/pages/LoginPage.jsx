@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { initialStaff } from '../../data/mockData';
+import arizonaCampus from '../assets/arizonacampus.jpg';
 
 export default function LoginPage() {
   const { loginAsManager, loginAsEmployee } = useAuth();
@@ -45,11 +46,26 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: 'var(--color-bg)' }}
+      style={{ background: 'var(--color-bg)', position: 'relative', overflow: 'hidden' }}
     >
+      {/* Backdrop */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `url(${arizonaCampus})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.15,
+          zIndex: 0,
+        }}
+      />
+
       <div
         className="w-full max-w-md p-8 rounded-2xl border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', position: 'relative', zIndex: 1 }}
       >
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text)' }}>

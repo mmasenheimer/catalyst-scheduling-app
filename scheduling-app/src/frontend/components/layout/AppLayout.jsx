@@ -27,7 +27,7 @@ function useTheme() {
 const managerNav = [
   { to: "/",               label: "Daily Schedule" },
   { to: "/weekly",         label: "Weekly View" },
-  { to: "/calendar",       label: "Calendar" },
+  { to: "/calendar",       label: "Event Calendar" },
   { to: "/templates",      label: "Templates" },
   { to: "/add-event",      label: "Add Event" },
   { to: "/staff-availability", label: "Staff Availability" },
@@ -37,7 +37,7 @@ const managerNav = [
 
 const employeeNav = [
   { to: "/my-schedule",       label: "My Schedule" },
-  { to: "/calendar",          label: "Calendar" },
+  { to: "/calendar",          label: "Event Calendar" },
   { to: "/shift-requests",    label: "Shift Requests" },
   { to: "/request-time-off",  label: "Drop Shift" },
   { to: "/availability",      label: "Availability" },

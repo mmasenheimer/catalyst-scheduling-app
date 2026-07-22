@@ -576,10 +576,12 @@ export default function WeeklyTemplatesPage() {
   const [templateName,  setTemplateName]  = useState('');
   const [templateDesc,  setTemplateDesc]  = useState('');
   const [nameError,     setNameError]     = useState('');
+  const [justSaved,     setJustSaved]     = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [currentDay,    setCurrentDay]    = useState('Monday');
   const [orderedStaff,  setOrderedStaff]  = useState([]);
   const templateDaysRef    = useRef({});
+  const savedFlashRef      = useRef(null);
   const lastTriggerRef     = useRef(triggerNew); // tracks the last-processed triggerNew to avoid firing on remount
 
   const [poolDragId,    setPoolDragId]    = useState(null);
@@ -710,7 +712,11 @@ export default function WeeklyTemplatesPage() {
       await updateTemplate(selectedId, changes);
     } catch (err) {
       setNameError(err.message || 'Failed to save template.');
+      return;
     }
+    clearTimeout(savedFlashRef.current);
+    setJustSaved(true);
+    savedFlashRef.current = setTimeout(() => setJustSaved(false), 1200);
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
@@ -1253,13 +1259,15 @@ export default function WeeklyTemplatesPage() {
                     onClick={handleSave}
                     style={{
                       padding: '7px 18px', borderRadius: 8, border: 'none',
-                      background: 'var(--color-accent)', color: 'white',
+                      background: justSaved ? '#1a2a1a' : 'var(--color-accent)',
+                      color: justSaved ? '#6ab888' : 'white',
                       fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                      transition: 'background 0.15s, color 0.15s',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                    onMouseEnter={e => { if (!justSaved) e.currentTarget.style.opacity = '0.85'; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
                   >
-                    Save
+                    {justSaved ? '✓ Saved' : 'Save'}
                   </button>
                   <button
                     onClick={handleDelete}

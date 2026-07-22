@@ -128,7 +128,7 @@ function StaffList({ people, badge, badgeStyle, actionLabel, onAction, selectedI
 
 // ── Request form ──────────────────────────────────────────────────────────────
 
-function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCancel }) {
+function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCancel, saving, submitError }) {
   return (
     <div
       className="p-5 rounded-xl border mb-6"
@@ -189,13 +189,18 @@ function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCa
         />
       </div>
 
+      {submitError && (
+        <p className="text-sm mb-3" style={{ color: 'var(--color-red)' }}>{submitError}</p>
+      )}
+
       <div className="flex gap-2">
         <button
           onClick={onSubmit}
+          disabled={saving}
           className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white' }}
+          style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
         >
-          Send Request
+          {saving ? 'Sending…' : 'Send Request'}
         </button>
         <button
           onClick={onCancel}
@@ -292,6 +297,8 @@ export default function ShiftRequestPage() {
   const [pending, setPending] = useState(null);
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
+  const [submitError, setSubmitError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const me = staff.find(s => s.id === user?.staffId);
 
@@ -328,18 +335,27 @@ export default function ShiftRequestPage() {
     setNote('');
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const day = activeDay ?? new Date();
-    submitRequest({
-      type: tab,
-      staffId: me.id,
-      staffName: me.name,
-      targetStaffId: pending.id,
-      targetName: pending.name,
-      date: toDateStr(day),
-      dayLabel: formatDateLong(day),
-      note,
-    });
+    setSubmitError('');
+    setSaving(true);
+    try {
+      await submitRequest({
+        type: tab,
+        staffId: me.id,
+        staffName: me.name,
+        targetStaffId: pending.id,
+        targetName: pending.name,
+        date: toDateStr(day),
+        dayLabel: formatDateLong(day),
+        note,
+      });
+    } catch (err) {
+      setSubmitError(err.message || 'Failed to submit request. Please try again.');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
     setSubmitted({ type: tab, target: pending, day: activeDay ? formatDateLong(activeDay) : '', note });
     setPending(null);
     setNote('');
@@ -402,7 +418,9 @@ export default function ShiftRequestPage() {
               note={note}
               onNoteChange={setNote}
               onSubmit={handleSubmit}
-              onCancel={() => setPending(null)}
+              onCancel={() => { setPending(null); setSubmitError(''); }}
+              saving={saving}
+              submitError={submitError}
             />
           )}
 

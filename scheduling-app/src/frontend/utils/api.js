@@ -72,13 +72,25 @@ export const templatesApi = {
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────
-// Uncomment and build routes/notifications.js when ready
 
-// export const notificationsApi = {
-//   getAll:   ()   => request('/notifications'),
-//   markRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
-//   dismiss:  (id) => request(`/notifications/${id}`,      { method: 'DELETE' }),
-// };
+export const notificationsApi = {
+  getAll: () => request("/notifications"),
+  create: (body) =>
+    request("/notifications", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) =>
+    request(`/notifications/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id) => request(`/notifications/${id}`, { method: "DELETE" }),
+};
+
+// ── Requests ──────────────────────────────────────────────────────────────────
+
+export const requestsApi = {
+  getAll: () => request("/requests"),
+  create: (body) =>
+    request("/requests", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) =>
+    request(`/requests/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+};
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 // Uncomment and build routes/auth.js when ready

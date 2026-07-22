@@ -1,5 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { notificationsApi } from '../utils/api';
 
 // recipients:
 //   'all'      — every logged-in user sees it
@@ -19,43 +20,55 @@ function isVisibleTo(notif, user) {
   return false;
 }
 
+// The backend stores createdAt; the rest of the app reads notif.timestamp as a Date.
+function hydrate(n) {
+  return { ...n, timestamp: new Date(n.createdAt) };
+}
+
 const NotificationsContext = createContext(null);
 
 export function NotificationsProvider({ children }) {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
 
+  // Load notifications from the API on mount; stay empty if the server is unreachable.
+  useEffect(() => {
+    notificationsApi.getAll()
+      .then(data => setNotifications(data.map(hydrate)))
+      .catch(() => { /* backend not running */ });
+  }, []);
+
   const visible = notifications
     .filter(n => isVisibleTo(n, user))
     .map(n => user?.role === 'manager' && n.managerMessage ? { ...n, message: n.managerMessage } : n);
   const unreadCount = visible.filter(n => !n.read).length;
 
-  function markRead(id) {
+  const markRead = useCallback((id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  }
+    notificationsApi.update(id, { read: true }).catch(() => {});
+  }, []);
 
-  function dismiss(id) {
+  const dismiss = useCallback((id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
-  }
+    notificationsApi.remove(id).catch(() => {});
+  }, []);
 
-  function markAllRead() {
-    setNotifications(prev =>
-      prev.map(n => isVisibleTo(n, user) ? { ...n, read: true } : n)
-    );
-  }
+  const markAllRead = useCallback(() => {
+    setNotifications(prev => prev.map(n => isVisibleTo(n, user) ? { ...n, read: true } : n));
+    visible.filter(n => !n.read).forEach(n => notificationsApi.update(n.id, { read: true }).catch(() => {}));
+  }, [user, visible]);
 
-  function dismissAll() {
+  const dismissAll = useCallback(() => {
     setNotifications(prev => prev.filter(n => !isVisibleTo(n, user)));
-  }
+    visible.forEach(n => notificationsApi.remove(n.id).catch(() => {}));
+  }, [user, visible]);
 
-  function addNotification(notif) {
-    setNotifications(prev => [{
-      id: Date.now(),
-      timestamp: new Date(),
-      read: false,
-      ...notif,
-    }, ...prev]);
-  }
+  const addNotification = useCallback(async (notif) => {
+    const created = await notificationsApi.create(notif);
+    const hydrated = hydrate(created);
+    setNotifications(prev => [hydrated, ...prev]);
+    return hydrated;
+  }, []);
 
   return (
     <NotificationsContext.Provider value={{ notifications: visible, unreadCount, markRead, dismiss, markAllRead, dismissAll, addNotification }}>

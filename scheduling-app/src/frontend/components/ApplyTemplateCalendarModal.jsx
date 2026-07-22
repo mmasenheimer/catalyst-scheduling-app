@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { schedulesApi } from '../utils/api';
 
 const ALL_DAY_NAMES  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEK_ORDER     = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -210,13 +211,21 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
     else       { setSelectedWeek(getMondayOf(date)); setSelectedDate(null); }
   }
 
+  // Applying a template is a real edit — it persists to the backend as an
+  // unfinalized draft (same as any other schedule change) rather than only
+  // updating the local in-memory cache, which was lost on refresh.
+  function persistDay(dateStr, newStaff) {
+    saveDaySchedule(dateStr, newStaff);
+    schedulesApi.saveDay(dateStr, { staff: newStaff, events: [], finalized: false }).catch(() => {});
+  }
+
   function handleApply() {
     if (!template || applied) return;
     if (isDay) {
       if (!selectedDate) return;
       const dateStr  = toDateStr(selectedDate);
       const newStaff = buildStaffForDate(allStaff, template.staff ?? []);
-      saveDaySchedule(dateStr, newStaff);
+      persistDay(dateStr, newStaff);
       saveDaySchedule(selectedDate.toDateString(), newStaff);
       onApplyStaff?.(newStaff, dateStr);
     } else {
@@ -226,10 +235,10 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
         const dayName  = ALL_DAY_NAMES[date.getDay()];
         const newStaff = buildStaffForDate(allStaff, template.days?.[dayName]?.staff ?? []);
         const dateStr  = toDateStr(date);
-        saveDaySchedule(dateStr, newStaff);
+        persistDay(dateStr, newStaff);
         saveDaySchedule(date.toDateString(), newStaff);
+        onApplyStaff?.(newStaff, dateStr);
       }
-      onApplyStaff?.(null, null);
     }
     setApplied(true);
     setTimeout(() => onClose(), 900);

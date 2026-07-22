@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import arizonaCampus from '../assets/arizonacampus.jpg';
 
 const inputStyle = {
   background: 'var(--color-bg)',
@@ -26,11 +27,26 @@ export default function ForgotPasswordPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: 'var(--color-bg)' }}
+      style={{ background: 'var(--color-bg)', position: 'relative', overflow: 'hidden' }}
     >
+      {/* Backdrop */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `url(${arizonaCampus})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.15,
+          zIndex: 0,
+        }}
+      />
+
       <div
         className="w-full max-w-md p-8 rounded-2xl border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', position: 'relative', zIndex: 1 }}
       >
         {submitted ? (
           <div className="text-center py-4">

@@ -1076,6 +1076,23 @@ export default function DailySchedulePage() {
   const shiftDragActiveRef = useRef(false);
   useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
 
+  // Timeline row rects only change when the layout actually changes (window
+  // resize), not on every dragover tick — caching avoids forcing a synchronous
+  // reflow on every mousemove-equivalent event during a drag.
+  const rowRectCacheRef = useRef(new Map());
+  function getRowRect(e, rowIdx) {
+    const cached = rowRectCacheRef.current.get(rowIdx);
+    if (cached && cached.el === e.currentTarget) return cached.rect;
+    const rect = e.currentTarget.getBoundingClientRect();
+    rowRectCacheRef.current.set(rowIdx, { el: e.currentTarget, rect });
+    return rect;
+  }
+  useEffect(() => {
+    function onResize() { rowRectCacheRef.current.clear(); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   function sortByShift(arr) {
     return [...arr].sort((a, b) => {
       const aMin = a.shifts?.length ? Math.min(...a.shifts.map(s => s.start)) : Infinity;
@@ -1161,7 +1178,7 @@ export default function DailySchedulePage() {
   function handleTimelineDragOver(e, rowIndex) {
     setHoverRow(rowIndex);
     if (activeDragType !== 'shift' && activeDragType !== 'desk' && activeDragType !== 'event') return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = getRowRect(e, rowIndex);
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const person = orderedStaff[rowIndex];
 
@@ -1462,7 +1479,7 @@ export default function DailySchedulePage() {
   // Live repositioning (same row) or ghost preview (cross-row) while dragging a bar
   function handleBarDragOver(e, rowIndex) {
     if (!draggingBarInfo) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = getRowRect(e, rowIndex);
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId, duration } = draggingBarInfo;
     const sameRow = staffIndex === rowIndex;

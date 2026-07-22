@@ -164,7 +164,7 @@ export default function AvailabilityPage() {
       message: buildMessage(user?.name ?? 'Staff', grid, ''),
       from: user?.name ?? 'Staff',
       recipients: 'manager',
-    });
+    }).catch(() => {});
     setSubmitted(true);
   }
 
