@@ -37,6 +37,7 @@ const managerNav = [
 
 const employeeNav = [
   { to: "/my-schedule",       label: "My Schedule" },
+  { to: "/team-schedule",     label: "Weekly View" },
   { to: "/calendar",          label: "Event Calendar" },
   { to: "/shift-requests",    label: "Shift Requests" },
   { to: "/request-time-off",  label: "Drop Shift" },
@@ -99,7 +100,7 @@ function AppLayoutInner() {
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
   const { templates, selectedId, setSelectedId, setTriggerNew, addTemplate, removeAllTemplates } = useTemplates();
-  const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading } = useScheduleContext();
+  const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading, teamScheduleLoading, setTeamScheduleLoading } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
   const [applyTplOpen, setApplyTplOpen] = useState(false);
 
@@ -163,6 +164,7 @@ function AppLayoutInner() {
       end={to === "/"}
       onClick={() => {
         if (to === "/weekly" && location.pathname !== "/weekly") setWeeklyViewLoading(true);
+        if (to === "/team-schedule" && location.pathname !== "/team-schedule") setTeamScheduleLoading(true);
       }}
       className="relative py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
       style={({ isActive }) => ({
@@ -181,6 +183,11 @@ function AppLayoutInner() {
         </span>
       )}
       {to === "/weekly" && weeklyViewLoading && (
+        <span className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center">
+          <LoaderCircleIcon size={14} style={{ color: "var(--color-text-dim)" }} />
+        </span>
+      )}
+      {to === "/team-schedule" && teamScheduleLoading && (
         <span className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center">
           <LoaderCircleIcon size={14} style={{ color: "var(--color-text-dim)" }} />
         </span>

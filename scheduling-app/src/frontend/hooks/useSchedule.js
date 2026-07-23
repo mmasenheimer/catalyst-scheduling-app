@@ -23,9 +23,11 @@ export function useSchedule() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [daySchedules, setDaySchedules] = useState({});
 
-  // Set by the Weekly view while it's fetching each day's saved schedule, so
-  // the persistent sidebar nav can show a loading indicator next to the link.
+  // Set by the Weekly view (manager) / Team Schedule (employee) while fetching
+  // each day's saved schedule, so the persistent sidebar nav can show a loading
+  // indicator next to the link.
   const [weeklyViewLoading, setWeeklyViewLoading] = useState(false);
+  const [teamScheduleLoading, setTeamScheduleLoading] = useState(false);
 
   // Keep a live ref of daySchedules so getDaySchedule can stay a stable
   // reference (no dependency on the latest state). This lets React.memo'd
@@ -152,5 +154,7 @@ export function useSchedule() {
     daySchedules,
     weeklyViewLoading,
     setWeeklyViewLoading,
+    teamScheduleLoading,
+    setTeamScheduleLoading,
   };
 }

@@ -97,6 +97,14 @@ function isShiftOutsideAvailability(start, end, blocks) {
 }
 
 function pct(h) { return `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`; }
+function posStyle(start, end) {
+  return { left: `${((start-HOURS_START)/TOTAL_HOURS)*100}%`, width: `${((end-start)/TOTAL_HOURS)*100}%` };
+}
+
+// Hour grid lines depend only on module constants — compute once so the value is
+// reference-stable and doesn't defeat StaffRow memoization.
+const HOURS      = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
+const HALF_HOURS = Array.from({ length: (TOTAL_HOURS) * 2 - 1 }, (_, i) => HOURS_START + 0.5 + i * 0.5).filter(h => h < HOURS_END);
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
@@ -303,6 +311,130 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
   );
 }
 
+// ── StaffRow ────────────────────────────────────────────────────────────────────
+// One timeline row, memoized so a shift resize (which only mutates ONE person's
+// object) re-renders just that row instead of all 15. Handlers are reached through
+// a stable ref (`handlers`) so DayEditor recreating them each render doesn't break
+// the memo; every other prop is sliced per-row so it stays reference-stable unless
+// this row's data actually changed.
+const StaffRow = React.memo(function StaffRow({
+  person, rowIndex, isLast, finalized, dow,
+  preview, isHover, activeDragType, draggingBarInfo, activeBar, dayEvents, handlers,
+}) {
+  const h = handlers.current;
+  const currentDragT = activeDragType ?? draggingBarInfo?.type;
+  const tbHighlight  = activeDragType==='shift'
+    ? { background:'rgba(74,124,94,0.15)', borderColor:'var(--color-green)' }
+    : activeDragType==='desk'
+      ? { background:'rgba(200,148,56,0.12)', borderColor:'var(--color-yellow)' }
+      : { background:'rgba(59,42,110,0.2)',   borderColor:'#7c5cbf' };
+
+  return (
+    <div style={{ display:'flex', borderBottom: !isLast ? '1px solid var(--color-border)' : 'none', opacity: person.shifts.length>0 ? 1 : 0.38, transition:'opacity 0.15s' }}>
+      {/* Name */}
+      <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
+        {!finalized && <span style={{fontSize:10,color:'var(--color-muted)',lineHeight:1,flexShrink:0}}>⠿</span>}
+        <div style={{ width:18, height:18, borderRadius:'50%', background:'var(--color-muted)', color:'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
+          {person.name.split(' ').map(n=>n[0]).join('')}
+        </div>
+        <div style={{ minWidth:0, flex:1 }}>
+          <div style={{ fontSize:11, fontWeight:600, color:'var(--color-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{person.name}</div>
+          <div style={{ fontSize:9, color:'var(--color-text-dim)', marginTop:1 }}>
+            {person.shifts.length>0 ? (person.shifts.length===1 ? `${formatTime(person.shifts[0].start)}–${formatTime(person.shifts[0].end)}` : `${person.shifts.length} shifts`) : 'Unscheduled'}
+          </div>
+        </div>
+      </div>
+      {/* Timeline */}
+      <div data-timeline="true" style={{ flex:1, position:'relative', height:ROW_H }}
+        onDragOver={e=>{
+          const hasT=!!activeDragType; const hasB=!!draggingBarInfo;
+          if(!hasT&&!hasB) return; e.preventDefault(); e.stopPropagation();
+          if(hasT) h.handleTimelineDragOver(e,rowIndex); if(hasB) h.handleBarDragOver(e,rowIndex);
+        }}
+        onDrop={e=>{
+          const hasT=!!activeDragType; const hasB=!!draggingBarInfo;
+          if(!hasT&&!hasB) return; e.preventDefault(); e.stopPropagation();
+          if(hasT) h.handleTimelineDrop(rowIndex); if(hasB) h.handleBarDrop(e,rowIndex);
+        }}
+      >
+        {/* Grid lines */}
+        {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'var(--color-border)',opacity:0.4,pointerEvents:'none'}}/>)}
+        {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:'25%',height:'50%',left:pct(hr),width:1,background:'var(--color-border)',opacity:0.2,pointerEvents:'none'}}/>)}
+
+        {/* Availability */}
+        {getAvailability(person.id, dow).map((blk,bi) => (
+          <div key={`av-${bi}`} style={{position:'absolute',top:0,bottom:0,...posStyle(blk.start,blk.end),background:'rgba(96,165,250,0.10)',border:'1px solid rgba(96,165,250,0.22)',borderRadius:4,zIndex:0,pointerEvents:'none'}}/>
+        ))}
+
+        {/* Toolbar drop highlight */}
+        {activeDragType&&activeDragType!=='event'&&isHover && (
+          <div style={{position:'absolute',inset:0,borderRadius:4,...tbHighlight,border:'1px dashed',zIndex:20,pointerEvents:'none'}}/>
+        )}
+
+        {/* Preview ghost — positioned via transform (translateX) so moving it each
+            frame is a compositor-only update, not a layout pass. Width is the drag's
+            fixed duration, so it stays constant during a drag and doesn't re-layout;
+            only translateX changes tick-to-tick. (No scaleX, which would distort the
+            dashed border.) */}
+        {preview&&preview.start!==null && (
+          <div style={{position:'absolute',pointerEvents:'none',borderRadius:4,top:(ROW_H-26)/2,left:0,height:26,width:`${((preview.end-preview.start)/TOTAL_HOURS)*100}%`,transform:`translateX(${((preview.start-HOURS_START)/(preview.end-preview.start))*100}%)`,background:preview.valid?(currentDragT==='shift'?'rgba(74,124,94,0.35)':currentDragT==='desk'?'rgba(200,148,56,0.35)':'rgba(59,42,110,0.5)'):'rgba(200,64,64,0.25)',border:`2px dashed ${preview.valid?(currentDragT==='shift'?'var(--color-green)':currentDragT==='desk'?'var(--color-yellow)':'#7c5cbf'):'var(--color-red)'}`,zIndex:22}}/>
+        )}
+
+        {/* Shift bars */}
+        {person.shifts.map((sh,shIdx) => {
+          const isAct=activeBar?.type==='shift'&&activeBar?.staffIndex===rowIndex&&activeBar?.shiftIndex===shIdx;
+          const isDrg=draggingBarInfo?.type==='shift'&&draggingBarInfo?.staffIndex===rowIndex&&draggingBarInfo?.shiftIndex===shIdx;
+          return (
+            <div key={sh.id} draggable={!finalized}
+              style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(sh.start,sh.end),background:'var(--color-green)',opacity:isDrg?0.3:isAct?0.85:0.6,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px var(--color-green)':'none',zIndex:isAct?10:1}}
+              onDragStart={e=>{e.stopPropagation();!finalized&&h.handleShiftBarDragStart(e,rowIndex,shIdx);}}
+              onDragEnd={h.handleBarDragEnd}
+              onContextMenu={e=>{e.preventDefault();!finalized&&h.handleBarContextMenu(e,{type:'shift',staffIndex:rowIndex,shiftIndex:shIdx});}}>
+              {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.18)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleBarMouseDown(e,rowIndex,shIdx,'left');}}/>}
+              {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.18)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleBarMouseDown(e,rowIndex,shIdx,'right');}}/>}
+            </div>
+          );
+        })}
+
+        {/* Desk bars */}
+        {person.deskShifts.map((dk,di) => {
+          const isAct=activeBar?.type==='desk'&&activeBar?.staffIndex===rowIndex&&activeBar?.deskIndex===di;
+          const isDrg=draggingBarInfo?.type==='desk'&&draggingBarInfo?.staffIndex===rowIndex&&draggingBarInfo?.deskIndex===di;
+          return (
+            <div key={dk.id} draggable={!finalized}
+              style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-yellow)',opacity:isDrg?0.3:isAct?1:0.75,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px #e0b050':'none',zIndex:isAct?10:2}}
+              onDragStart={e=>{e.stopPropagation();!finalized&&h.handleDeskBarDragStart(e,rowIndex,di);}}
+              onDragEnd={h.handleBarDragEnd}
+              onContextMenu={e=>{e.preventDefault();!finalized&&h.handleBarContextMenu(e,{type:'desk',staffIndex:rowIndex,deskIndex:di});}}>
+              {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleDeskBarMouseDown(e,rowIndex,di,'left');}}/>}
+              <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',paddingLeft:10,paddingRight:10,pointerEvents:'none'}}>Desk</span>
+              {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleDeskBarMouseDown(e,rowIndex,di,'right');}}/>}
+            </div>
+          );
+        })}
+
+        {/* Event bars */}
+        {dayEvents.filter(ev=>ev.assignedStaff.includes(person.id)).map(evt => {
+          const isAct=activeBar?.type==='event'&&activeBar?.eventId===evt.id;
+          const isDrg=draggingBarInfo?.type==='event'&&draggingBarInfo?.eventId===evt.id;
+          return (
+            <div key={evt.id} draggable={!finalized}
+              style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:isDrg?0.3:isAct?1:0.9,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px #7c5cbf':'none',zIndex:isAct?10:3}}
+              onDragStart={e=>{e.stopPropagation();!finalized&&h.handleEventBarDragStart(e,evt.id,person.id);}}
+              onDragEnd={h.handleBarDragEnd}
+              onContextMenu={e=>{e.preventDefault();!finalized&&h.handleBarContextMenu(e,{type:'event',eventId:evt.id,staffId:person.id});}}
+              title={evt.name}>
+              {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleEventBarMouseDown(e,evt.id,'left');}}/>}
+              <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,paddingLeft:10,paddingRight:10,whiteSpace:'nowrap',overflow:'hidden',pointerEvents:'none'}}>{evt.name}</span>
+              {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleEventBarMouseDown(e,evt.id,'right');}}/>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
 const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange, onReloadDay }, ref) {
@@ -336,6 +468,16 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
   const staffRef = useRef(orderedStaff);
   const trashRef = useRef(null);
+  const handlersRef = useRef(null);
+  const alertsRef = useRef([]);   // holds the last non-drag alerts so the strip doesn't flicker/shift mid-drag
+
+  // Preview-ghost updates are coalesced to one per animation frame. Native
+  // `dragover` fires in bursts (often several times per frame); throttling the
+  // state update keeps rendering to ≤1/frame. `latestPreviewRef` holds the
+  // synchronous truth so a drop never lands on a one-frame-stale value.
+  const previewRafRef     = useRef(0);
+  const pendingPreviewRef = useRef(undefined);
+  const latestPreviewRef  = useRef(null);
 
   // Timeline row rects only change when the layout actually changes (window
   // resize), not on every dragover tick — caching avoids forcing a synchronous
@@ -353,6 +495,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  useEffect(() => () => { if (previewRafRef.current) cancelAnimationFrame(previewRafRef.current); }, []);
   useEffect(() => { staffRef.current = orderedStaff; }, [orderedStaff]);
 
   // Skips the change-detector's next pass right after a load/finalize, so
@@ -442,14 +585,30 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     label:       `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} · ${date.toLocaleDateString('en-US', { month:'short', day:'numeric' })}`,
   }));
 
-  const hours     = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
-  const halfHours = Array.from({ length: (TOTAL_HOURS) * 2 - 1 }, (_, i) => HOURS_START + 0.5 + i * 0.5).filter(h => h < HOURS_END);
+  const hours     = HOURS;
 
-  function posStyle(start, end) {
-    return { left: `${((start-HOURS_START)/TOTAL_HOURS)*100}%`, width: `${((end-start)/TOTAL_HOURS)*100}%` };
+  // Throttled preview update (drag-over path): keeps latestPreviewRef current
+  // synchronously, but only flushes to state once per animation frame.
+  function commitPreview(value) {
+    latestPreviewRef.current  = value;
+    pendingPreviewRef.current = value;
+    if (!previewRafRef.current) {
+      previewRafRef.current = requestAnimationFrame(() => {
+        previewRafRef.current = 0;
+        setPreviewInfo(pendingPreviewRef.current);
+      });
+    }
+  }
+  // Immediate preview update (clears / drop): cancels any pending frame so the
+  // ghost disappears without a one-frame lag.
+  function setPreviewNow(value) {
+    if (previewRafRef.current) { cancelAnimationFrame(previewRafRef.current); previewRafRef.current = 0; }
+    latestPreviewRef.current  = value;
+    pendingPreviewRef.current = value;
+    setPreviewInfo(value);
   }
 
-  function endDrag() { setActiveDragType(null); setDraggingEvtId(null); setHoverRow(null); setPreviewInfo(null); }
+  function endDrag() { setActiveDragType(null); setDraggingEvtId(null); setHoverRow(null); setPreviewNow(null); }
 
   // ── Toolbar drag-over preview ───────────────────────────────────────────────
   function handleTimelineDragOver(e, rowIdx) {
@@ -461,20 +620,20 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (activeDragType === 'shift') {
       const dur = 2;
       const start = snapHalf(clamp(raw - dur/2, HOURS_START, HOURS_END - dur));
-      setPreviewInfo({ staffIndex: rowIdx, start, end: start+dur, valid: !p.shifts.some(s => start < s.end && start+dur > s.start) });
+      commitPreview({ staffIndex: rowIdx, start, end: start+dur, valid: !p.shifts.some(s => start < s.end && start+dur > s.start) });
     } else if (activeDragType === 'desk') {
       const dur  = 1;
       const host = p.shifts.find(sh => raw >= sh.start && raw <= sh.end);
-      if (!host) { setPreviewInfo({ staffIndex: rowIdx, start: null, end: null, valid: false }); return; }
+      if (!host) { commitPreview({ staffIndex: rowIdx, start: null, end: null, valid: false }); return; }
       const start = snapHalf(clamp(raw - dur/2, host.start, host.end - dur));
       const end   = start + dur;
       const pEvts = dayEvents.filter(ev => ev.assignedStaff.includes(p.id));
-      setPreviewInfo({ staffIndex: rowIdx, start, end, valid: !p.deskShifts.some(d => start < d.end && end > d.start) && !pEvts.some(ev => start < ev.end && end > ev.start) });
+      commitPreview({ staffIndex: rowIdx, start, end, valid: !p.deskShifts.some(d => start < d.end && end > d.start) && !pEvts.some(ev => start < ev.end && end > ev.start) });
     } else if (activeDragType === 'event' && draggingEvtId != null) {
       const evt = dayEvents.find(ev => ev.id === draggingEvtId); if (!evt) return;
       const hasDeskConflict  = p.deskShifts?.some(d => d.start < evt.end && d.end > evt.start);
       const hasEventConflict = dayEvents.some(o => o.id !== evt.id && o.assignedStaff.includes(p.id) && o.start < evt.end && o.end > evt.start);
-      setPreviewInfo({ staffIndex: rowIdx, start: evt.start, end: evt.end, valid: !evt.assignedStaff.includes(p.id) && !hasDeskConflict && !hasEventConflict });
+      commitPreview({ staffIndex: rowIdx, start: evt.start, end: evt.end, valid: !evt.assignedStaff.includes(p.id) && !hasDeskConflict && !hasEventConflict });
     }
   }
 
@@ -598,7 +757,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
   // ── Bar drag end ─────────────────────────────────────────────────────────────
   function handleBarDragEnd() {
-    setPreviewInfo(null);
+    setPreviewNow(null);
     if (draggingBarInfo?.type === 'shift') {
       const { personId, shiftId, originalStart, originalEnd } = draggingBarInfo;
       const cur = staffRef.current.find(s => s.id === personId);
@@ -684,7 +843,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (type === 'shift') {
       const ns = snapHalf(clamp(raw-duration/2, HOURS_START, HOURS_END-duration)); const ne = ns+duration;
       if (same) {
-        setPreviewInfo(null);
+        setPreviewNow(null);
         setOrderedStaff(prev => {
           const next=[...prev]; const p={...next[si],shifts:[...next[si].shifts]};
           const others=p.shifts.filter((_,j)=>j!==shIdx);
@@ -692,11 +851,11 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           next[si]=p; return next;
         });
       } else {
-        setPreviewInfo({ staffIndex:rowIdx, start:ns, end:ne, valid:!orderedStaff[rowIdx].shifts.some(s=>ns<s.end&&ne>s.start) });
+        commitPreview({ staffIndex:rowIdx, start:ns, end:ne, valid:!orderedStaff[rowIdx].shifts.some(s=>ns<s.end&&ne>s.start) });
       }
     } else if (type === 'desk') {
       if (same) {
-        setPreviewInfo(null);
+        setPreviewNow(null);
         setOrderedStaff(prev => {
           const next=[...prev]; const p={...next[si],deskShifts:[...next[si].deskShifts]};
           const host=p.shifts.find(sh=>raw>=sh.start&&raw<=sh.end); if (!host) return prev;
@@ -708,15 +867,15 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         });
       } else {
         const tgt=orderedStaff[rowIdx]; const host=tgt.shifts.find(sh=>raw>=sh.start&&raw<=sh.end);
-        if (!host) { setPreviewInfo({staffIndex:rowIdx,start:null,end:null,valid:false}); return; }
+        if (!host) { commitPreview({staffIndex:rowIdx,start:null,end:null,valid:false}); return; }
         const ns=snapHalf(clamp(raw-duration/2,host.start,host.end-duration)); const ne=ns+duration;
         const tEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(tgt.id));
-        setPreviewInfo({staffIndex:rowIdx,start:ns,end:ne,valid:!tgt.deskShifts.some(d=>ns<d.end&&ne>d.start)&&!tEvts.some(ev=>ns<ev.end&&ne>ev.start)});
+        commitPreview({staffIndex:rowIdx,start:ns,end:ne,valid:!tgt.deskShifts.some(d=>ns<d.end&&ne>d.start)&&!tEvts.some(ev=>ns<ev.end&&ne>ev.start)});
       }
     } else if (type === 'event' && !same) {
       const evt=dayEvents.find(ev=>ev.id===eventId); if (!evt) return;
       const tgt=orderedStaff[rowIdx];
-      setPreviewInfo({staffIndex:rowIdx,start:evt.start,end:evt.end,valid:!evt.assignedStaff.includes(tgt.id)&&!tgt.deskShifts?.some(d=>d.start<evt.end&&d.end>evt.start)&&!dayEvents.some(o=>o.id!==eventId&&o.assignedStaff.includes(tgt.id)&&o.start<evt.end&&o.end>evt.start)});
+      commitPreview({staffIndex:rowIdx,start:evt.start,end:evt.end,valid:!evt.assignedStaff.includes(tgt.id)&&!tgt.deskShifts?.some(d=>d.start<evt.end&&d.end>evt.start)&&!dayEvents.some(o=>o.id!==eventId&&o.assignedStaff.includes(tgt.id)&&o.start<evt.end&&o.end>evt.start)});
     }
   }
 
@@ -725,9 +884,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (!draggingBarInfo) return;
     const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, staffId } = draggingBarInfo;
     if (si === rowIdx) return;
-    if (!previewInfo || previewInfo.staffIndex !== rowIdx || !previewInfo.valid || previewInfo.start === null) return;
-    setPreviewInfo(null); setDraggingBarInfo(null);
-    const { start, end } = previewInfo;
+    const preview = latestPreviewRef.current;   // synchronous truth — never a frame stale
+    if (!preview || preview.staffIndex !== rowIdx || !preview.valid || preview.start === null) return;
+    setPreviewNow(null); setDraggingBarInfo(null);
+    const { start, end } = preview;
     if (type === 'shift') {
       const tgt=orderedStaff[rowIdx]; const blocks=getAvailability(tgt.id,dow);
       const srcId=orderedStaff[si].id; const tgtId=tgt.id; const capIdx=shIdx;
@@ -795,10 +955,11 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
   // ── Timeline drop (toolbar chips) ───────────────────────────────────────────
   function handleTimelineDrop(si) {
+    const preview = latestPreviewRef.current;   // synchronous truth — never a frame stale
     if (activeDragType === 'shift') {
       const p=orderedStaff[si];
       let ns,ne;
-      if (previewInfo?.staffIndex===si&&previewInfo.valid) { ns=previewInfo.start; ne=previewInfo.end; }
+      if (preview?.staffIndex===si&&preview.valid) { ns=preview.start; ne=preview.end; }
       else { ns=firstFreeSlot(p.shifts,2); if(ns===null){endDrag();return;} ne=ns+2; }
       const doPlace=()=>setOrderedStaff(prev=>{
         const next=[...prev]; const pp={...next[si]}; pp.scheduled=true;
@@ -810,7 +971,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     } else if (activeDragType === 'desk') {
       const p=orderedStaff[si]; const pEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(p.id));
       let ns=null;
-      if (previewInfo?.staffIndex===si&&previewInfo.valid&&previewInfo.start!==null) ns=previewInfo.start;
+      if (preview?.staffIndex===si&&preview.valid&&preview.start!==null) ns=preview.start;
       else { for (const sh of p.shifts) { const slot=firstFreeSlot(p.deskShifts,1,sh.start,sh.end,pEvts); if(slot!==null){ns=slot;break;} } }
       if (ns!==null) {
         const ne=ns+1;
@@ -828,18 +989,27 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     endDrag();
   }
 
-  const alerts         = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow);
+  // Freeze the alerts strip while a drag/resize is in progress so it doesn't
+  // pop in/out (shifting the page) on every tick — recompute only once the
+  // gesture ends (activeBar/draggingBarInfo/activeDragType all cleared).
+  const draggingNow    = !!(activeBar || draggingBarInfo || activeDragType);
+  if (!draggingNow) alertsRef.current = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow);
+  const alerts         = alertsRef.current;
   const dayName        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
   const monthDay       = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const scheduledToday = orderedStaff.filter(s => s.shifts?.length > 0);
   const nowHour        = now.getHours() + now.getMinutes() / 60;
   const onShiftNow     = scheduledToday.filter(s => s.shifts.some(sh => sh.start <= nowHour && sh.end > nowHour)).length;
-  const currentDragT   = activeDragType ?? draggingBarInfo?.type;
-  const tbHighlight    = activeDragType==='shift'
-    ? { background:'rgba(74,124,94,0.15)', borderColor:'var(--color-green)' }
-    : activeDragType==='desk'
-      ? { background:'rgba(200,148,56,0.12)', borderColor:'var(--color-yellow)' }
-      : { background:'rgba(59,42,110,0.2)',   borderColor:'#7c5cbf' };
+
+  // Stable handle StaffRow reaches through — reassigned each render so the row
+  // always calls the latest closures, but the ref object itself never changes,
+  // so it doesn't defeat StaffRow's memo.
+  handlersRef.current = {
+    handleTimelineDragOver, handleBarDragOver, handleTimelineDrop, handleBarDrop,
+    handleShiftBarDragStart, handleDeskBarDragStart, handleEventBarDragStart,
+    handleBarDragEnd, handleBarContextMenu, handleBarMouseDown, handleDeskBarMouseDown,
+    handleEventBarMouseDown,
+  };
 
   return (
     <div style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, background:'var(--color-surface)', overflow:'hidden', contain:'content' }}>
@@ -935,104 +1105,21 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
       <div>
         {orderedStaff.map((person, i) => (
-          <div key={person.id} style={{ display:'flex', borderBottom: i < orderedStaff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts.length>0 ? 1 : 0.38, transition:'opacity 0.15s' }}>
-            {/* Name */}
-            <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
-              {!finalized && <span style={{fontSize:10,color:'var(--color-muted)',lineHeight:1,flexShrink:0}}>⠿</span>}
-              <div style={{ width:18, height:18, borderRadius:'50%', background:'var(--color-muted)', color:'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
-                {person.name.split(' ').map(n=>n[0]).join('')}
-              </div>
-              <div style={{ minWidth:0, flex:1 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:'var(--color-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{person.name}</div>
-                <div style={{ fontSize:9, color:'var(--color-text-dim)', marginTop:1 }}>
-                  {person.shifts.length>0 ? (person.shifts.length===1 ? `${formatTime(person.shifts[0].start)}–${formatTime(person.shifts[0].end)}` : `${person.shifts.length} shifts`) : 'Unscheduled'}
-                </div>
-              </div>
-            </div>
-            {/* Timeline */}
-            <div data-timeline="true" style={{ flex:1, position:'relative', height:ROW_H }}
-              onDragOver={e=>{
-                const hasT=!!activeDragType; const hasB=!!draggingBarInfo;
-                if(!hasT&&!hasB) return; e.preventDefault(); e.stopPropagation();
-                if(hasT) handleTimelineDragOver(e,i); if(hasB) handleBarDragOver(e,i);
-              }}
-              onDrop={e=>{
-                const hasT=!!activeDragType; const hasB=!!draggingBarInfo;
-                if(!hasT&&!hasB) return; e.preventDefault(); e.stopPropagation();
-                if(hasT) handleTimelineDrop(i); if(hasB) handleBarDrop(e,i);
-              }}
-            >
-              {/* Grid lines */}
-              {hours.map(h => h>HOURS_START && <div key={h} style={{position:'absolute',top:0,bottom:0,left:pct(h),width:1,background:'var(--color-border)',opacity:0.4,pointerEvents:'none'}}/>)}
-              {halfHours.map(h => <div key={h} style={{position:'absolute',top:'25%',height:'50%',left:pct(h),width:1,background:'var(--color-border)',opacity:0.2,pointerEvents:'none'}}/>)}
-
-              {/* Availability */}
-              {getAvailability(person.id, dow).map((blk,bi) => (
-                <div key={`av-${bi}`} style={{position:'absolute',top:0,bottom:0,...posStyle(blk.start,blk.end),background:'rgba(96,165,250,0.10)',border:'1px solid rgba(96,165,250,0.22)',borderRadius:4,zIndex:0,pointerEvents:'none'}}/>
-              ))}
-
-              {/* Toolbar drop highlight */}
-              {activeDragType&&activeDragType!=='event'&&hoverRow===i && (
-                <div style={{position:'absolute',inset:0,borderRadius:4,...tbHighlight,border:'1px dashed',zIndex:20,pointerEvents:'none'}}/>
-              )}
-
-              {/* Preview ghost */}
-              {previewInfo?.staffIndex===i&&previewInfo.start!==null && (
-                <div style={{position:'absolute',pointerEvents:'none',borderRadius:4,top:'50%',transform:'translateY(-50%)',height:26,...posStyle(previewInfo.start,previewInfo.end),background:previewInfo.valid?(currentDragT==='shift'?'rgba(74,124,94,0.35)':currentDragT==='desk'?'rgba(200,148,56,0.35)':'rgba(59,42,110,0.5)'):'rgba(200,64,64,0.25)',border:`2px dashed ${previewInfo.valid?(currentDragT==='shift'?'var(--color-green)':currentDragT==='desk'?'var(--color-yellow)':'#7c5cbf'):'var(--color-red)'}`,zIndex:22}}/>
-              )}
-
-              {/* Shift bars */}
-              {person.shifts.map((sh,shIdx) => {
-                const isAct=activeBar?.type==='shift'&&activeBar?.staffIndex===i&&activeBar?.shiftIndex===shIdx;
-                const isDrg=draggingBarInfo?.type==='shift'&&draggingBarInfo?.staffIndex===i&&draggingBarInfo?.shiftIndex===shIdx;
-                return (
-                  <div key={sh.id} draggable={!finalized}
-                    style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(sh.start,sh.end),background:'var(--color-green)',opacity:isDrg?0.3:isAct?0.85:0.6,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px var(--color-green)':'none',zIndex:isAct?10:1}}
-                    onDragStart={e=>{e.stopPropagation();!finalized&&handleShiftBarDragStart(e,i,shIdx);}}
-                    onDragEnd={handleBarDragEnd}
-                    onContextMenu={e=>{e.preventDefault();!finalized&&handleBarContextMenu(e,{type:'shift',staffIndex:i,shiftIndex:shIdx});}}>
-                    {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.18)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleBarMouseDown(e,i,shIdx,'left');}}/>}
-                    {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.18)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleBarMouseDown(e,i,shIdx,'right');}}/>}
-                  </div>
-                );
-              })}
-
-              {/* Desk bars */}
-              {person.deskShifts.map((dk,di) => {
-                const isAct=activeBar?.type==='desk'&&activeBar?.staffIndex===i&&activeBar?.deskIndex===di;
-                const isDrg=draggingBarInfo?.type==='desk'&&draggingBarInfo?.staffIndex===i&&draggingBarInfo?.deskIndex===di;
-                return (
-                  <div key={dk.id} draggable={!finalized}
-                    style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-yellow)',opacity:isDrg?0.3:isAct?1:0.75,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px #e0b050':'none',zIndex:isAct?10:2}}
-                    onDragStart={e=>{e.stopPropagation();!finalized&&handleDeskBarDragStart(e,i,di);}}
-                    onDragEnd={handleBarDragEnd}
-                    onContextMenu={e=>{e.preventDefault();!finalized&&handleBarContextMenu(e,{type:'desk',staffIndex:i,deskIndex:di});}}>
-                    {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleDeskBarMouseDown(e,i,di,'left');}}/>}
-                    <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',paddingLeft:10,paddingRight:10,pointerEvents:'none'}}>Desk</span>
-                    {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleDeskBarMouseDown(e,i,di,'right');}}/>}
-                  </div>
-                );
-              })}
-
-              {/* Event bars */}
-              {dayEvents.filter(ev=>ev.assignedStaff.includes(person.id)).map(evt => {
-                const isAct=activeBar?.type==='event'&&activeBar?.eventId===evt.id;
-                const isDrg=draggingBarInfo?.type==='event'&&draggingBarInfo?.eventId===evt.id;
-                return (
-                  <div key={evt.id} draggable={!finalized}
-                    style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:isDrg?0.3:isAct?1:0.9,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px #7c5cbf':'none',zIndex:isAct?10:3}}
-                    onDragStart={e=>{e.stopPropagation();!finalized&&handleEventBarDragStart(e,evt.id,person.id);}}
-                    onDragEnd={handleBarDragEnd}
-                    onContextMenu={e=>{e.preventDefault();!finalized&&handleBarContextMenu(e,{type:'event',eventId:evt.id,staffId:person.id});}}
-                    title={evt.name}>
-                    {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleEventBarMouseDown(e,evt.id,'left');}}/>}
-                    <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,paddingLeft:10,paddingRight:10,whiteSpace:'nowrap',overflow:'hidden',pointerEvents:'none'}}>{evt.name}</span>
-                    {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();handleEventBarMouseDown(e,evt.id,'right');}}/>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <StaffRow
+            key={person.id}
+            person={person}
+            rowIndex={i}
+            isLast={i === orderedStaff.length - 1}
+            finalized={finalized}
+            dow={dow}
+            preview={previewInfo?.staffIndex === i ? previewInfo : null}
+            isHover={hoverRow === i}
+            activeDragType={activeDragType}
+            draggingBarInfo={draggingBarInfo}
+            activeBar={activeBar}
+            dayEvents={dayEvents}
+            handlers={handlersRef}
+          />
         ))}
       </div>
 

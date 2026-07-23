@@ -15,6 +15,7 @@ import AvailabilityPage from './pages/AvailabilityPage';
 import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
 import ManageStaffPage from './pages/ManageStaffPage';
 import WeeklyViewPage from './pages/WeeklyViewPage';
+import TeamSchedulePage from './pages/TeamSchedulePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: 'weekly',      element: <ProtectedRoute managerOnly><WeeklyViewPage /></ProtectedRoute> },
       { path: 'templates',   element: <ProtectedRoute managerOnly><WeeklyTemplatesPage /></ProtectedRoute> },
       { path: 'my-schedule', element: <MySchedulePage /> },
+      { path: 'team-schedule', element: <TeamSchedulePage /> },
       { path: 'add-event',        element: <ProtectedRoute managerOnly><AddEventPage /></ProtectedRoute> },
       { path: 'calendar',         element: <CalendarPage /> },
       { path: 'request-time-off', element: <RequestTimeOffPage /> },

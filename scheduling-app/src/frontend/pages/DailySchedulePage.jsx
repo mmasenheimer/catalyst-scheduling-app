@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime, mergeStaffOverrides } from '../utils/scheduleUtils';
@@ -126,7 +126,10 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
 
 // ── Alerts bar ─────────────────────────────────────────────────────────────────
 
-function AlertsBar({ staff, events, dow }) {
+// Memoized so it skips re-rendering (and re-running buildAlerts) while a drag/
+// resize is active — the parent freezes its props during a gesture, so this
+// only recomputes once the gesture ends.
+const AlertsBar = memo(function AlertsBar({ staff, events, dow }) {
   const alerts   = buildAlerts(staff, events, dow);
   const dotColor = { understaffed: 'var(--color-green)', yellow: 'var(--color-yellow)', event: '#a080e0', blue: 'var(--color-accent-bright)' };
   return (
@@ -141,7 +144,7 @@ function AlertsBar({ staff, events, dow }) {
       ))}
     </div>
   );
-}
+});
 
 // ── Schedule grid ──────────────────────────────────────────────────────────────
 
@@ -1072,6 +1075,10 @@ export default function DailySchedulePage() {
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
+  // Frozen inputs for the Alerts bar so it doesn't recompute/flicker mid-drag.
+  const alertsStaffRef  = useRef([]);
+  const alertsEventsRef = useRef([]);
+
   const orderedStaffRef    = useRef(orderedStaff);
   const shiftDragActiveRef = useRef(false);
   useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
@@ -1815,7 +1822,16 @@ export default function DailySchedulePage() {
         onApplyTemplate={() => setApplyTplOpen(true)}
         onSaveAsTemplate={() => setSaveTplOpen(true)}
       />
-      <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} events={todayEvents} dow={currentDow} />
+      {(() => {
+        // Hold the alert inputs steady while a drag/resize is in progress so the
+        // strip only updates once the gesture ends (avoids mid-drag layout shift).
+        const draggingNow = !!(activeBar || draggingBarInfo || activeDragType);
+        if (!draggingNow) {
+          alertsStaffRef.current  = orderedStaff.filter(s => s.shifts?.length > 0);
+          alertsEventsRef.current = todayEvents;
+        }
+        return <AlertsBar staff={alertsStaffRef.current} events={alertsEventsRef.current} dow={currentDow} />;
+      })()}
 
       {/* Toolbar */}
       {!finalized && (
