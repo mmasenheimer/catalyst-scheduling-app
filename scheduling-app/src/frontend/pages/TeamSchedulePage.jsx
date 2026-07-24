@@ -30,7 +30,10 @@ function getEventsForDate(date, events) {
       if (d === dateStr) return true;
       if (evt.repeating) {
         const [y, m, day] = d.split('-').map(Number);
-        return new Date(y, m - 1, day).getDay() === dow;
+        const anchor = new Date(y, m - 1, day);
+        const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        // Only recur on/after the event's anchor date, matching the Daily view.
+        return anchor.getDay() === dow && target >= anchor;
       }
       return false;
     })

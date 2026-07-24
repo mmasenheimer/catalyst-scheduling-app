@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, toDateStr } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
+import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
+import { ArrowRightIcon } from '../components/ArrowRightIcon';
+import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -102,11 +105,11 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
         </button>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
-          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>◀</button>
+        <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
+          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}><ArrowLeftIcon size={16} /></button>
         <span className="text-sm font-medium min-w-36 sm:min-w-48 text-center">{dateLabel}</span>
-        <button onClick={onNext} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
-          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>▶</button>
+        <button onClick={onNext} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
+          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}><ArrowRightIcon size={16} /></button>
       </div>
       <div className="flex gap-4 sm:gap-6">
         {[
@@ -509,12 +512,12 @@ function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
       </button>
       <div style={{ height: 1, background: 'var(--color-border)' }} />
       <button
-        style={btn('#f07070')}
+        style={{ ...btn('#f07070'), display: 'flex', alignItems: 'center', gap: 6 }}
         onMouseEnter={e => e.currentTarget.style.background = 'rgba(200,64,64,0.1)'}
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         onClick={onDelete}
       >
-        🗑  Delete
+        <DeleteIcon size={13} /> Delete
       </button>
     </div>
   );
@@ -994,9 +997,9 @@ function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
                   </span>
                   <button onClick={() => onDeleteEvent(evt)}
                     title="Delete event"
-                    className="text-xs px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                    className="text-xs px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity flex items-center"
                     style={{ background: 'transparent', color: 'var(--color-red)', border: '1px solid var(--color-red)' }}>
-                    🗑
+                    <DeleteIcon size={13} />
                   </button>
                 </div>
               </div>
@@ -1115,7 +1118,7 @@ export default function DailySchedulePage() {
   const autoSaveTimerRef = useRef(null);
 
   useEffect(() => {
-    const dateStr = schedule.currentDate.toISOString().split('T')[0];
+    const dateStr = toDateStr(schedule.currentDate);
 
     schedulesApi.getDay(dateStr)
       .then(saved => {
@@ -1159,7 +1162,7 @@ export default function DailySchedulePage() {
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      const dateStr = schedule.currentDate.toISOString().split('T')[0];
+      const dateStr = toDateStr(schedule.currentDate);
       schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: todayEvents, finalized: false }).catch(() => {});
     }, 600);
   }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1781,7 +1784,7 @@ export default function DailySchedulePage() {
   }
 
   async function doFinalize() {
-    const date = schedule.currentDate.toISOString().split('T')[0];
+    const date = toDateStr(schedule.currentDate);
     try {
       await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: true });
     } catch (err) {
@@ -1794,7 +1797,7 @@ export default function DailySchedulePage() {
 
   async function handleUnfinalize() {
     setFinalized(false);
-    const date = schedule.currentDate.toISOString().split('T')[0];
+    const date = toDateStr(schedule.currentDate);
     try {
       await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: false });
     } catch (err) {
@@ -1908,7 +1911,7 @@ export default function DailySchedulePage() {
               background:   trashActive ? 'rgba(200,64,64,0.12)' : 'transparent',
             }}
           >
-            <span style={{ fontSize: 15 }}>🗑</span>
+            <DeleteIcon size={15} />
             Drop here to remove
           </div>
         </div>

@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useScheduleContext } from './ScheduleContext';
 import { useNotifications } from './NotificationsContext';
+import { useAuth } from './AuthContext';
 import { getStaffForDate } from '../utils/scheduleUtils';
-import { requestsApi } from '../utils/api';
+import { requestsApi, schedulesApi } from '../utils/api';
 
 // type: 'time_off' | 'cover' | 'swap'
 // { id, type, status: 'pending'|'approved'|'denied', staffId, staffName,
@@ -15,14 +16,18 @@ const TYPE_LABEL = { time_off: 'drop shift', cover: 'cover', swap: 'swap' };
 export function RequestsProvider({ children }) {
   const { staff, getDaySchedule, saveDaySchedule } = useScheduleContext();
   const { addNotification } = useNotifications();
+  const { user } = useAuth();
   const [requests, setRequests] = useState([]);
 
-  // Load requests from the API on mount; stay empty if the server is unreachable.
+  // Load requests for the current user from the API (server-side filtered:
+  // manager gets all, an employee only gets ones they're involved in). Stay
+  // empty if the server is unreachable. Refetches when the user changes.
   useEffect(() => {
-    requestsApi.getAll()
+    if (!user) return;
+    requestsApi.getAll({ role: user.role, staffId: user.staffId })
       .then(data => setRequests(data))
       .catch(() => { /* backend not running */ });
-  }, []);
+  }, [user]);
 
   const submitRequest = useCallback(async (req) => {
     const created = await requestsApi.create(req);
@@ -42,82 +47,121 @@ export function RequestsProvider({ children }) {
     return created.id;
   }, [addNotification]);
 
+  // Returns a promise that resolves once the change is persisted to the
+  // backend, so callers can await it and detect a persistence failure. The
+  // in-memory cache is still updated synchronously for an immediate UI.
   const applyScheduleChange = useCallback((dateStr, mutate) => {
     const date = new Date(dateStr + 'T00:00:00');
     const current = getStaffForDate(date, getDaySchedule, staff);
     const next = mutate(current);
+    // Update the in-memory cache under both key formats readers check.
     saveDaySchedule(dateStr, next);
     saveDaySchedule(date.toDateString(), next);
+    // Persist to the backend so the approved change survives a refresh and is
+    // picked up by the Daily view (which loads schedules from the DB, not from
+    // this in-memory cache). Preserve the day's existing events snapshot and
+    // finalized flag; a day with no saved doc yet defaults to finalized.
+    return schedulesApi.getDay(dateStr)
+      .then(
+        existing => ({ events: existing.events ?? [], finalized: existing.finalized ?? true }),
+        () => ({ events: [], finalized: true }), // 404 / unreachable → sensible defaults
+      )
+      .then(({ events, finalized }) => schedulesApi.saveDay(dateStr, { staff: next, events, finalized }));
   }, [staff, getDaySchedule, saveDaySchedule]);
 
-  const approveRequest = useCallback((id) => {
+  // Ids currently being approved/denied — guards against a double-click or two
+  // managers acting at once from both running the (non-idempotent) approval.
+  const processingRef = useRef(new Set());
+
+  const approveRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
     if (!req || req.status !== 'pending') return;
+    if (processingRef.current.has(id)) return;
+    processingRef.current.add(id);
 
-    if (req.type === 'time_off') {
-      applyScheduleChange(req.date, list =>
-        list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [] } : s)
-      );
-    } else if (req.type === 'cover') {
-      applyScheduleChange(req.date, list => {
-        const requesterShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
-        return list.map(s => {
-          if (s.id === req.staffId) return { ...s, shifts: [], deskShifts: [] };
-          if (s.id === req.targetStaffId) {
-            return { ...s, shifts: [...s.shifts, ...requesterShifts.map(sh => ({ ...sh, id: `s${Date.now()}-${sh.id}` }))] };
-          }
-          return s;
-        });
-      });
-    } else if (req.type === 'swap') {
-      applyScheduleChange(req.date, list => {
-        const aShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
-        const bShifts = list.find(s => s.id === req.targetStaffId)?.shifts ?? [];
-        return list.map(s => {
-          if (s.id === req.staffId) return { ...s, shifts: bShifts };
-          if (s.id === req.targetStaffId) return { ...s, shifts: aShifts };
-          return s;
-        });
-      });
-    }
+    try {
+      // 1. Record the decision first. This is authoritative and idempotent, so
+      //    if a later step fails the request can't be approved a second time —
+      //    important because the 'cover' schedule mutation below is not
+      //    idempotent (it appends the requester's shifts to the target).
+      await requestsApi.update(id, { status: 'approved' });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
 
-    addNotification({
-      type: 'approval',
-      title: 'Request Approved',
-      message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} has been approved.`,
-      from: 'Manager',
-      recipients: [req.staffId],
-    }).catch(() => {});
-    if (req.targetStaffId) {
+      // 2. Apply + persist the schedule change (awaited so a failure surfaces).
+      if (req.type === 'time_off') {
+        await applyScheduleChange(req.date, list =>
+          list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [] } : s)
+        );
+      } else if (req.type === 'cover') {
+        await applyScheduleChange(req.date, list => {
+          const requesterShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
+          return list.map(s => {
+            if (s.id === req.staffId) return { ...s, shifts: [], deskShifts: [] };
+            if (s.id === req.targetStaffId) {
+              return { ...s, shifts: [...s.shifts, ...requesterShifts.map(sh => ({ ...sh, id: `s${Date.now()}-${sh.id}` }))] };
+            }
+            return s;
+          });
+        });
+      } else if (req.type === 'swap') {
+        await applyScheduleChange(req.date, list => {
+          const aShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
+          const bShifts = list.find(s => s.id === req.targetStaffId)?.shifts ?? [];
+          return list.map(s => {
+            if (s.id === req.staffId) return { ...s, shifts: bShifts };
+            if (s.id === req.targetStaffId) return { ...s, shifts: aShifts };
+            return s;
+          });
+        });
+      }
+
+      // 3. Notify affected staff — best-effort; a failed notification must not
+      //    fail the approval that already went through.
       addNotification({
-        type: 'shift_change',
-        title: req.type === 'cover' ? "You're Covering a Shift" : 'Shift Swap Confirmed',
-        message: req.type === 'cover'
-          ? `You are now covering ${req.staffName}'s shift on ${req.dayLabel}.`
-          : `Your shift swap with ${req.staffName} on ${req.dayLabel} has been confirmed.`,
+        type: 'approval',
+        title: 'Request Approved',
+        message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} has been approved.`,
         from: 'Manager',
-        recipients: [req.targetStaffId],
+        recipients: [req.staffId],
       }).catch(() => {});
+      if (req.targetStaffId) {
+        addNotification({
+          type: 'shift_change',
+          title: req.type === 'cover' ? "You're Covering a Shift" : 'Shift Swap Confirmed',
+          message: req.type === 'cover'
+            ? `You are now covering ${req.staffName}'s shift on ${req.dayLabel}.`
+            : `Your shift swap with ${req.staffName} on ${req.dayLabel} has been confirmed.`,
+          from: 'Manager',
+          recipients: [req.targetStaffId],
+        }).catch(() => {});
+      }
+    } finally {
+      // Always clear the in-flight guard; a thrown error propagates to the
+      // caller (NotificationsPage) so it can surface the failure to the manager
+      // instead of the approval silently looking like it succeeded.
+      processingRef.current.delete(id);
     }
-
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
-    requestsApi.update(id, { status: 'approved' }).catch(() => {});
   }, [requests, applyScheduleChange, addNotification]);
 
-  const denyRequest = useCallback((id) => {
+  const denyRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
     if (!req || req.status !== 'pending') return;
+    if (processingRef.current.has(id)) return;
+    processingRef.current.add(id);
 
-    addNotification({
-      type: 'approval',
-      title: 'Request Denied',
-      message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} was denied.`,
-      from: 'Manager',
-      recipients: [req.staffId],
-    }).catch(() => {});
-
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'denied' } : r));
-    requestsApi.update(id, { status: 'denied' }).catch(() => {});
+    try {
+      await requestsApi.update(id, { status: 'denied' });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'denied' } : r));
+      addNotification({
+        type: 'approval',
+        title: 'Request Denied',
+        message: `Your ${TYPE_LABEL[req.type]} request for ${req.dayLabel} was denied.`,
+        from: 'Manager',
+        recipients: [req.staffId],
+      }).catch(() => {});
+    } finally {
+      processingRef.current.delete(id);
+    }
   }, [requests, addNotification]);
 
   return (

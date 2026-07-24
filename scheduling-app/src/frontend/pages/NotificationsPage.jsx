@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNotifications } from '../context/NotificationsContext';
 import { useRequests } from '../context/RequestsContext';
 import { useAuth } from '../context/AuthContext';
@@ -122,10 +123,29 @@ export default function NotificationsPage() {
   const { requests, approveRequest, denyRequest } = useRequests();
   const { user } = useAuth();
   const isManager = user?.role === 'manager';
+  const [actionError, setActionError] = useState('');
 
   function requestStatusFor(notif) {
     if (notif.requestId == null) return null;
     return requests.find(r => r.id === notif.requestId)?.status ?? null;
+  }
+
+  async function handleApprove(id) {
+    setActionError('');
+    try {
+      await approveRequest(id);
+    } catch {
+      setActionError('Could not fully apply that approval. It may not have saved — please refresh and try again.');
+    }
+  }
+
+  async function handleDeny(id) {
+    setActionError('');
+    try {
+      await denyRequest(id);
+    } catch {
+      setActionError('Could not update that request. Please refresh and try again.');
+    }
   }
 
   return (
@@ -164,6 +184,15 @@ export default function NotificationsPage() {
 
       <div style={{ height: 1, background: 'var(--color-accent)', opacity: 0.5, margin: '14px 0' }} />
 
+      {actionError && (
+        <div
+          className="mb-3 px-4 py-3 rounded-lg border text-sm"
+          style={{ background: 'rgba(200,64,64,0.12)', borderColor: 'var(--color-red)', color: '#f07070' }}
+        >
+          {actionError}
+        </div>
+      )}
+
       {/* Notification list */}
       <div className="flex flex-col gap-3">
         {notifications.length === 0 ? (
@@ -179,8 +208,8 @@ export default function NotificationsPage() {
               key={n.id}
               notif={n}
               onDismiss={dismiss}
-              onApprove={approveRequest}
-              onDeny={denyRequest}
+              onApprove={handleApprove}
+              onDeny={handleDeny}
               isManager={isManager}
               requestStatus={requestStatusFor(n)}
             />

@@ -20,6 +20,14 @@ export function useSchedule() {
       .then(data => setEvents(data))
       .catch(() => { /* backend not running — mock data stays */ });
   }, []);
+
+  // Live ref of events so assign/unassignStaffToEvent can stay referentially
+  // stable (no [events] dep). Without this, every event edit gives the
+  // memoized weekly-view DayEditors new callback props and re-renders all 7
+  // days on every mousemove of an event resize.
+  const eventsRef = useRef(events);
+  useEffect(() => { eventsRef.current = events; }, [events]);
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [daySchedules, setDaySchedules] = useState({});
 
@@ -59,20 +67,20 @@ export function useSchedule() {
   }, []);
 
   const assignStaffToEvent = useCallback((eventId, staffId) => {
-    const evt = events.find(e => e.id === eventId);
+    const evt = eventsRef.current.find(e => e.id === eventId);
     if (!evt || evt.assignedStaff.includes(staffId)) return;
     const assignedStaff = [...evt.assignedStaff, staffId];
     setEvents(prev => prev.map(e => e.id === eventId ? { ...e, assignedStaff } : e));
     eventsApi.update(eventId, { assignedStaff }).catch(() => {});
-  }, [events]);
+  }, []);
 
   const unassignStaffFromEvent = useCallback((eventId, staffId) => {
-    const evt = events.find(e => e.id === eventId);
+    const evt = eventsRef.current.find(e => e.id === eventId);
     if (!evt) return;
     const assignedStaff = evt.assignedStaff.filter(id => id !== staffId);
     setEvents(prev => prev.map(e => e.id === eventId ? { ...e, assignedStaff } : e));
     eventsApi.update(eventId, { assignedStaff }).catch(() => {});
-  }, [events]);
+  }, []);
 
   const updateStaffDesk = useCallback((staffId, deskStart, deskEnd) => {
     setStaff(prev =>

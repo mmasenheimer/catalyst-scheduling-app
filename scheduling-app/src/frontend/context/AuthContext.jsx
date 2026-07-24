@@ -1,5 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { initialStaff } from '../../data/mockData';
+import { staffApi } from '../utils/api';
 
 const AuthContext = createContext(null);
 
@@ -9,6 +10,17 @@ const EMPLOYEE_PASSWORD = 'staff123';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  // Live staff roster used for employee login (dropdown + validation). Starts
+  // from the bundled mock list so login still works if the backend is down,
+  // then swaps in the real roster from the API — so staff added/removed via
+  // Manage Staff are reflected at login instead of the frozen mock list.
+  const [staffRoster, setStaffRoster] = useState(initialStaff);
+
+  useEffect(() => {
+    staffApi.getAll()
+      .then(data => { if (Array.isArray(data) && data.length) setStaffRoster(data); })
+      .catch(() => { /* backend unreachable — keep the mock roster */ });
+  }, []);
 
   function loginAsManager(username, password) {
     if (username === MANAGER_USERNAME && password === MANAGER_PASSWORD) {
@@ -20,7 +32,7 @@ export function AuthProvider({ children }) {
 
   function loginAsEmployee(staffId, password) {
     if (password !== EMPLOYEE_PASSWORD) return false;
-    const staff = initialStaff.find(s => s.id === staffId);
+    const staff = staffRoster.find(s => s.id === staffId);
     if (!staff) return false;
     setUser({ name: staff.name, role: 'employee', staffId });
     return true;
@@ -31,7 +43,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loginAsManager, loginAsEmployee, logout }}>
+    <AuthContext.Provider value={{ user, staffRoster, loginAsManager, loginAsEmployee, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,5 +1,13 @@
 const BASE = "http://localhost:3001/api";
 
+// Build a `?a=1&b=2` string from an object, dropping null/undefined values.
+function toQuery(params) {
+  if (!params) return "";
+  const entries = Object.entries(params).filter(([, v]) => v != null);
+  const qs = new URLSearchParams(entries).toString();
+  return qs ? `?${qs}` : "";
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -74,7 +82,7 @@ export const templatesApi = {
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export const notificationsApi = {
-  getAll: () => request("/notifications"),
+  getAll: (params) => request(`/notifications${toQuery(params)}`),
   create: (body) =>
     request("/notifications", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>
@@ -85,7 +93,7 @@ export const notificationsApi = {
 // ── Requests ──────────────────────────────────────────────────────────────────
 
 export const requestsApi = {
-  getAll: () => request("/requests"),
+  getAll: (params) => request(`/requests${toQuery(params)}`),
   create: (body) =>
     request("/requests", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>

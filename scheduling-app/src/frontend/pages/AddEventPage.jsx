@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { formatTime } from '../utils/scheduleUtils';
+import { formatTime, toDateStr } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { DateInput } from '../components/DateInput';
 
 const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop', 'other'];
 
@@ -55,6 +56,7 @@ export default function AddEventPage() {
     assignedByDate: {},
   });
   const [dateInput, setDateInput] = useState('');
+  const todayStr = toDateStr(new Date());
   const [activeStaffDate, setActiveStaffDate] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -71,7 +73,7 @@ export default function AddEventPage() {
   }
 
   function addDate() {
-    if (!dateInput || form.days.includes(dateInput)) return;
+    if (!dateInput || form.days.includes(dateInput) || dateInput < todayStr) return;
     const d = dateInput;
     setForm(prev => ({
       ...prev,
@@ -261,13 +263,14 @@ export default function AddEventPage() {
             Date(s) <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
           <div className="flex gap-2 mb-2">
-            <input
-              type="date"
+            <DateInput
               value={dateInput}
+              min={todayStr}
               onChange={e => setDateInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDate(); } }}
-              className="flex-1 px-3 py-2 rounded-lg border text-sm outline-none"
+              className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
               style={inputStyle}
+              wrapperClassName="flex-1"
             />
             <button
               type="button"

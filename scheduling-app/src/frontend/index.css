@@ -106,3 +106,87 @@ input.no-spinner {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* ── Nav arrow hover "poke" ───────────────────────────────────────────────── */
+.arrow-right-icon .arrow-right-line { transform-origin: left center; }
+.arrow-right-icon .arrow-right-head { transform-origin: center; }
+.arrow-right-icon:hover .arrow-right-line { animation: arrow-right-line-poke 0.4s ease-in-out; }
+.arrow-right-icon:hover .arrow-right-head { animation: arrow-right-head-poke 0.4s ease-in-out; }
+
+@keyframes arrow-right-line-poke {
+  0%, 100% { transform: scaleX(1); }
+  50%      { transform: scaleX(0.64); }
+}
+@keyframes arrow-right-head-poke {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(-3px); }
+}
+
+.arrow-left-icon .arrow-left-line { transform-origin: right center; }
+.arrow-left-icon .arrow-left-head { transform-origin: center; }
+.arrow-left-icon:hover .arrow-left-line { animation: arrow-left-line-poke 0.4s ease-in-out; }
+.arrow-left-icon:hover .arrow-left-head { animation: arrow-left-head-poke 0.4s ease-in-out; }
+
+@keyframes arrow-left-line-poke {
+  0%, 100% { transform: scaleX(1); }
+  50%      { transform: scaleX(0.64); }
+}
+@keyframes arrow-left-head-poke {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(3px); }
+}
+
+/* ── Delete icon hover "lid pop" ──────────────────────────────────────────── */
+.delete-icon-lid,
+.delete-icon-body,
+.delete-icon-line {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.delete-icon:hover .delete-icon-lid  { transform: translateY(-1.1px); }
+.delete-icon:hover .delete-icon-body { transform: translateY(1px); }
+.delete-icon:hover .delete-icon-line { transform: translateY(0.5px); }
+
+/* ── Calendar-days icon hover "dot flicker" ──────────────────────────────── */
+@keyframes cal-dot-flicker {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+.calendar-days-icon:hover circle.cal-dot { animation: cal-dot-flicker 0.4s ease-in-out; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(1) { animation-delay: 0s; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(2) { animation-delay: 0.1s; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(3) { animation-delay: 0.2s; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(4) { animation-delay: 0.3s; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(5) { animation-delay: 0.4s; }
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(6) { animation-delay: 0.5s; }
+
+/* ── Custom date-input calendar icon overlay ─────────────────────────────── */
+input.date-input-custom::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Sun icon hover "ray fade-in" ─────────────────────────────────────────── */
+@keyframes sun-ray-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+.sun-medium-icon:hover .sun-ray { animation: sun-ray-fade-in 0.3s ease-in-out; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(1) { animation-delay: 0.1s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(2) { animation-delay: 0.2s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(3) { animation-delay: 0.3s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(4) { animation-delay: 0.4s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(5) { animation-delay: 0.5s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(6) { animation-delay: 0.6s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(7) { animation-delay: 0.7s; }
+.sun-medium-icon:hover .sun-ray:nth-of-type(8) { animation-delay: 0.8s; }
+
+/* ── Moon icon hover "wiggle" ─────────────────────────────────────────────── */
+@keyframes moon-wiggle {
+  0%   { transform: rotate(0deg); }
+  20%  { transform: rotate(-10deg); }
+  40%  { transform: rotate(10deg); }
+  60%  { transform: rotate(-5deg); }
+  80%  { transform: rotate(5deg); }
+  100% { transform: rotate(0deg); }
+}
+.moon-icon:hover { animation: moon-wiggle 1.2s ease-in-out; transform-origin: center; }

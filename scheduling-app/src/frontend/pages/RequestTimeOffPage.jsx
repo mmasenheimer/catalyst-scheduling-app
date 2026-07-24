@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRequests } from '../context/RequestsContext';
+import { DateInput } from '../components/DateInput';
+import { toDateStr } from '../utils/scheduleUtils';
 
 const REASONS = ['Personal', 'Appointment', 'Family', 'Other'];
 
@@ -14,7 +16,7 @@ const inputStyle = {
 function getMinDate() {
   const d = new Date();
   d.setDate(d.getDate() + 14);
-  return d.toISOString().slice(0, 10);
+  return toDateStr(d);
 }
 
 function formatDisplay(iso) {
@@ -137,8 +139,7 @@ export default function RequestTimeOffPage() {
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
             Shift to Drop <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
-          <input
-            type="date"
+          <DateInput
             value={shiftDate}
             min={minDate}
             onChange={e => { setShiftDate(e.target.value); setDateError(''); }}

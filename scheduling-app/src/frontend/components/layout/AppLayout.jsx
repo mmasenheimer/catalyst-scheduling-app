@@ -7,6 +7,8 @@ import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
+import { SunMediumIcon } from "../SunMediumIcon";
+import { MoonIcon } from "../MoonIcon";
 
 function useTheme() {
   const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
@@ -59,23 +61,6 @@ function IconClose() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function IconSun() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M11.89 4.11l1.06-1.06M3.05 12.95l1.06-1.06" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function IconMoon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-      <path d="M13 9.5A6 6 0 015.5 2a6.5 6.5 0 100 11A6 6 0 0013 9.5z" fill="currentColor"/>
     </svg>
   );
 }
@@ -220,7 +205,7 @@ function AppLayoutInner() {
             flexShrink: 0,
           }}
         >
-          {isLight ? <IconMoon /> : <IconSun />}
+          {isLight ? <MoonIcon size={15} color="white" /> : <SunMediumIcon size={16} color="white" />}
         </button>
       </div>
     </div>
@@ -287,6 +272,7 @@ function AppLayoutInner() {
         {navLinks}
 
         <div className="flex-1" />
+
         {userCard}
       </aside>
 

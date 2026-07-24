@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Event = require("../models/Event");
+const { createWithNextId } = require("../utils/sequentialId");
 
 // GET /api/events
 
@@ -17,9 +18,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating } = req.body;
-    const last = await Event.findOne().sort({ _id: -1 });
-    const nextId = (last?._id ?? 0) + 1;
-    const event = await Event.create({ _id: nextId, name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating });
+    const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating });
     res.status(201).json(event);
   } catch (err) {
     res.status(500).json({ error: err.message });

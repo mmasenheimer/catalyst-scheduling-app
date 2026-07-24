@@ -3,10 +3,20 @@ const router = require("express").Router();
 const Request = require("../models/Request");
 
 // GET /api/requests
+// The manager needs every request (to approve/deny); an employee only needs
+// the ones they're involved in (as requester or target) to show status on
+// their own notifications. Identity comes from query params for now; move to
+// a verified session/token identity once real auth lands.
 
 router.get("/", async (req, res) => {
   try {
-    res.json(await Request.find().sort({ createdAt: -1 }));
+    const { role, staffId } = req.query;
+    let filter = {};
+    if (role === "employee" && staffId != null) {
+      const id = Number(staffId);
+      filter = { $or: [{ staffId: id }, { targetStaffId: id }] };
+    }
+    res.json(await Request.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

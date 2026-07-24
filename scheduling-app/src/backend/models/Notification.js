@@ -14,7 +14,7 @@ const notificationSchema = new Schema(
     recipients: { type: Schema.Types.Mixed, required: true },
     requestId: { type: Schema.Types.Mixed, default: null },
     read: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now, index: true }, // sorted by on every list fetch
   },
   {
     toJSON: {

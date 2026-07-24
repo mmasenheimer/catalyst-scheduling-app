@@ -4,6 +4,7 @@ import { getAvailability } from '../../data/mockAvailability';
 import { buildTemplateAlerts, formatTime } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
+import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -179,12 +180,12 @@ function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
       </button>
       <div style={{ height: 1, background: 'var(--color-border)' }} />
       <button
-        style={btn('#f07070')}
+        style={{ ...btn('#f07070'), display: 'flex', alignItems: 'center', gap: 6 }}
         onMouseEnter={e => e.currentTarget.style.background = 'rgba(200,64,64,0.1)'}
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         onClick={onDelete}
       >
-        🗑  Delete
+        <DeleteIcon size={13} /> Delete
       </button>
     </div>
   );
@@ -1393,7 +1394,7 @@ export default function WeeklyTemplatesPage() {
                   cursor: 'default',
                 }}
               >
-                <span style={{ fontSize: 14 }}>🗑</span>
+                <DeleteIcon size={14} />
                 Drop here to remove
               </div>
             </div>

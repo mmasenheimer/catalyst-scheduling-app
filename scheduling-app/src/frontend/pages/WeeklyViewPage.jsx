@@ -6,6 +6,9 @@ import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
+import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
+import { ArrowRightIcon } from '../components/ArrowRightIcon';
+import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 const NAME_COL    = 140;
@@ -74,11 +77,21 @@ function getEventsForDate(date, events) {
       if (d === dateStr) return true;
       if (evt.repeating) {
         const [y, m, day] = d.split('-').map(Number);
-        return new Date(y, m - 1, day).getDay() === dow;
+        const anchor = new Date(y, m - 1, day);
+        const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        // Only recur on/after the event's anchor date, matching the Daily view.
+        return anchor.getDay() === dow && target >= anchor;
       }
       return false;
     })
   );
+}
+
+// Content signature of a day's events, so a DayEditor can be memoized against
+// event *content* rather than array identity (getEventsForDate returns a fresh
+// array every render). Used by DayEditor's memo comparator below.
+function eventsSig(dayEvents) {
+  return dayEvents.map(e => `${e.id}:${e.start}:${e.end}:${e.name}:${e.type}:${e.staffNeeded}:${e.assignedStaff.join(',')}`).join('|');
 }
 
 function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid = []) {
@@ -130,8 +143,8 @@ function DayEventsList({ events, staff, onDelete }) {
                 {assignedCount}/{evt.staffNeeded}
               </span>
               <button onClick={() => onDelete(evt)} title="Delete event"
-                style={{ fontSize:10, lineHeight:1, padding:'2px 5px', borderRadius:4, cursor:'pointer', background:'transparent', color:'var(--color-red)', border:'1px solid var(--color-red)' }}>
-                🗑
+                style={{ fontSize:10, lineHeight:1, padding:'2px 5px', borderRadius:4, cursor:'pointer', background:'transparent', color:'var(--color-red)', border:'1px solid var(--color-red)', display:'flex', alignItems:'center' }}>
+                <DeleteIcon size={12} />
               </button>
             </div>
           </div>
@@ -165,7 +178,7 @@ function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
     <div ref={ref} style={{ position:'fixed', left:x, top:y, zIndex:9999, minWidth:140, background:'var(--color-surface)', border:'1px solid var(--color-border)', borderRadius:8, boxShadow:'0 4px 20px rgba(0,0,0,0.5)', overflow:'hidden' }}>
       <button style={btn()} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.06)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'} onClick={onEdit}>✏️  Edit</button>
       <div style={{ height:1, background:'var(--color-border)' }} />
-      <button style={btn('#f07070')} onMouseEnter={e=>e.currentTarget.style.background='rgba(200,64,64,0.1)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'} onClick={onDelete}>🗑  Delete</button>
+      <button style={{...btn('#f07070'), display:'flex', alignItems:'center', gap:6}} onMouseEnter={e=>e.currentTarget.style.background='rgba(200,64,64,0.1)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'} onClick={onDelete}><DeleteIcon size={13} /> Delete</button>
     </div>
   );
 }
@@ -1086,7 +1099,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
               endDrag();
             }}
             style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:8, fontSize:11, fontWeight:500, cursor:'default', userSelect:'none', flexShrink:0, border:`1px solid ${trashOver?'var(--color-red)':'var(--color-border)'}`, color:trashOver?'#f07070':'var(--color-text-dim)', background:trashOver?'rgba(200,64,64,0.12)':'transparent' }}>
-            <span style={{fontSize:12}}>🗑</span> Remove
+            <DeleteIcon size={12} /> Remove
           </div>
         </div>
       )}
@@ -1171,7 +1184,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // Custom comparison: only re-render if core props change, ignore templates changes
   return prev.date === next.date &&
          prev.allStaff === next.allStaff &&
-         prev.dayEvents === next.dayEvents &&
+         eventsSig(prev.dayEvents) === eventsSig(next.dayEvents) &&
          prev.getDaySchedule === next.getDaySchedule &&
          prev.saveDaySchedule === next.saveDaySchedule &&
          prev.assignStaffToEvent === next.assignStaffToEvent &&
@@ -1215,14 +1228,9 @@ export default function WeeklyViewPage() {
   // Imperative handles to each mounted DayEditor, keyed by day string. Lets
   // "Finalize All" read each day's issues / commit it without lifting its
   // local editing state into the parent (which would re-introduce cross-day
-  // re-renders). Ref setters are cached per key so the hot edit path doesn't
-  // detach/reattach refs on every render.
+  // re-renders). The per-key ref-setter callbacks live in `daySetters` below
+  // (stable per week, so the hot edit path doesn't detach/reattach refs).
   const dayHandles = useRef({});
-  const refSetters = useRef({});
-  function dayRef(key) {
-    if (!refSetters.current[key]) refSetters.current[key] = el => { dayHandles.current[key] = el; };
-    return refSetters.current[key];
-  }
 
   // Lets any ApplyTemplateCalendarModal instance (whichever day's "Apply
   // Template" button opened it) force a re-sync of a *different* day's data
@@ -1253,24 +1261,32 @@ export default function WeeklyViewPage() {
 
   const weekDays = useMemo(() => Array.from({ length:7 }, (_,i) => addDays(weekStart,i)), [weekStart]);
 
-  // Precompute each day's events with a *content-stable* reference. Without
-  // this, every parent re-render (an auto-save, or any updateEvent fired on
-  // each mousemove of an event resize) hands all 7 memoized DayEditors a
-  // brand-new array and forces all of them to re-render. By comparing a
-  // signature per day, only the day(s) whose events actually changed get a
-  // fresh array — the rest keep their old reference and stay memoized.
-  const prevWeekDataRef = useRef([]);
-  const weekData = useMemo(() => {
-    const next = weekDays.map(date => {
+  // Each day's events for the week. getEventsForDate returns a fresh array
+  // every render, but that no longer forces all 7 memoized DayEditors to
+  // re-render on every parent update (an auto-save, or updateEvent firing on
+  // each mousemove of an event resize): DayEditor's memo comparator compares
+  // event *content* via eventsSig, so only the day whose events actually
+  // changed re-renders. `date` stays reference-stable because it comes from
+  // the weekDays memo, so the comparator's `prev.date === next.date` holds.
+  const weekData = weekDays.map(date => ({
+    date,
+    key: toDateStr(date),
+    dayEvents: getEventsForDate(date, events),
+  }));
+
+  // Stable ref-setter callback per day key, rebuilt only when the week changes
+  // (not on every event edit), so DayEditor refs aren't detached/reattached on
+  // the hot path. Derived via useMemo rather than lazily populating a ref
+  // during render (which mutates a ref mid-render). dayHandles.current is still
+  // written only when React attaches the ref, in the commit phase.
+  const daySetters = useMemo(() => {
+    const map = {};
+    weekDays.forEach(date => {
       const key = toDateStr(date);
-      const dayEvents = getEventsForDate(date, events);
-      const sig = dayEvents.map(e => `${e.id}:${e.start}:${e.end}:${e.name}:${e.type}:${e.staffNeeded}:${e.assignedStaff.join(',')}`).join('|');
-      const prev = prevWeekDataRef.current.find(d => d.key === key);
-      return prev && prev.sig === sig ? prev : { date, key, sig, dayEvents };
+      map[key] = el => { dayHandles.current[key] = el; };
     });
-    prevWeekDataRef.current = next;
-    return next;
-  }, [weekDays, events]);
+    return map;
+  }, [weekDays]);
 
   // A day that hasn't reported in yet defaults to finalized, matching each
   // DayEditor's own default — so the button doesn't flash "Finalize All" on load.
@@ -1346,9 +1362,9 @@ export default function WeeklyViewPage() {
           Weekly View
         </h2>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={prevWeek} style={navBtn}>◀</button>
+          <button onClick={prevWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={16} /></button>
           <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text)', minWidth:190, textAlign:'center' }}>{weekLabel}</span>
-          <button onClick={nextWeek} style={navBtn}>▶</button>
+          <button onClick={nextWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={16} /></button>
         </div>
         <div style={{ position:'absolute', right:0, display:'flex', gap:8 }}>
           <button onClick={()=>setApplyTplOpen(true)} style={{ padding:'6px 14px', borderRadius:8, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, fontWeight:600, cursor:'pointer' }}
@@ -1386,7 +1402,7 @@ export default function WeeklyViewPage() {
         {weekData.map(({ date, key, dayEvents }) => (
           <DayEditor
             key={key}
-            ref={dayRef(key)}
+            ref={daySetters[key]}
             date={date}
             allStaff={staff}
             dayEvents={dayEvents}

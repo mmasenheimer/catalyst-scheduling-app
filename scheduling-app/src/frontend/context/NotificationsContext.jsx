@@ -31,12 +31,15 @@ export function NotificationsProvider({ children }) {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
 
-  // Load notifications from the API on mount; stay empty if the server is unreachable.
+  // Load notifications for the current user from the API (server-side filtered
+  // by role/staffId); stay empty if the server is unreachable. Refetches when
+  // the logged-in user changes.
   useEffect(() => {
-    notificationsApi.getAll()
+    if (!user) return;
+    notificationsApi.getAll({ role: user.role, staffId: user.staffId })
       .then(data => setNotifications(data.map(hydrate)))
       .catch(() => { /* backend not running */ });
-  }, []);
+  }, [user]);
 
   const visible = notifications
     .filter(n => isVisibleTo(n, user))

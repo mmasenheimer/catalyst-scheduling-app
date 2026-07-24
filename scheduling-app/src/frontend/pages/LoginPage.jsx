@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { initialStaff } from '../../data/mockData';
 import arizonaCampus from '../assets/arizonacampus.jpg';
 
 export default function LoginPage() {
-  const { loginAsManager, loginAsEmployee } = useAuth();
+  const { loginAsManager, loginAsEmployee, staffRoster } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState('manager');
   const [username, setUsername] = useState('');
@@ -166,7 +165,7 @@ export default function LoginPage() {
                 style={inputStyle}
               >
                 <option value="">-- Select your name --</option>
-                {initialStaff.map(s => (
+                {staffRoster.map(s => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>

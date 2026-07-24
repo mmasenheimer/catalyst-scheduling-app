@@ -1,4 +1,4 @@
-import { staffingTargetsByDay, weeklyTemplates } from '../../data/mockData';
+import { staffingTargetsByDay, weeklyTemplates, HOURS_START, HOURS_END } from '../../data/mockData';
 
 const DOW_TO_TPL = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
 
@@ -107,7 +107,6 @@ export function getEligibleStaff(evt, staff, events) {
 /** Build the alerts list from current staff + events */
 export function buildAlerts(staff, events, dow = 1) {
   const alerts = [];
-  const { HOURS_START, HOURS_END } = { HOURS_START: 7, HOURS_END: 22 };
 
   for (let h = HOURS_START; h < HOURS_END; h += 0.5) {
     const count = getStaffCount(staff, h);

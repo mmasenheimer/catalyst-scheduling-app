@@ -13,7 +13,7 @@ const requestSchema = new Schema(
     date: { type: String, required: true }, // YYYY-MM-DD
     dayLabel: { type: String, default: "" },
     note: { type: String, default: "" },
-    createdAt: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now, index: true }, // sorted by on every list fetch
   },
   {
     toJSON: {

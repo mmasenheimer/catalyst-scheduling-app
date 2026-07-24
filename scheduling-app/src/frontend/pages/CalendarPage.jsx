@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
 import { weeklyTemplates } from '../../data/mockData';
+import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
+import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
 function fmtT(t) {
   const h   = Math.floor(t);
@@ -400,20 +402,20 @@ export default function CalendarPage() {
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             onClick={prevMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
           >
-            ◀
+            <ArrowLeftIcon size={16} />
           </button>
           <span className="text-base font-semibold min-w-36 text-center" style={{ color: 'var(--color-text)' }}>
             {MONTHS[viewMonth]} {viewYear}
           </span>
           <button
             onClick={nextMonth}
-            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+            className="px-3 py-1.5 rounded-md text-sm border cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
+            style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
           >
-            ▶
+            <ArrowRightIcon size={16} />
           </button>
         </div>
 

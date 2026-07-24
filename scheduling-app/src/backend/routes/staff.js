@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Staff = require("../models/Staff");
+const { createWithNextId } = require("../utils/sequentialId");
 
 // GET /api/staff
 // This fetches every staff member at once
@@ -52,10 +53,7 @@ router.post("/", async (req, res) => {
   try {
     const { name, shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek } =
       req.body;
-    const last = await Staff.findOne().sort({ _id: -1 });
-    const nextId = (last?._id ?? 0) + 1;
-    const person = await Staff.create({
-      _id: nextId,
+    const person = await createWithNextId(Staff, {
       name,
       shiftStart,
       shiftEnd,
