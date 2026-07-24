@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Template = require("../models/Template");
+const { requireManager } = require("../middleware/auth");
 
 // GET /api/templates
 
@@ -14,7 +15,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/templates
 
-router.post("/", async (req, res) => {
+router.post("/", requireManager, async (req, res) => {
   try {
     const { type, name, description, day, days, staff } = req.body;
     const template = await Template.create({ type, name, description, day, days, staff });
@@ -26,7 +27,7 @@ router.post("/", async (req, res) => {
 
 // PATCH /api/templates/:id
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireManager, async (req, res) => {
   try {
     const { name, description, days, staff } = req.body;
     const template = await Template.findByIdAndUpdate(
@@ -43,7 +44,7 @@ router.patch("/:id", async (req, res) => {
 
 // DELETE /api/templates/:id
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireManager, async (req, res) => {
   try {
     const template = await Template.findByIdAndDelete(req.params.id);
     if (!template) return res.status(404).json({ error: "Not found" });
@@ -55,7 +56,7 @@ router.delete("/:id", async (req, res) => {
 
 // DELETE /api/templates — remove all
 
-router.delete("/", async (req, res) => {
+router.delete("/", requireManager, async (req, res) => {
   try {
     await Template.deleteMany({});
     res.json({ ok: true });

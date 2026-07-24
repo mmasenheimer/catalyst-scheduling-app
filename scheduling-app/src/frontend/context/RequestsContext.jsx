@@ -24,7 +24,7 @@ export function RequestsProvider({ children }) {
   // empty if the server is unreachable. Refetches when the user changes.
   useEffect(() => {
     if (!user) return;
-    requestsApi.getAll({ role: user.role, staffId: user.staffId })
+    requestsApi.getAll()
       .then(data => setRequests(data))
       .catch(() => { /* backend not running */ });
   }, [user]);

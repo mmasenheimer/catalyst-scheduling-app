@@ -36,7 +36,7 @@ export function NotificationsProvider({ children }) {
   // the logged-in user changes.
   useEffect(() => {
     if (!user) return;
-    notificationsApi.getAll({ role: user.role, staffId: user.staffId })
+    notificationsApi.getAll()
       .then(data => setNotifications(data.map(hydrate)))
       .catch(() => { /* backend not running */ });
   }, [user]);

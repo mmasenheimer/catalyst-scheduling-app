@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Schedule = require("../models/Schedule");
+const { requireManager } = require("../middleware/auth");
 
 // GET /api/schedules/:date
 // This runs when the frontend loads a day's schedule
@@ -22,7 +23,7 @@ router.get("/:date", async (req, res) => {
 // Runs when the manager clicks Finalize, and also whenever the day
 // auto-unfinalizes itself after an edit (finalized: false in that case).
 
-router.put("/:date", async (req, res) => {
+router.put("/:date", requireManager, async (req, res) => {
   try {
     const { staff, events, finalized } = req.body;
     const schedule = await Schedule.findOneAndUpdate(

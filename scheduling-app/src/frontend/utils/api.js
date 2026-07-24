@@ -1,24 +1,64 @@
 const BASE = "http://localhost:3001/api";
+const TOKEN_KEY = "catalyst.token";
 
-// Build a `?a=1&b=2` string from an object, dropping null/undefined values.
-function toQuery(params) {
-  if (!params) return "";
-  const entries = Object.entries(params).filter(([, v]) => v != null);
-  const qs = new URLSearchParams(entries).toString();
-  return qs ? `?${qs}` : "";
+// Session token helpers. Stored in localStorage so a refresh keeps you logged
+// in. (Trade-off: readable by any script on the page, so it's vulnerable to
+// XSS — moving to an httpOnly cookie is the hardening step before production.)
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
 }
+
+export function setToken(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+// Fired when the server rejects our session, so AuthContext can log out and
+// bounce to /login rather than leaving the UI in a half-authenticated state.
+export const UNAUTHORIZED_EVENT = "catalyst:unauthorized";
 
 async function request(path, options = {}) {
+  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
   });
-  if (!res.ok)
+
+  if (res.status === 401) {
+    // A 401 on a request we sent a token with means that session is dead —
+    // clear it and let AuthContext bounce to /login.
+    if (token) {
+      setToken(null);
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      throw new Error("Your session has expired. Please log in again.");
+    }
+    // A 401 with no token isn't an expired session — it's a rejected
+    // credential (e.g. a failed login). Surface the server's actual message.
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.error ?? "Invalid email or password.");
+  }
+
+  if (!res.ok) {
+    // Prefer the server's message when it sent one.
+    const detail = await res.json().catch(() => null);
     throw new Error(
-      `${options.method ?? "GET"} ${BASE}${path} → ${res.status}`,
+      detail?.error ?? `${options.method ?? "GET"} ${BASE}${path} → ${res.status}`,
     );
+  }
   return res.json();
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export const authApi = {
+  login: (email, password) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  me: () => request("/auth/me"),
+};
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
 // Routes: GET /api/staff  GET /api/staff/:id  PATCH /api/staff/:id
@@ -82,7 +122,8 @@ export const templatesApi = {
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export const notificationsApi = {
-  getAll: (params) => request(`/notifications${toQuery(params)}`),
+  // Server filters by the session's verified identity — no params needed.
+  getAll: () => request("/notifications"),
   create: (body) =>
     request("/notifications", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>
@@ -93,18 +134,10 @@ export const notificationsApi = {
 // ── Requests ──────────────────────────────────────────────────────────────────
 
 export const requestsApi = {
-  getAll: (params) => request(`/requests${toQuery(params)}`),
+  // Server filters by the session's verified identity — no params needed.
+  getAll: () => request("/requests"),
   create: (body) =>
     request("/requests", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>
     request(`/requests/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 };
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
-// Uncomment and build routes/auth.js when ready
-
-// export const authApi = {
-//   login:  (body) => request('/auth/login',  { method: 'POST', body: JSON.stringify(body) }),
-//   logout: ()     => request('/auth/logout', { method: 'POST' }),
-//   me:     ()     => request('/auth/me'),
-// };

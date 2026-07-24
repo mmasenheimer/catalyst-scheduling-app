@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Staff = require("../models/Staff");
 const { createWithNextId } = require("../utils/sequentialId");
+const { requireManager } = require("../middleware/auth");
 
 // GET /api/staff
 // This fetches every staff member at once
@@ -29,7 +30,7 @@ router.get("/:id", async (req, res) => {
 // PATCH /api/staff/:id
 // This updates specidic fields on a staff member - shift times, desk times, or weekly hour limit
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireManager, async (req, res) => {
   try {
     const { shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek } =
       req.body;
@@ -49,7 +50,7 @@ router.patch("/:id", async (req, res) => {
 // Adds a new employee to the roster. _id is a plain Number (not a Mongo
 // ObjectId) so we assign the next one ourselves.
 
-router.post("/", async (req, res) => {
+router.post("/", requireManager, async (req, res) => {
   try {
     const { name, shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek } =
       req.body;
@@ -70,7 +71,7 @@ router.post("/", async (req, res) => {
 // DELETE /api/staff/:id
 // Removes an employee from the roster.
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireManager, async (req, res) => {
   try {
     const person = await Staff.findByIdAndDelete(req.params.id);
     if (!person) return res.status(404).json({ error: "Not found" });

@@ -3,23 +3,18 @@ const router = require("express").Router();
 const Notification = require("../models/Notification");
 
 // GET /api/notifications
-// Filtered by the requesting user so a client only receives what it may see,
-// instead of downloading everyone's notifications and hiding them in the UI.
-// Identity comes from query params (?role=&staffId=) for now; once real auth
-// lands this should read a verified identity from the session/token instead.
+// Filtered by the *verified* identity on the session token, so a client only
+// ever receives what it may see (not filtered client-side in the UI).
 //   manager  → everything except 'approval' notifications
 //   employee → 'all' broadcasts + any addressed to their staffId
-//   (no role given → everything, for legacy/unauthenticated callers)
 
 router.get("/", async (req, res) => {
   try {
-    const { role, staffId } = req.query;
-    let filter = {};
-    if (role === "manager") {
-      filter = { type: { $ne: "approval" } };
-    } else if (role === "employee" && staffId != null) {
-      filter = { $or: [{ recipients: "all" }, { recipients: Number(staffId) }] };
-    }
+    const { role, staffId } = req.user;
+    const filter =
+      role === "manager"
+        ? { type: { $ne: "approval" } }
+        : { $or: [{ recipients: "all" }, { recipients: staffId }] };
     res.json(await Notification.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     res.status(500).json({ error: err.message });

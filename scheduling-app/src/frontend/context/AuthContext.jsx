@@ -1,49 +1,45 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { initialStaff } from '../../data/mockData';
-import { staffApi } from '../utils/api';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { authApi, getToken, setToken, UNAUTHORIZED_EVENT } from '../utils/api';
 
 const AuthContext = createContext(null);
 
-const MANAGER_USERNAME = 'manager';
-const MANAGER_PASSWORD = 'catalyst123';
-const EMPLOYEE_PASSWORD = 'staff123';
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  // Live staff roster used for employee login (dropdown + validation). Starts
-  // from the bundled mock list so login still works if the backend is down,
-  // then swaps in the real roster from the API — so staff added/removed via
-  // Manage Staff are reflected at login instead of the frozen mock list.
-  const [staffRoster, setStaffRoster] = useState(initialStaff);
+  // True only while we're restoring an existing session on a page load, so
+  // ProtectedRoute doesn't bounce to /login before /auth/me comes back.
+  const [loading, setLoading] = useState(() => Boolean(getToken()));
 
+  // Restore the session from a stored token on mount.
   useEffect(() => {
-    staffApi.getAll()
-      .then(data => { if (Array.isArray(data) && data.length) setStaffRoster(data); })
-      .catch(() => { /* backend unreachable — keep the mock roster */ });
+    if (!getToken()) return;
+    authApi.me()
+      .then(({ user }) => setUser(user))
+      .catch(() => { setToken(null); setUser(null); })
+      .finally(() => setLoading(false));
   }, []);
 
-  function loginAsManager(username, password) {
-    if (username === MANAGER_USERNAME && password === MANAGER_PASSWORD) {
-      setUser({ name: 'Manager', role: 'manager' });
-      return true;
-    }
-    return false;
-  }
+  // Any API call that gets a 401 (expired/invalid token) drops the session.
+  useEffect(() => {
+    function onUnauthorized() { setUser(null); }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
 
-  function loginAsEmployee(staffId, password) {
-    if (password !== EMPLOYEE_PASSWORD) return false;
-    const staff = staffRoster.find(s => s.id === staffId);
-    if (!staff) return false;
-    setUser({ name: staff.name, role: 'employee', staffId });
-    return true;
-  }
+  // Throws with the server's message on bad credentials — callers surface it.
+  const login = useCallback(async (email, password) => {
+    const { token, user } = await authApi.login(email, password);
+    setToken(token);
+    setUser(user);
+    return user;
+  }, []);
 
-  function logout() {
+  const logout = useCallback(() => {
+    setToken(null);
     setUser(null);
-  }
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, staffRoster, loginAsManager, loginAsEmployee, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

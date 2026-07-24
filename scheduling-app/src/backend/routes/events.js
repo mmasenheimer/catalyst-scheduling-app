@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Event = require("../models/Event");
 const { createWithNextId } = require("../utils/sequentialId");
+const { requireManager } = require("../middleware/auth");
 
 // GET /api/events
 
@@ -15,7 +16,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/events
 
-router.post("/", async (req, res) => {
+router.post("/", requireManager, async (req, res) => {
   try {
     const { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating } = req.body;
     const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating });
@@ -27,7 +28,7 @@ router.post("/", async (req, res) => {
 
 // PATCH /api/events/:id
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireManager, async (req, res) => {
   try {
     const {
       name,
@@ -65,7 +66,7 @@ router.patch("/:id", async (req, res) => {
 
 // DELETE /api/events/:id
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireManager, async (req, res) => {
   try {
     const event = await Event.findByIdAndDelete(req.params.id);
     if (!event) return res.status(404).json({ error: "Not found" });

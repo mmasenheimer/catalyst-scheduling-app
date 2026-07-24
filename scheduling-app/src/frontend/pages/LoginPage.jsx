@@ -4,35 +4,27 @@ import { useAuth } from '../context/AuthContext';
 import arizonaCampus from '../assets/arizonacampus.jpg';
 
 export default function LoginPage() {
-  const { loginAsManager, loginAsEmployee, staffRoster } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('manager');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedStaff, setSelectedStaff] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleManagerLogin(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    if (loginAsManager(username, password)) {
-      navigate('/');
-    } else {
-      setError('Invalid username or password.');
-    }
-  }
-
-  function handleEmployeeLogin(e) {
-    e.preventDefault();
-    setError('');
-    if (!selectedStaff) {
-      setError('Please select your name.');
+    if (!email || !password) {
+      setError('Enter your email and password.');
       return;
     }
-    if (loginAsEmployee(Number(selectedStaff), password)) {
-      navigate('/my-schedule');
-    } else {
-      setError('Invalid password.');
+    setSubmitting(true);
+    try {
+      const user = await login(email, password);
+      navigate(user.role === 'manager' ? '/' : '/my-schedule');
+    } catch (err) {
+      setError(err.message || 'Login failed. Please try again.');
+      setSubmitting(false);
     }
   }
 
@@ -75,134 +67,68 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Role tabs */}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@catalyst.dev"
+              autoComplete="username"
+              className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
+              style={inputStyle}
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm" style={{ color: 'var(--color-red)' }}>{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: 'var(--color-accent)', color: 'white', opacity: submitting ? 0.6 : 1 }}
+          >
+            {submitting ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+
+        {/* Dev seed credentials — these come from seed.js, not from any bypass
+            in the auth code. Remove this block once real accounts exist. */}
         <div
-          className="flex rounded-lg p-1 mb-6"
-          style={{ background: 'var(--color-bg)' }}
+          className="mt-6 p-3 rounded-lg text-xs leading-relaxed"
+          style={{ background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
         >
-          {[
-            { key: 'manager', label: 'Manager' },
-            { key: 'employee', label: 'Employee' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => { setTab(key); setError(''); }}
-              className="flex-1 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer"
-              style={{
-                background: tab === key ? 'var(--color-accent)' : 'transparent',
-                color: tab === key ? 'white' : 'var(--color-text-dim)',
-              }}
-            >
-              {label}
-            </button>
-          ))}
+          <div className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Dev accounts</div>
+          <div>
+            Manager: <strong style={{ color: 'var(--color-text)' }}>manager@catalyst.dev</strong>
+            {' / '}<strong style={{ color: 'var(--color-text)' }}>catalyst123</strong>
+          </div>
+          <div className="mt-0.5">
+            Staff: <strong style={{ color: 'var(--color-text)' }}>firstname.l@catalyst.dev</strong>
+            {' / '}<strong style={{ color: 'var(--color-text)' }}>staff123</strong>
+          </div>
+          <div className="mt-0.5 opacity-80">e.g. alex.c@catalyst.dev, michael.m@catalyst.dev</div>
         </div>
-
-        {tab === 'manager' && (
-          <form onSubmit={handleManagerLogin} className="flex flex-col gap-4">
-            <div>
-              <label
-                className="block text-sm mb-1.5"
-                style={{ color: 'var(--color-text-dim)' }}
-              >
-                Username
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="manager"
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label
-                className="block text-sm mb-1.5"
-                style={{ color: 'var(--color-text-dim)' }}
-              >
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                style={inputStyle}
-              />
-            </div>
-            {error && (
-              <p className="text-sm" style={{ color: 'var(--color-red)' }}>{error}</p>
-            )}
-            <button
-              type="submit"
-              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ background: 'var(--color-accent)', color: 'white' }}
-            >
-              Login as Manager
-            </button>
-            <p className="text-xs text-center" style={{ color: 'var(--color-text-dim)' }}>
-              Demo — username: <strong style={{ color: 'var(--color-text)' }}>manager</strong>
-              {' '}/ password: <strong style={{ color: 'var(--color-text)' }}>catalyst123</strong>
-            </p>
-          </form>
-        )}
-
-        {tab === 'employee' && (
-          <form onSubmit={handleEmployeeLogin} className="flex flex-col gap-4">
-            <div>
-              <label
-                className="block text-sm mb-1.5"
-                style={{ color: 'var(--color-text-dim)' }}
-              >
-                Select Your Name
-              </label>
-              <select
-                value={selectedStaff}
-                onChange={e => setSelectedStaff(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                style={inputStyle}
-              >
-                <option value="">-- Select your name --</option>
-                {staffRoster.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label
-                className="block text-sm mb-1.5"
-                style={{ color: 'var(--color-text-dim)' }}
-              >
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                style={inputStyle}
-              />
-            </div>
-            {error && (
-              <p className="text-sm" style={{ color: 'var(--color-red)' }}>{error}</p>
-            )}
-            <button
-              type="submit"
-              className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ background: 'var(--color-accent)', color: 'white' }}
-            >
-              Login as Employee
-            </button>
-            <p className="text-xs text-center" style={{ color: 'var(--color-text-dim)' }}>
-              Demo — password for all staff: <strong style={{ color: 'var(--color-text)' }}>staff123</strong>
-            </p>
-          </form>
-        )}
 
         <div className="mt-5 text-center">
           <Link

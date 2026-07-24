@@ -80,7 +80,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
         {staff.map((person, i) => {
           const isMe = person.id === currentStaffId;
           return (
-          <div key={person.id} style={{ display:'flex', borderBottom: i < staff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts?.length>0 ? 1 : 0.38, background: isMe ? 'rgba(176,80,48,0.08)' : undefined }}>
+          <div key={person.id} style={{ display:'flex', borderBottom: i < staff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts?.length>0 ? 1 : 0.38, background: isMe ? 'rgba(176,80,48,0.16)' : undefined }}>
             <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
               <div style={{ width:18, height:18, borderRadius:'50%', background: isMe ? 'var(--color-accent)' : 'var(--color-muted)', color: isMe ? 'white' : 'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
                 {person.name.split(' ').map(n=>n[0]).join('')}
@@ -100,14 +100,14 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 
               {(person.shifts??[]).map(sh => (
                 <div key={sh.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(sh.start,sh.end),background:'var(--color-green)',opacity:isMe?1:0.6,border:isMe?'2px solid var(--color-accent)':'none',boxShadow:isMe?'0 0 0 1px var(--color-accent)':'none'}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(sh.start,sh.end),background:'var(--color-green)',opacity:0.6}}
                   title={`${person.name}: ${formatTime(sh.start)} – ${formatTime(sh.end)}`}
                 />
               ))}
 
               {(person.deskShifts??[]).map(dk => (
                 <div key={dk.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-yellow)',opacity:isMe?1:0.75,border:isMe?'2px solid var(--color-accent)':'none',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-yellow)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
                   title={`${person.name}: Desk ${formatTime(dk.start)} – ${formatTime(dk.end)}`}
                 >
                   <span style={{fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>Desk</span>
@@ -116,7 +116,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 
               {events.filter(ev=>ev.assignedStaff.includes(person.id)).map(evt => (
                 <div key={evt.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:isMe?1:0.9,border:isMe?'2px solid var(--color-accent)':'none',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
                   title={evt.name}
                 >
                   <span style={{fontSize:10,color:'white',whiteSpace:'nowrap',overflow:'hidden',paddingLeft:6,paddingRight:6,pointerEvents:'none'}}>{evt.name}</span>
@@ -144,23 +144,35 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function TeamSchedulePage() {
-  const { staff, events, getDaySchedule } = useScheduleContext();
+  const { staff, events, getDaySchedule, setTeamScheduleLoading } = useScheduleContext();
+  const { user } = useAuth();
   const [weekStart, setWeekStart] = useState(() => getMondayOf(new Date()));
   // { [dateStr]: staffArray | null } — null means "checked, nothing saved, use template"
   const [savedByKey, setSavedByKey] = useState({});
 
   const weekDays = useMemo(() => Array.from({ length:7 }, (_,i) => addDays(weekStart,i)), [weekStart]);
 
+  // Fetch all 7 days' saved schedules, driving the sidebar nav spinner: on
+  // while any day is still in flight, off once every day has resolved (or the
+  // week changes and a new batch starts). Without this, the spinner set the
+  // instant the nav link was clicked would never clear.
   useEffect(() => {
     let cancelled = false;
+    let pending = weekDays.length;
+    setTeamScheduleLoading(true);
+    const done = () => { if (!cancelled && --pending === 0) setTeamScheduleLoading(false); };
     weekDays.forEach(date => {
       const key = toDateStr(date);
       schedulesApi.getDay(key)
         .then(saved => { if (!cancelled) setSavedByKey(prev => ({ ...prev, [key]: saved.staff })); })
-        .catch(() => { if (!cancelled) setSavedByKey(prev => ({ ...prev, [key]: null })); });
+        .catch(() => { if (!cancelled) setSavedByKey(prev => ({ ...prev, [key]: null })); })
+        .finally(done);
     });
     return () => { cancelled = true; };
-  }, [weekDays]);
+  }, [weekDays, setTeamScheduleLoading]);
+
+  // Clear the spinner if the user navigates away mid-fetch.
+  useEffect(() => () => setTeamScheduleLoading(false), [setTeamScheduleLoading]);
 
   function staffForDate(date) {
     const key = toDateStr(date);
@@ -182,7 +194,7 @@ export default function TeamSchedulePage() {
     <div style={{ fontFamily:'inherit' }}>
       <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
         <h2 style={{ position:'absolute', left:0, fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0 }}>
-          Team Schedule
+          Weekly View
         </h2>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <button onClick={()=>setWeekStart(d=>addDays(d,-7))} style={navBtn}>◀</button>
@@ -190,10 +202,6 @@ export default function TeamSchedulePage() {
           <button onClick={()=>setWeekStart(d=>addDays(d,7))} style={navBtn}>▶</button>
         </div>
       </div>
-
-      <p style={{ fontSize:12, color:'var(--color-text-dim)', marginTop:-4, marginBottom:14, textAlign:'center' }}>
-        Read-only — everyone's shifts, desk times, and events for the week.
-      </p>
 
       {weekDays.map(date => {
         const key = toDateStr(date);
@@ -203,6 +211,7 @@ export default function TeamSchedulePage() {
             date={date}
             staff={staffForDate(date)}
             events={getEventsForDate(date, events)}
+            currentStaffId={user?.staffId}
           />
         );
       })}
