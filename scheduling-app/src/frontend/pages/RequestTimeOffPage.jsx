@@ -1,23 +1,23 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRequests } from '../context/RequestsContext';
-import { DateInput } from '../components/DateInput';
-import { toDateStr } from '../utils/scheduleUtils';
+import { useScheduleContext } from '../context/ScheduleContext';
+import { ShiftCalendar } from '../components/ShiftCalendar';
+import { schedulesApi } from '../utils/api';
+import {
+  buildSavedScheduleMap, hasShiftOn, personForDate, shiftsLabel, toDateStr,
+} from '../utils/scheduleUtils';
 
-const REASONS = ['Personal', 'Appointment', 'Family', 'Other'];
+// How far ahead to look for droppable shifts. One request covers the whole
+// window; paging the calendar past it shows no selectable days.
+const LOOKAHEAD_DAYS = 180;
 
 const inputStyle = {
   background: 'var(--color-bg)',
   borderColor: 'var(--color-border)',
   color: 'var(--color-text)',
 };
-
-function getMinDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + 14);
-  return toDateStr(d);
-}
 
 function formatDisplay(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
@@ -28,22 +28,76 @@ function formatDisplay(iso) {
 export default function RequestTimeOffPage() {
   const { user } = useAuth();
   const { submitRequest } = useRequests();
+  const { staff } = useScheduleContext();
   const navigate = useNavigate();
-  const [minDate] = useState(getMinDate);
-  const [shiftDate, setShiftDate] = useState(getMinDate);
-  const [reason, setReason] = useState('Personal');
+  const [shiftDate, setShiftDate] = useState('');
+  const [savedByDate, setSavedByDate] = useState({});
+  const [loadingShifts, setLoadingShifts] = useState(true);
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [dateError, setDateError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const staffId = user?.staffId ?? null;
+
+  // Drop requests must be ≥ 2 weeks out.
+  const cutoff = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const rangeEnd = useMemo(() => {
+    const d = new Date(cutoff);
+    d.setDate(d.getDate() + LOOKAHEAD_DAYS);
+    return d;
+  }, [cutoff]);
+
+  // Real saved schedules for the window, so the calendar reflects what the
+  // manager actually scheduled rather than only the recurring template.
+  useEffect(() => {
+    let cancelled = false;
+    schedulesApi.getRange(toDateStr(cutoff), toDateStr(rangeEnd))
+      .then(list => { if (!cancelled) setSavedByDate(buildSavedScheduleMap(list)); })
+      .catch(() => { /* unreachable — fall back to template-only resolution */ })
+      .finally(() => { if (!cancelled) setLoadingShifts(false); });
+    return () => { cancelled = true; };
+  }, [cutoff, rangeEnd]);
+
+  // Precompute the set of dates the employee actually works, so the calendar's
+  // per-cell check is a lookup instead of re-resolving the whole roster 35×.
+  const myShiftDates = useMemo(() => {
+    const set = new Set();
+    if (staffId == null) return set;
+    // Build each day fresh rather than mutating one Date in place — mutating a
+    // captured value defeats the compiler's memoization analysis.
+    for (let i = 0; i <= LOOKAHEAD_DAYS; i++) {
+      const d = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate() + i);
+      if (hasShiftOn(d, savedByDate, staff, staffId)) set.add(toDateStr(d));
+    }
+    return set;
+  }, [cutoff, savedByDate, staff, staffId]);
+
+  const isSelectable = (date) => myShiftDates.has(toDateStr(date));
+
+  // Open on the month of the first droppable shift so pickable days are visible.
+  const firstShiftMonth = useMemo(() => {
+    const first = [...myShiftDates].sort()[0];
+    return first ? new Date(first + 'T00:00:00') : cutoff;
+  }, [myShiftDates, cutoff]);
+
+  const selectedShiftLabel = shiftDate
+    ? shiftsLabel(personForDate(new Date(shiftDate + 'T00:00:00'), savedByDate, staff, staffId))
+    : null;
+
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!shiftDate) {
+      setDateError('Pick one of your scheduled shifts to drop.');
+      return;
+    }
     const selected = new Date(shiftDate + 'T00:00:00');
-    const cutoff   = new Date();
-    cutoff.setDate(cutoff.getDate() + 14);
-    cutoff.setHours(0, 0, 0, 0);
     if (selected < cutoff) {
       setDateError('Drop requests must be at least 2 weeks from today.');
       return;
@@ -139,38 +193,45 @@ export default function RequestTimeOffPage() {
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
             Shift to Drop <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
-          <DateInput
-            value={shiftDate}
-            min={minDate}
-            onChange={e => { setShiftDate(e.target.value); setDateError(''); }}
-            className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-            style={{ ...inputStyle, borderColor: dateError ? 'var(--color-red)' : 'var(--color-border)' }}
-          />
+          {/* Wait for real schedules before mounting the calendar — it picks its
+              opening month once, and an all-grey grid mid-load reads as "you
+              have no shifts". */}
+          {loadingShifts ? (
+            <div
+              className="px-3 py-6 rounded-lg border text-sm text-center"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
+            >
+              Loading your upcoming shifts…
+            </div>
+          ) : myShiftDates.size === 0 ? (
+            <div
+              className="px-4 py-4 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
+            >
+              You have no scheduled shifts more than 2 weeks out yet. Once your
+              manager schedules you, those days will show up here.
+            </div>
+          ) : (
+            <ShiftCalendar
+              value={shiftDate}
+              onChange={ds => { setShiftDate(ds); setDateError(''); }}
+              isSelectable={isSelectable}
+              startMonth={firstShiftMonth}
+            />
+          )}
           {dateError && (
             <p className="text-xs mt-1.5" style={{ color: 'var(--color-red)' }}>{dateError}</p>
           )}
           {shiftDate && !dateError && (
             <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-dim)' }}>
-              {formatDisplay(shiftDate)}
+              Dropping: {formatDisplay(shiftDate)}
+              {selectedShiftLabel && (
+                <span style={{ color: 'var(--color-accent-bright)' }}>
+                  {' · '}{selectedShiftLabel}
+                </span>
+              )}
             </p>
           )}
-        </div>
-
-        {/* Reason */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Reason
-          </label>
-          <select
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-            style={inputStyle}
-          >
-            {REASONS.map(r => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
         </div>
 
         {/* Notes */}

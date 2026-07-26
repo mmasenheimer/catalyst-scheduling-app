@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Notification = require("../models/Notification");
+const { sendWriteError } = require("../utils/respond");
 
 // GET /api/notifications
 // Filtered by the *verified* identity on the session token, so a client only
@@ -17,7 +18,7 @@ router.get("/", async (req, res) => {
         : { $or: [{ recipients: "all" }, { recipients: staffId }] };
     res.json(await Notification.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -29,7 +30,7 @@ router.post("/", async (req, res) => {
     const notif = await Notification.create({ type, title, message, from, recipients, requestId });
     res.status(201).json(notif);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -42,12 +43,12 @@ router.patch("/:id", async (req, res) => {
     const notif = await Notification.findByIdAndUpdate(
       req.params.id,
       { read },
-      { new: true },
+      { new: true, runValidators: true },
     );
     if (!notif) return res.status(404).json({ error: "Not found" });
     res.json(notif);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -59,7 +60,7 @@ router.delete("/:id", async (req, res) => {
     if (!notif) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 

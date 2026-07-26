@@ -3,6 +3,7 @@ const router = require("express").Router();
 const Event = require("../models/Event");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
+const { sendWriteError } = require("../utils/respond");
 
 // GET /api/events
 
@@ -10,7 +11,7 @@ router.get("/", async (req, res) => {
   try {
     res.json(await Event.find().sort({ _id: 1 }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -22,7 +23,7 @@ router.post("/", requireManager, async (req, res) => {
     const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating });
     res.status(201).json(event);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -54,13 +55,13 @@ router.patch("/:id", requireManager, async (req, res) => {
         days,
         repeating,
       },
-      { new: true },
+      { new: true, runValidators: true },
     );
 
     if (!event) return res.status(404).json({ error: "Not found " });
     res.json(event);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -72,7 +73,7 @@ router.delete("/:id", requireManager, async (req, res) => {
     if (!event) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 

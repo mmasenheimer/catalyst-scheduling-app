@@ -13,6 +13,10 @@ const notificationSchema = new Schema(
     from: { type: String, default: "" },
     recipients: { type: Schema.Types.Mixed, required: true },
     requestId: { type: Schema.Types.Mixed, default: null },
+    // Individual change lines for notifications that accumulate (a schedule
+    // change touching several days collapses into one notification whose
+    // message is rebuilt from these).
+    details: { type: [String], default: undefined },
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now, index: true }, // sorted by on every list fetch
   },

@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useRequests } from '../context/RequestsContext';
-import { initialStaff, weeklyTemplates } from '../../data/mockData';
-import { formatTime, toDateStr } from '../utils/scheduleUtils';
+import { schedulesApi } from '../utils/api';
+import {
+  formatTime, toDateStr, buildSavedScheduleMap, hasShiftOn, staffForDateFromSaved, shiftsLabel,
+} from '../utils/scheduleUtils';
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function getUpcomingDates() {
   const today = new Date();
@@ -17,10 +18,6 @@ function getUpcomingDates() {
   });
 }
 
-function getDayName(date) {
-  return DAY_NAMES[date.getDay()];
-}
-
 function formatDateLabel(date) {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
@@ -29,24 +26,22 @@ function formatDateLong(date) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-function scheduledDates(staffId) {
-  return getUpcomingDates().filter(date => {
-    const tpl = weeklyTemplates[getDayName(date)];
-    return tpl?.staff.some(s => s.id === staffId);
-  });
+// All of these resolve against real saved schedules (falling back to the
+// recurring template only where nothing is saved yet) and against the live
+// roster — so staff added/removed via Manage Staff, and any schedule the
+// manager actually saved, are reflected here.
+function scheduledDates(staffId, savedByDate, roster) {
+  return getUpcomingDates().filter(date => hasShiftOn(date, savedByDate, roster, staffId));
 }
 
-function notWorkingOnDate(date, staffId) {
-  const tpl = weeklyTemplates[getDayName(date)];
-  if (!tpl) return initialStaff.filter(s => s.id !== staffId);
-  const busy = new Set(tpl.staff.map(s => s.id));
-  return initialStaff.filter(s => s.id !== staffId && !busy.has(s.id));
+function notWorkingOnDate(date, staffId, roster, savedByDate) {
+  return staffForDateFromSaved(date, savedByDate, roster)
+    .filter(s => s.id !== staffId && (s.shifts?.length ?? 0) === 0);
 }
 
-function workingOnDate(date, staffId) {
-  const tpl = weeklyTemplates[getDayName(date)];
-  if (!tpl) return [];
-  return tpl.staff.filter(s => s.id !== staffId);
+function workingOnDate(date, staffId, roster, savedByDate) {
+  return staffForDateFromSaved(date, savedByDate, roster)
+    .filter(s => s.id !== staffId && (s.shifts?.length ?? 0) > 0);
 }
 
 function overlaps(a, b) {
@@ -59,7 +54,7 @@ function initials(name) {
 
 // ── Staff row ─────────────────────────────────────────────────────────────────
 
-function StaffRow({ person, badge, badgeStyle, actionLabel, onAction, isSelected }) {
+function StaffRow({ person, badge, badgeStyle, actionLabel, onAction, isSelected, subLabel }) {
   return (
     <div
       className="flex items-center justify-between px-4 py-3"
@@ -77,7 +72,7 @@ function StaffRow({ person, badge, badgeStyle, actionLabel, onAction, isSelected
             {person.name}
           </div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-            Shift {formatTime(person.shiftStart)} – {formatTime(person.shiftEnd)}
+            {subLabel ?? `Shift ${formatTime(person.shiftStart)} – ${formatTime(person.shiftEnd)}`}
           </div>
         </div>
       </div>
@@ -105,7 +100,7 @@ function StaffRow({ person, badge, badgeStyle, actionLabel, onAction, isSelected
   );
 }
 
-function StaffList({ people, badge, badgeStyle, actionLabel, onAction, selectedId }) {
+function StaffList({ people, badge, badgeStyle, actionLabel, onAction, selectedId, subLabelFor }) {
   return (
     <div
       className="rounded-xl border overflow-hidden flex flex-col gap-px"
@@ -120,6 +115,7 @@ function StaffList({ people, badge, badgeStyle, actionLabel, onAction, selectedI
           actionLabel={actionLabel}
           onAction={onAction}
           isSelected={selectedId === p.id}
+          subLabel={subLabelFor?.(p)}
         />
       ))}
     </div>
@@ -299,6 +295,18 @@ export default function ShiftRequestPage() {
   const [submitted, setSubmitted] = useState(null);
   const [submitError, setSubmitError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savedByDate, setSavedByDate] = useState({});
+
+  // Pull the real saved schedules covering the 2-week window this page offers,
+  // so "who's working that day" reflects the actual schedule.
+  useEffect(() => {
+    const dates = getUpcomingDates();
+    let cancelled = false;
+    schedulesApi.getRange(toDateStr(dates[0]), toDateStr(dates[dates.length - 1]))
+      .then(list => { if (!cancelled) setSavedByDate(buildSavedScheduleMap(list)); })
+      .catch(() => { /* unreachable — fall back to template-only resolution */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const me = staff.find(s => s.id === user?.staffId);
 
@@ -320,13 +328,13 @@ export default function ShiftRequestPage() {
     );
   }
 
-  const myDates = scheduledDates(me.id);
+  const myDates = scheduledDates(me.id, savedByDate, staff);
   const activeDay = selectedDay ?? myDates[0] ?? null;
 
-  const available = activeDay ? notWorkingOnDate(activeDay, me.id) : [];
-  const alreadyWorking = activeDay ? workingOnDate(activeDay, me.id) : [];
+  const available = activeDay ? notWorkingOnDate(activeDay, me.id, staff, savedByDate) : [];
+  const alreadyWorking = activeDay ? workingOnDate(activeDay, me.id, staff, savedByDate) : [];
 
-  const others = initialStaff.filter(s => s.id !== me.id);
+  const others = staff.filter(s => s.id !== me.id);
   const noOverlapStaff = others.filter(s => !overlaps(me, s));
   const overlapStaff = others.filter(s => overlaps(me, s));
 
@@ -481,6 +489,7 @@ export default function ShiftRequestPage() {
                       actionLabel="Ask to Cover"
                       onAction={select}
                       selectedId={pending?.id}
+                      subLabelFor={() => 'Not scheduled this day'}
                     />
                   )}
                 </div>
@@ -497,6 +506,7 @@ export default function ShiftRequestPage() {
                     people={alreadyWorking}
                     badge="Scheduled"
                     badgeStyle={{ background: '#2a1010', color: '#f07070' }}
+                    subLabelFor={p => shiftsLabel(p) ?? ''}
                   />
                 </div>
               )}

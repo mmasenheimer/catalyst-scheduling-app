@@ -1,43 +1,52 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import arizonaCampus from '../assets/arizonacampus.jpg';
 
-export default function LoginPage() {
-  const { login } = useAuth();
+const inputStyle = {
+  background: 'var(--color-bg)',
+  borderColor: 'var(--color-border)',
+  color: 'var(--color-text)',
+};
+
+const MIN_PASSWORD_LENGTH = 8;
+
+export default function ChangePasswordPage() {
+  const { user, loading, changePassword, logout } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Only reachable while authenticated.
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+
+  // First-login accounts are required to set a password; anyone else landing
+  // here is doing a voluntary change.
+  const forced = user.mustChangePassword;
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    if (!username || !password) {
-      setError('Enter your username and password.');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.');
       return;
     }
     setSubmitting(true);
     try {
-      const user = await login(username, password);
-      // A just-provisioned account must set its own password first.
-      if (user.mustChangePassword) {
-        navigate('/change-password');
-        return;
-      }
-      navigate(user.role === 'manager' ? '/' : '/my-schedule');
+      const updated = await changePassword(password);
+      navigate(updated.role === 'manager' ? '/' : '/my-schedule');
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.');
+      setError(err.message || 'Could not update your password. Please try again.');
       setSubmitting(false);
     }
   }
-
-  const inputStyle = {
-    background: 'var(--color-bg)',
-    borderColor: 'var(--color-border)',
-    color: 'var(--color-text)',
-  };
 
   return (
     <div
@@ -63,27 +72,29 @@ export default function LoginPage() {
         className="w-full max-w-md p-8 rounded-2xl border"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', position: 'relative', zIndex: 1 }}
       >
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text)' }}>
-            CATalyst Studios
-          </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-            Team Management System
+        <div className="mb-7">
+          <h2 className="text-2xl font-semibold" style={{ color: 'var(--color-text)' }}>
+            {forced ? 'Set your password' : 'Change your password'}
+          </h2>
+          <p className="text-sm mt-1.5" style={{ color: 'var(--color-text-dim)' }}>
+            {forced
+              ? `Welcome, ${user.name}. Choose your own password to finish setting up your account — you won't need the temporary one again.`
+              : 'Choose a new password for your account.'}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
-              Username
+              New password
             </label>
             <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="e.g. alex.c"
-              autoComplete="username"
-              autoCapitalize="none"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              autoFocus
               className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
               style={inputStyle}
             />
@@ -91,14 +102,14 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
-              Password
+              Confirm password
             </label>
             <input
               type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
               placeholder="••••••••"
-              autoComplete="current-password"
+              autoComplete="new-password"
               className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
               style={inputStyle}
             />
@@ -114,37 +125,20 @@ export default function LoginPage() {
             className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
             style={{ background: 'var(--color-accent)', color: 'white', opacity: submitting ? 0.6 : 1 }}
           >
-            {submitting ? 'Signing in…' : 'Sign In'}
+            {submitting ? 'Saving…' : 'Save Password'}
           </button>
         </form>
 
-        {/* Dev seed credentials — these come from seed.js, not from any bypass
-            in the auth code. Remove this block once real accounts exist. */}
-        <div
-          className="mt-6 p-3 rounded-lg text-xs leading-relaxed"
-          style={{ background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
-        >
-          <div className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Dev accounts</div>
-          <div>
-            Manager: <strong style={{ color: 'var(--color-text)' }}>manager</strong>
-            {' / '}<strong style={{ color: 'var(--color-text)' }}>catalyst123</strong>
-          </div>
-          <div className="mt-0.5">
-            Staff: <strong style={{ color: 'var(--color-text)' }}>firstname.l</strong>
-            {' / '}<strong style={{ color: 'var(--color-text)' }}>staff123</strong>
-          </div>
-          <div className="mt-0.5 opacity-80">e.g. alex.c, michael.m</div>
-        </div>
-
-        <div className="mt-5 text-center text-xs">
-          <Link
-            to="/forgot-password"
-            style={{ color: 'var(--color-text-dim)', textDecoration: 'none' }}
+        <div className="mt-6 text-center">
+          <button
+            onClick={() => { logout(); navigate('/login'); }}
+            className="text-xs cursor-pointer"
+            style={{ color: 'var(--color-text-dim)', background: 'none', border: 'none' }}
             onMouseEnter={e => e.target.style.color = 'var(--color-text)'}
             onMouseLeave={e => e.target.style.color = 'var(--color-text-dim)'}
           >
-            Forgot password?
-          </Link>
+            ← Sign out
+          </button>
         </div>
       </div>
     </div>

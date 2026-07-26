@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { schedulesApi } from '../utils/api';
+import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
+import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 const NAME_COL    = 140;
@@ -188,6 +190,20 @@ export default function TeamSchedulePage() {
     return `${s} – ${e}`;
   })();
 
+  // The logged-in employee's own scheduled hours across the displayed week,
+  // summed from the same per-day data the grid renders (so it always agrees
+  // with what they see). Managers have no staffId, so they get nothing.
+  const myWeek = (() => {
+    if (user?.staffId == null) return null;
+    const hours = weekDays.reduce((total, date) => {
+      const shifts = staffForDate(date).find(p => p.id === user.staffId)?.shifts ?? [];
+      return total + shifts.reduce((sum, s) => sum + (s.end - s.start), 0);
+    }, 0);
+    return { hours };
+  })();
+
+  const fmtHours = h => (Number.isInteger(h) ? `${h}` : h.toFixed(1));
+
   const navBtn = { padding:'4px 12px', borderRadius:6, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, cursor:'pointer' };
 
   return (
@@ -196,10 +212,17 @@ export default function TeamSchedulePage() {
         <h2 style={{ position:'absolute', left:0, fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0 }}>
           Weekly View
         </h2>
+
+        {/* The employee's own hours for this week */}
+        {myWeek && (
+          <div style={{ position:'absolute', right:0, fontSize:18, fontWeight:700, color:'var(--color-accent-bright)' }}>
+            {fmtHours(myWeek.hours)} hours
+          </div>
+        )}
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={()=>setWeekStart(d=>addDays(d,-7))} style={navBtn}>◀</button>
+          <button onClick={()=>setWeekStart(d=>addDays(d,-7))} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={16} /></button>
           <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text)', minWidth:190, textAlign:'center' }}>{weekLabel}</span>
-          <button onClick={()=>setWeekStart(d=>addDays(d,7))} style={navBtn}>▶</button>
+          <button onClick={()=>setWeekStart(d=>addDays(d,7))} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={16} /></button>
         </div>
       </div>
 

@@ -6,6 +6,9 @@ export function ProtectedRoute({ children, managerOnly = false }) {
   // Still restoring a stored session — don't bounce to /login prematurely.
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  // A freshly-provisioned account can't use the app until it sets its own
+  // password. Everything is gated behind the change-password screen.
+  if (user.mustChangePassword) return <Navigate to="/change-password" replace />;
   if (managerOnly && user.role !== 'manager') return <Navigate to="/my-schedule" replace />;
   return children;
 }

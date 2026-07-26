@@ -22,8 +22,6 @@ function hashPassword(plain) {
   return bcrypt.hash(plain, SALT_ROUNDS);
 }
 
-// Returns false rather than throwing when the account has no password yet
-// (status 'invited'), so callers can treat it as a normal failed login.
 function verifyPassword(plain, hash) {
   if (!hash) return Promise.resolve(false);
   return bcrypt.compare(plain, hash);
@@ -35,8 +33,11 @@ function signToken(user) {
       sub: String(user._id),
       role: user.role,
       staffId: user.staffId ?? null,
-      email: user.email,
+      username: user.username,
       name: user.name,
+      // Session generation — compared against the account's current
+      // tokenVersion on every request so old tokens die on a password change.
+      tv: user.tokenVersion ?? 0,
     },
     SECRET,
     { expiresIn: TOKEN_TTL },
@@ -48,15 +49,15 @@ function verifyToken(token) {
   return jwt.verify(token, SECRET);
 }
 
-// One-time invite/reset tokens: the raw value goes to the user (link or code),
-// only its hash is stored, so a leaked DB can't be used to claim accounts.
-function generateInviteToken() {
-  const raw = crypto.randomBytes(24).toString("hex");
-  return { raw, hash: hashInviteToken(raw) };
-}
-
-function hashInviteToken(raw) {
-  return crypto.createHash("sha256").update(String(raw)).digest("hex");
+// A short, human-typeable temporary password (e.g. "7QK4-P2MX") that the
+// manager hands to a new employee. 32-char alphabet with no ambiguous glyphs
+// (no I/O/0/1); 256 is a multiple of 32, so no modulo bias. The employee is
+// forced to replace it on first login (mustChangePassword), so it's one-time.
+function generateTempPassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const pick = (n) =>
+    Array.from(crypto.randomBytes(n)).map((b) => alphabet[b % alphabet.length]).join("");
+  return `${pick(4)}-${pick(4)}`;
 }
 
 module.exports = {
@@ -64,6 +65,5 @@ module.exports = {
   verifyPassword,
   signToken,
   verifyToken,
-  generateInviteToken,
-  hashInviteToken,
+  generateTempPassword,
 };

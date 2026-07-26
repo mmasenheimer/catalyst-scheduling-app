@@ -1,16 +1,16 @@
 "use strict";
 
-// Dev credentials for seeded/provisioned accounts. These are stored as real
-// bcrypt hashes and checked by the real login endpoint — there is no bypass in
-// the auth code. Shared here so seed.js and seedUsers.js can't drift apart.
-const MANAGER_EMAIL = "manager@catalyst.dev";
+// Dev credentials for seeded accounts. Stored as real bcrypt hashes and checked
+// by the real login endpoint — no bypass in the auth code. Shared here so
+// seed.js and seedUsers.js can't drift apart. Seeded accounts are ready to use
+// (mustChangePassword: false); only manager-provisioned ones force a change.
+const MANAGER_USERNAME = "manager";
 const MANAGER_PASSWORD = "catalyst123";
 const STAFF_PASSWORD = "staff123";
 
-// 'Alex C.' → alex.c@catalyst.dev
-function emailForStaff(name) {
-  const slug = String(name).toLowerCase().replace(/\./g, "").trim().replace(/\s+/g, ".");
-  return `${slug}@catalyst.dev`;
+// 'Alex C.' → alex.c
+function usernameForStaff(name) {
+  return String(name).toLowerCase().replace(/\./g, "").trim().replace(/\s+/g, ".");
 }
 
-module.exports = { MANAGER_EMAIL, MANAGER_PASSWORD, STAFF_PASSWORD, emailForStaff };
+module.exports = { MANAGER_USERNAME, MANAGER_PASSWORD, STAFF_PASSWORD, usernameForStaff };

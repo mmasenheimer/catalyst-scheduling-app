@@ -6,7 +6,7 @@ const Staff       = require('./models/Staff');
 const User        = require('./models/User');
 const { hashPassword } = require('./utils/auth');
 const {
-  MANAGER_EMAIL, MANAGER_PASSWORD, STAFF_PASSWORD, emailForStaff,
+  MANAGER_USERNAME, MANAGER_PASSWORD, STAFF_PASSWORD, usernameForStaff,
 } = require('./utils/devAccounts');
 
 // NOTE: this script is a full RESET — it deletes all staff and all accounts,
@@ -30,28 +30,28 @@ async function seed() {
   await User.deleteMany({});
   const users = [
     {
-      email: MANAGER_EMAIL,
+      username: MANAGER_USERNAME,
       name: 'Manager',
       role: 'manager',
       staffId: null,
-      status: 'active',
       passwordHash: await hashPassword(MANAGER_PASSWORD),
+      mustChangePassword: false,
     },
     ...initialStaff.map(s => ({
-      email: emailForStaff(s.name),
+      username: usernameForStaff(s.name),
       name: s.name,
       role: 'employee',
       staffId: s.id,
-      status: 'active',
       passwordHash: staffHash,
+      mustChangePassword: false,
     })),
   ];
   await User.insertMany(users);
 
   console.log(`\nSeeded ${users.length} accounts:`);
-  console.log(`  MANAGER  ${MANAGER_EMAIL}  /  ${MANAGER_PASSWORD}`);
+  console.log(`  MANAGER  ${MANAGER_USERNAME}  /  ${MANAGER_PASSWORD}`);
   console.log(`  STAFF    (password for all: ${STAFF_PASSWORD})`);
-  initialStaff.forEach(s => console.log(`           ${emailForStaff(s.name)}`));
+  initialStaff.forEach(s => console.log(`           ${usernameForStaff(s.name)}`));
 
   process.exit(0);
 }

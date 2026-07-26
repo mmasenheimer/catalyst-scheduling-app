@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { formatTime } from '../utils/scheduleUtils';
+import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
+import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -90,20 +92,20 @@ function WeekHeader({ me, weekDays, onPrev, onNext, shiftsCount, hoursCount, eve
       <div className="flex items-center gap-3">
         <button
           onClick={onPrev}
-          className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
-          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
+          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)' }}
         >
-          ◀
+          <ArrowLeftIcon size={16} color="white" />
         </button>
         <span className="text-sm font-medium min-w-44 text-center" style={{ color: 'var(--color-text)' }}>
           {fmtDate(start)} – {fmtDate(end)}, {fmtYear(end)}
         </span>
         <button
           onClick={onNext}
-          className="px-3 py-1.5 rounded-md text-sm border cursor-pointer"
-          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-accent-bright)' }}
+          className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
+          style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)' }}
         >
-          ▶
+          <ArrowRightIcon size={16} color="white" />
         </button>
       </div>
 

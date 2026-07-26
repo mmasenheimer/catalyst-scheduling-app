@@ -26,9 +26,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Throws with the server's message on bad credentials — callers surface it.
-  const login = useCallback(async (email, password) => {
-    const { token, user } = await authApi.login(email, password);
+  // The returned user carries mustChangePassword; callers route accordingly.
+  const login = useCallback(async (username, password) => {
+    const { token, user } = await authApi.login(username, password);
     setToken(token);
+    setUser(user);
+    return user;
+  }, []);
+
+  // Set a new password (forced first-login change or voluntary). Updates the
+  // in-memory user so mustChangePassword clears and the app unblocks. The
+  // server also returns a replacement token: changing the password retires all
+  // previously-issued tokens, so we must swap ours in or the very next request
+  // would 401.
+  const changePassword = useCallback(async (newPassword) => {
+    const { token, user } = await authApi.changePassword(newPassword);
+    if (token) setToken(token);
     setUser(user);
     return user;
   }, []);
@@ -39,7 +52,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, changePassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

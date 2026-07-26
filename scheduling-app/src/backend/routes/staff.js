@@ -1,8 +1,10 @@
 "use strict";
 const router = require("express").Router();
 const Staff = require("../models/Staff");
+const User = require("../models/User");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
+const { sendWriteError } = require("../utils/respond");
 
 // GET /api/staff
 // This fetches every staff member at once
@@ -10,7 +12,7 @@ router.get("/", async (req, res) => {
   try {
     res.json(await Staff.find().sort({ _id: 1 }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -23,7 +25,7 @@ router.get("/:id", async (req, res) => {
     if (!person) return res.status(404).json({ error: "Not found" });
     res.json(person);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -37,12 +39,12 @@ router.patch("/:id", requireManager, async (req, res) => {
     const person = await Staff.findByIdAndUpdate(
       req.params.id,
       { shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek },
-      { new: true },
+      { new: true, runValidators: true },
     );
     if (!person) return res.status(404).json({ error: "Not found" });
     res.json(person);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -64,7 +66,7 @@ router.post("/", requireManager, async (req, res) => {
     });
     res.status(201).json(person);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -73,11 +75,21 @@ router.post("/", requireManager, async (req, res) => {
 
 router.delete("/:id", requireManager, async (req, res) => {
   try {
-    const person = await Staff.findByIdAndDelete(req.params.id);
+    const staffId = Number(req.params.id);
+    if (Number.isNaN(staffId)) return res.status(400).json({ error: "Invalid staff id" });
+
+    // Revoke the login before removing the roster entry. Doing it in this order
+    // is fail-secure: if the second step fails, the person has already lost
+    // access rather than keeping a working account. requireAuth re-checks the
+    // account on every request, so this also kills any active session.
+    const account = await User.deleteOne({ staffId });
+
+    const person = await Staff.findByIdAndDelete(staffId);
     if (!person) return res.status(404).json({ error: "Not found" });
-    res.json({ ok: true });
+
+    res.json({ ok: true, accountRemoved: account.deletedCount > 0 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 

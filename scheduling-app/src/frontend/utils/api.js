@@ -55,9 +55,18 @@ async function request(path, options = {}) {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  login: (email, password) =>
-    request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  login: (username, password) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => request("/auth/me"),
+  // Set a new password (forced first-login change, or voluntary). Authenticated.
+  changePassword: (newPassword) =>
+    request("/auth/change-password", { method: "POST", body: JSON.stringify({ newPassword }) }),
+  // Manager-only: create/re-provision an account, returns a one-time { tempPassword }.
+  provision: (body) =>
+    request("/auth/provision", { method: "POST", body: JSON.stringify(body) }),
+  // Manager-only: reset an existing employee's password, returns a new { tempPassword }.
+  resetPassword: (staffId) =>
+    request("/auth/reset", { method: "POST", body: JSON.stringify({ staffId }) }),
 };
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
@@ -88,6 +97,8 @@ export const eventsApi = {
 
 export const schedulesApi = {
   getDay: (date) => request(`/schedules/${date}`),
+  // Saved schedules between two YYYY-MM-DD dates (inclusive), in one request.
+  getRange: (from, to) => request(`/schedules?from=${from}&to=${to}`),
   saveDay: (date, body) =>
     request(`/schedules/${date}`, {
       method: "PUT",

@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Request = require("../models/Request");
 const { requireManager } = require("../middleware/auth");
+const { sendWriteError } = require("../utils/respond");
 
 // GET /api/requests
 // The manager needs every request (to approve/deny); an employee only gets the
@@ -17,7 +18,7 @@ router.get("/", async (req, res) => {
         : { $or: [{ staffId }, { targetStaffId: staffId }] };
     res.json(await Request.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -35,7 +36,7 @@ router.post("/", async (req, res) => {
     });
     res.status(201).json(request);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -48,12 +49,12 @@ router.patch("/:id", requireManager, async (req, res) => {
     const request = await Request.findByIdAndUpdate(
       req.params.id,
       { status },
-      { new: true },
+      { new: true, runValidators: true },
     );
     if (!request) return res.status(404).json({ error: "Not found" });
     res.json(request);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 

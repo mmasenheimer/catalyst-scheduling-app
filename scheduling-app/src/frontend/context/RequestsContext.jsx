@@ -66,7 +66,12 @@ export function RequestsProvider({ children }) {
         existing => ({ events: existing.events ?? [], finalized: existing.finalized ?? true }),
         () => ({ events: [], finalized: true }), // 404 / unreachable → sensible defaults
       )
-      .then(({ events, finalized }) => schedulesApi.saveDay(dateStr, { staff: next, events, finalized }));
+      // suppressNotify: approving a request already notifies the people
+      // involved, so the server's schedule-change diff must not fire a second
+      // notification for the same change.
+      .then(({ events, finalized }) => schedulesApi.saveDay(
+        dateStr, { staff: next, events, finalized, suppressNotify: true },
+      ));
   }, [staff, getDaySchedule, saveDaySchedule]);
 
   // Ids currently being approved/denied — guards against a double-click or two

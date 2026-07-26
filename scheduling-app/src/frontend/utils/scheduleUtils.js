@@ -38,6 +38,48 @@ export function getStaffForDate(date, getDaySchedule, allStaff) {
   return mergeStaffOverrides(allStaff, saved ?? tplStaff);
 }
 
+/**
+ * Build a { 'YYYY-MM-DD': staffArray } lookup from what schedulesApi.getRange
+ * returns, so a view covering many dates can resolve each one without
+ * refetching.
+ */
+export function buildSavedScheduleMap(schedules) {
+  const map = {};
+  (schedules ?? []).forEach(s => { if (s?.date) map[s.date] = s.staff ?? []; });
+  return map;
+}
+
+/**
+ * Staff list for a date, resolved exactly the way the manager's views resolve
+ * it: the saved schedule for that date if one exists, otherwise the day's
+ * template — always merged onto the live roster. This is what lets the
+ * employee-facing pages reflect real schedule changes instead of only the
+ * hardcoded weekly template. `savedByDate` comes from buildSavedScheduleMap.
+ */
+export function staffForDateFromSaved(date, savedByDate, allStaff) {
+  const saved = savedByDate?.[toDateStr(date)];
+  const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
+  return mergeStaffOverrides(allStaff, saved ?? tplStaff);
+}
+
+/** One person's entry for a date (with shifts[]), or null if not on the roster. */
+export function personForDate(date, savedByDate, allStaff, staffId) {
+  if (staffId == null) return null;
+  return staffForDateFromSaved(date, savedByDate, allStaff).find(p => p.id === staffId) ?? null;
+}
+
+/** Whether the person is scheduled at all on the date. */
+export function hasShiftOn(date, savedByDate, allStaff, staffId) {
+  return (personForDate(date, savedByDate, allStaff, staffId)?.shifts?.length ?? 0) > 0;
+}
+
+/** "7:30 AM – 12:30 PM" (or a comma list for multiple), null when unscheduled. */
+export function shiftsLabel(person) {
+  const shifts = person?.shifts ?? [];
+  if (shifts.length === 0) return null;
+  return shifts.map(s => `${formatTime(s.start)} – ${formatTime(s.end)}`).join(', ');
+}
+
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */
 export function formatTime(t) {
   const h = Math.floor(t);

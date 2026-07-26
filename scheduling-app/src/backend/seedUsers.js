@@ -14,7 +14,7 @@ const Staff = require('./models/Staff');
 const User  = require('./models/User');
 const { hashPassword } = require('./utils/auth');
 const {
-  MANAGER_EMAIL, MANAGER_PASSWORD, STAFF_PASSWORD, emailForStaff,
+  MANAGER_USERNAME, MANAGER_PASSWORD, STAFF_PASSWORD, usernameForStaff,
 } = require('./utils/devAccounts');
 
 async function provision() {
@@ -24,18 +24,18 @@ async function provision() {
   const skipped = [];
 
   // Manager account
-  if (await User.findOne({ email: MANAGER_EMAIL })) {
-    skipped.push(MANAGER_EMAIL);
+  if (await User.findOne({ username: MANAGER_USERNAME })) {
+    skipped.push(MANAGER_USERNAME);
   } else {
     await User.create({
-      email: MANAGER_EMAIL,
+      username: MANAGER_USERNAME,
       name: 'Manager',
       role: 'manager',
       staffId: null,
-      status: 'active',
       passwordHash: await hashPassword(MANAGER_PASSWORD),
+      mustChangePassword: false,
     });
-    created.push(`${MANAGER_EMAIL} (manager)`);
+    created.push(`${MANAGER_USERNAME} (manager)`);
   }
 
   // One account per staff member currently on the roster.
@@ -43,29 +43,28 @@ async function provision() {
   const staffHash = await hashPassword(STAFF_PASSWORD);
 
   for (const person of staff) {
-    const email = emailForStaff(person.name);
-    // Skip if this staff member already has an account (by staffId or email).
-    if (await User.findOne({ $or: [{ staffId: person._id }, { email }] })) {
-      skipped.push(email);
+    const username = usernameForStaff(person.name);
+    if (await User.findOne({ $or: [{ staffId: person._id }, { username }] })) {
+      skipped.push(username);
       continue;
     }
     await User.create({
-      email,
+      username,
       name: person.name,
       role: 'employee',
       staffId: person._id,
-      status: 'active',
       passwordHash: staffHash,
+      mustChangePassword: false,
     });
-    created.push(email);
+    created.push(username);
   }
 
   console.log(`\nCreated ${created.length} account(s):`);
-  created.forEach(e => console.log(`  + ${e}`));
+  created.forEach(u => console.log(`  + ${u}`));
   if (skipped.length) console.log(`Skipped ${skipped.length} existing account(s).`);
   console.log(`\nSign in with:`);
-  console.log(`  MANAGER  ${MANAGER_EMAIL}  /  ${MANAGER_PASSWORD}`);
-  console.log(`  STAFF    <name>@catalyst.dev  /  ${STAFF_PASSWORD}`);
+  console.log(`  MANAGER  ${MANAGER_USERNAME}  /  ${MANAGER_PASSWORD}`);
+  console.log(`  STAFF    <name>  /  ${STAFF_PASSWORD}   (e.g. alex.c, michael.m)`);
 
   process.exit(0);
 }

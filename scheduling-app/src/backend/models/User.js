@@ -6,20 +6,25 @@ const { Schema, model } = require("mongoose");
 // schedule UI/staffing targets). An employee account links to its Staff row via
 // staffId; the manager account has staffId: null.
 //
-// status: 'invited' — created by a manager, password not set yet (cannot log in)
-//         'active'  — password set, can log in
+// Accounts are provisioned entirely by the manager: they're created with a
+// temporary password and mustChangePassword: true. The employee logs in with
+// that temp password once and is forced to set their own — after which the
+// manager no longer knows it. There's no email; the username is the identity.
 const userSchema = new Schema(
   {
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    username: { type: String, required: true, unique: true, lowercase: true, trim: true },
     name: { type: String, required: true },
-    passwordHash: { type: String, default: null },
+    passwordHash: { type: String, required: true },
     role: { type: String, enum: ["manager", "employee"], default: "employee" },
     staffId: { type: Number, default: null },
-    status: { type: String, enum: ["invited", "active"], default: "invited" },
-    // One-time invite/reset token (stored hashed) — powers both first-time
-    // account setup and password reset.
-    inviteTokenHash: { type: String, default: null },
-    inviteExpires: { type: Date, default: null },
+    // Set on manager-provisioned accounts; cleared once the user sets their own
+    // password on first login. Gates the app until they do.
+    mustChangePassword: { type: Boolean, default: false },
+    // Incremented whenever the password changes. The value is baked into each
+    // JWT, so bumping it invalidates every token issued before the change —
+    // that's what makes a password reset actually cut off active sessions
+    // (JWTs are stateless and can't be revoked individually).
+    tokenVersion: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now },
   },
   {
@@ -28,9 +33,8 @@ const userSchema = new Schema(
         ret.id = ret._id;
         delete ret._id;
         delete ret.__v;
-        // Never expose credentials or tokens to a client.
+        // Never expose the credential hash to a client.
         delete ret.passwordHash;
-        delete ret.inviteTokenHash;
         return ret;
       },
     },

@@ -9,6 +9,12 @@ const scheduleSchema = new Schema({
   events:      [Schema.Types.Mixed], // snapshot of todayEvents array
   finalized:   { type: Boolean, default: true },
   finalizedAt: { type: Date, default: Date.now },
+  // The staff snapshot as of the last time this day was *published* (finalized).
+  // Schedule-change notifications diff against this rather than `staff`, because
+  // the editor's debounced auto-save already writes `staff` while the manager is
+  // still working — so by the time they hit Finalize, `staff` matches the
+  // incoming payload and a diff against it would always look empty.
+  lastPublishedStaff: { type: [Schema.Types.Mixed], default: undefined },
 });
 
 module.exports = model('Schedule', scheduleSchema);

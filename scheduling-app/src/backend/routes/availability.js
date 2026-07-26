@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Availability = require("../models/Availability");
 const { requireManager } = require("../middleware/auth");
+const { sendWriteError } = require("../utils/respond");
 
 // An employee may only read/write their own availability; a manager may touch
 // anyone's. Used by the :staffId routes below.
@@ -18,7 +19,7 @@ router.get("/", requireManager, async (req, res) => {
   try {
     res.json(await Availability.find());
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -31,7 +32,7 @@ router.get("/:staffId", canAccessStaff, async (req, res) => {
     if (!avail) return res.status(404).json({ error: "Not found" });
     res.json(avail);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 
@@ -44,11 +45,11 @@ router.put("/:staffId", canAccessStaff, async (req, res) => {
     const avail = await Availability.findOneAndUpdate(
       { staffId: req.params.staffId },
       { staffId: req.params.staffId, days, note, submittedAt: new Date() },
-      { upsert: true, new: true },
+      { upsert: true, new: true, runValidators: true },
     );
     res.json(avail);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendWriteError(res, err);
   }
 });
 

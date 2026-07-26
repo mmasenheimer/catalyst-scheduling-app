@@ -8,6 +8,7 @@ import RequestTimeOffPage from './pages/RequestTimeOffPage';
 import CalendarPage from './pages/CalendarPage';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ShiftRequestPage from './pages/ShiftRequestPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -19,8 +20,9 @@ import TeamSchedulePage from './pages/TeamSchedulePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
-  { path: '/login',           element: <LoginPage /> },
-  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/login',            element: <LoginPage /> },
+  { path: '/change-password',  element: <ChangePasswordPage /> },
+  { path: '/forgot-password',  element: <ForgotPasswordPage /> },
   {
     path: '/',
     element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
