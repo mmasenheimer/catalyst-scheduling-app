@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, toDateStr } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
+import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
@@ -556,7 +557,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
       return { deskStart: desk.start, deskEnd: desk.end };
     }
     const evt = allEvents.find(e => e.id === target.eventId);
-    return { name: evt?.name || '', type: evt?.type || 'program', start: evt?.start || 9, end: evt?.end || 10, staffNeeded: evt?.staffNeeded || 1, notes: evt?.notes || '' };
+    return { name: evt?.name || '', type: evt?.type || 'program', start: evt?.start || 9, end: evt?.end || 10, staffNeeded: evt?.staffNeeded || 1, notes: evt?.notes || '', repeating: !!evt?.repeating, repeatFrom: evt?.repeatFrom ?? null, repeatUntil: evt?.repeatUntil ?? null, days: evt?.days ?? [] };
   });
 
   useEffect(() => {
@@ -649,6 +650,33 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
                 <label style={fieldLabel}>Notes</label>
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...textInput, resize: 'none' }} />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={form.repeating}
+                  onChange={e => setForm(f => ({
+                    ...f,
+                    repeating: e.target.checked,
+                    ...(e.target.checked ? {} : { repeatFrom: null, repeatUntil: null }),
+                  }))}
+                  style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+                />
+                <span className="text-sm" style={{ color: 'var(--color-text-dim)' }}>Repeats weekly</span>
+              </label>
+              {form.repeating && (
+                <div>
+                  <label style={fieldLabel}>How long should it repeat?</label>
+                  <RangeCalendar
+                    from={form.repeatFrom}
+                    until={form.repeatUntil}
+                    onChange={({ from, until }) => setForm(f => ({ ...f, repeatFrom: from, repeatUntil: until }))}
+                    highlightDow={form.days?.[0] ? new Date(form.days[0] + 'T00:00:00').getDay() : undefined}
+                  />
+                  <p style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 6 }}>
+                    Leave empty to repeat indefinitely.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1032,32 +1060,12 @@ export default function DailySchedulePage() {
 
   const trashRef = useRef(null);
 
-  const currentDateStr = (() => {
-    const d = schedule.currentDate;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
   const currentDow = schedule.currentDate.getDay();
 
   // Always derived live — events are global and shouldn't freeze just because
   // the day's staff schedule was finalized (unlike shifts, there's no reason
   // a finalized day should show a stale/different event list than reality).
-  const todayEvents = schedule.events.filter(evt => {
-    if (!evt.days?.length) return true;
-    return evt.days.some(dateStr => {
-      if (dateStr === currentDateStr) return true;
-      if (evt.repeating) {
-        const [y, m, day] = dateStr.split('-').map(Number);
-        const eventDate = new Date(y, m - 1, day);
-        const currentMidnight = new Date(
-          schedule.currentDate.getFullYear(),
-          schedule.currentDate.getMonth(),
-          schedule.currentDate.getDate()
-        );
-        return eventDate.getDay() === currentDow && currentMidnight >= eventDate;
-      }
-      return false;
-    });
-  });
+  const todayEvents = getEventsForDate(schedule.currentDate, schedule.events);
 
   const [orderedStaff,    setOrderedStaff]    = useState(() => {
     const ids = getScheduledIds(schedule.currentDate);
@@ -1482,7 +1490,7 @@ export default function DailySchedulePage() {
         return next;
       });
     } else if (t.type === 'event') {
-      schedule.updateEvent(t.eventId, { name: data.name, type: data.type, start: data.start, end: data.end, staffNeeded: data.staffNeeded, notes: data.notes });
+      schedule.updateEvent(t.eventId, { name: data.name, type: data.type, start: data.start, end: data.end, staffNeeded: data.staffNeeded, notes: data.notes, repeating: data.repeating, repeatFrom: data.repeatFrom, repeatUntil: data.repeatUntil });
     }
   }
 
@@ -1881,14 +1889,30 @@ export default function DailySchedulePage() {
               if (draggingBarInfo) {
                 const { type, staffIndex, shiftIndex, deskIndex, eventId } = draggingBarInfo;
                 if (type === 'shift') {
+                  // Deleting a shift also clears the desk time and event
+                  // assignments that were sitting on it — otherwise those bars
+                  // stay on the row even though the person is now unscheduled.
+                  const person    = orderedStaff[staffIndex];
+                  const removed   = person.shifts[shiftIndex];
+                  const remaining = person.shifts.filter((_, j) => j !== shiftIndex);
+                  const orphaned  = orphanedByShiftRemoval(
+                    removed,
+                    remaining,
+                    person.deskShifts ?? [],
+                    todayEvents.filter(ev => ev.assignedStaff.includes(person.id)),
+                  );
+                  const orphanedDeskIds = new Set(orphaned.deskShifts.map(d => d.id));
+
                   setOrderedStaff(prev => {
                     const next = [...prev];
                     const p = { ...next[staffIndex] };
                     p.shifts = p.shifts.filter((_, j) => j !== shiftIndex);
                     p.scheduled = p.shifts.length > 0;
+                    p.deskShifts = (p.deskShifts ?? []).filter(d => !orphanedDeskIds.has(d.id));
                     next[staffIndex] = p;
                     return sortByShift(next);
                   });
+                  orphaned.events.forEach(ev => schedule.unassignStaffFromEvent(ev.id, person.id));
                 } else if (type === 'desk') {
                   setOrderedStaff(prev => {
                     const next = [...prev];

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { formatTime, toDateStr } from '../utils/scheduleUtils';
+import { formatTime } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { DateInput } from '../components/DateInput';
+import { RangeCalendar } from '../components/RangeCalendar';
 
 const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop', 'other'];
 
@@ -53,10 +54,11 @@ export default function AddEventPage() {
     notes: '',
     days: [],
     repeating: false,
+    repeatFrom: null,
+    repeatUntil: null,
     assignedByDate: {},
   });
   const [dateInput, setDateInput] = useState('');
-  const todayStr = toDateStr(new Date());
   const [activeStaffDate, setActiveStaffDate] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -73,7 +75,7 @@ export default function AddEventPage() {
   }
 
   function addDate() {
-    if (!dateInput || form.days.includes(dateInput) || dateInput < todayStr) return;
+    if (!dateInput || form.days.includes(dateInput)) return;
     const d = dateInput;
     setForm(prev => ({
       ...prev,
@@ -265,7 +267,6 @@ export default function AddEventPage() {
           <div className="flex gap-2 mb-2">
             <DateInput
               value={dateInput}
-              min={todayStr}
               onChange={e => setDateInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDate(); } }}
               className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
@@ -310,11 +311,33 @@ export default function AddEventPage() {
             <input
               type="checkbox"
               checked={form.repeating}
-              onChange={e => set('repeating', e.target.checked)}
+              onChange={e => {
+                set('repeating', e.target.checked);
+                // Clearing the bounds when unchecked keeps a stale range from
+                // silently applying if it's switched back on later.
+                if (!e.target.checked) setForm(f => ({ ...f, repeatFrom: null, repeatUntil: null }));
+              }}
               style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
             />
             <span className="text-sm" style={{ color: 'var(--color-text-dim)' }}>Repeats weekly</span>
           </label>
+
+          {form.repeating && (
+            <div className="mt-2">
+              <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
+                How long should it repeat?
+              </label>
+              <RangeCalendar
+                from={form.repeatFrom}
+                until={form.repeatUntil}
+                onChange={({ from, until }) => setForm(f => ({ ...f, repeatFrom: from, repeatUntil: until }))}
+                highlightDow={form.days[0] ? new Date(form.days[0] + 'T00:00:00').getDay() : undefined}
+              />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-dim)' }}>
+                Leave empty to repeat indefinitely.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Staff Assignment */}

@@ -14,6 +14,11 @@ const eventSchema = new Schema(
     notes: { type: String, default: "" },
     days: [{ type: String }], // YYYY-MM-DD strings
     repeating: { type: Boolean, default: false },
+    // Optional bounds on a weekly recurrence (YYYY-MM-DD). Unset means
+    // open-ended on that side, which is how repeating events behaved before
+    // these existed.
+    repeatFrom: { type: String, default: null },
+    repeatUntil: { type: String, default: null },
   },
   {
     toJSON: {

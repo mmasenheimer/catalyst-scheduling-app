@@ -80,6 +80,75 @@ export function shiftsLabel(person) {
   return shifts.map(s => `${formatTime(s.start)} – ${formatTime(s.end)}`).join(', ');
 }
 
+/**
+ * Does an event land on this date?
+ *
+ * An event lists explicit dates in `days`. When `repeating` is set, each of
+ * those dates also acts as an anchor: the event recurs on that same weekday,
+ * starting no earlier than the anchor itself, and confined to `repeatFrom` /
+ * `repeatUntil` when they're set (an unset bound means open-ended on that side).
+ *
+ * This lives here because the rule was previously duplicated across five pages
+ * and had already drifted — some treated an event with no dates as "every day",
+ * others as "never".
+ */
+export function eventOccursOn(evt, date) {
+  // No dates at all — treat as an every-day event (matches the calendar,
+  // daily and my-schedule views, which is the behaviour users have seen).
+  if (!evt?.days?.length) return true;
+
+  const dateStr = toDateStr(date);
+  const dow = date.getDay();
+  // Normalized to midnight so comparisons are date-only, never time-of-day.
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  return evt.days.some(d => {
+    if (d === dateStr) return true;          // explicitly listed
+    if (!evt.repeating) return false;
+
+    const [y, m, day] = String(d).split('-').map(Number);
+    if (!y || !m || !day) return false;
+    const anchor = new Date(y, m - 1, day);
+    if (anchor.getDay() !== dow) return false;
+    if (target < anchor) return false;       // never before the anchor date
+
+    if (evt.repeatFrom) {
+      const [fy, fm, fd] = String(evt.repeatFrom).split('-').map(Number);
+      if (target < new Date(fy, fm - 1, fd)) return false;
+    }
+    if (evt.repeatUntil) {
+      const [uy, um, ud] = String(evt.repeatUntil).split('-').map(Number);
+      if (target > new Date(uy, um - 1, ud)) return false;
+    }
+    return true;
+  });
+}
+
+/** All events landing on a date. */
+export function getEventsForDate(date, events) {
+  return (events ?? []).filter(evt => eventOccursOn(evt, date));
+}
+
+/**
+ * Desk time and event assignments sit on top of a work shift. Deleting that
+ * shift leaves them orphaned — still drawn on the row even though the person is
+ * no longer scheduled then.
+ *
+ * Given the shift being removed and the ones that remain, returns what should
+ * be cleaned up with it: anything that sat on the deleted shift and isn't
+ * covered by a shift the person still has. A second shift elsewhere in the day
+ * therefore keeps its own desk time and events.
+ */
+export function orphanedByShiftRemoval(removedShift, remainingShifts = [], deskShifts = [], assignedEvents = []) {
+  const overlaps = (a, b) => a.start < b.end && a.end > b.start;
+  const stillCovered = item => remainingShifts.some(sh => overlaps(item, sh));
+  const orphaned = item => overlaps(item, removedShift) && !stillCovered(item);
+  return {
+    deskShifts: deskShifts.filter(orphaned),
+    events: assignedEvents.filter(orphaned),
+  };
+}
+
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */
 export function formatTime(t) {
   const h = Math.floor(t);

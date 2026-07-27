@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
 import { weeklyTemplates } from '../../data/mockData';
+import { getEventsForDate } from '../utils/scheduleUtils';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
@@ -52,23 +53,6 @@ function getTemplate(date) {
   return weeklyTemplates[DAY_FULL[date.getDay()]] || { staff: [], events: [] };
 }
 
-function getEventsForDate(date, allEvents) {
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const dow = date.getDay();
-  return allEvents.filter(evt => {
-    if (!evt.days?.length) return true;
-    return evt.days.some(d => {
-      if (d === dateStr) return true;
-      if (evt.repeating) {
-        const [y, m, day] = d.split('-').map(Number);
-        const eventDate = new Date(y, m - 1, day);
-        return eventDate.getDay() === dow &&
-               new Date(date.getFullYear(), date.getMonth(), date.getDate()) >= eventDate;
-      }
-      return false;
-    });
-  });
-}
 
 function isSameDay(a, b) {
   return (

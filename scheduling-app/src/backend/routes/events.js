@@ -19,8 +19,8 @@ router.get("/", async (req, res) => {
 
 router.post("/", requireManager, async (req, res) => {
   try {
-    const { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating } = req.body;
-    const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating });
+    const { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating, repeatFrom, repeatUntil } = req.body;
+    const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating, repeatFrom, repeatUntil });
     res.status(201).json(event);
   } catch (err) {
     sendWriteError(res, err);
@@ -41,6 +41,8 @@ router.patch("/:id", requireManager, async (req, res) => {
       notes,
       days,
       repeating,
+      repeatFrom,
+      repeatUntil,
     } = req.body;
     const event = await Event.findByIdAndUpdate(
       req.params.id,
@@ -54,6 +56,8 @@ router.patch("/:id", requireManager, async (req, res) => {
         notes,
         days,
         repeating,
+        repeatFrom,
+        repeatUntil,
       },
       { new: true, runValidators: true },
     );

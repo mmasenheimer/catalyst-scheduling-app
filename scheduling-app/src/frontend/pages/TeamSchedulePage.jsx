@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
-import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr } from '../utils/scheduleUtils';
+import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr, getEventsForDate } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
@@ -24,23 +24,6 @@ function getMondayOf(date) {
 }
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
 
-function getEventsForDate(date, events) {
-  const dateStr = toDateStr(date);
-  const dow = date.getDay();
-  return events.filter(evt =>
-    evt.days?.some(d => {
-      if (d === dateStr) return true;
-      if (evt.repeating) {
-        const [y, m, day] = d.split('-').map(Number);
-        const anchor = new Date(y, m - 1, day);
-        const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        // Only recur on/after the event's anchor date, matching the Daily view.
-        return anchor.getDay() === dow && target >= anchor;
-      }
-      return false;
-    })
-  );
-}
 
 function sortByShift(arr) {
   return [...arr].sort((a, b) => {

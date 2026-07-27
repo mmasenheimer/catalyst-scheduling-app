@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
-import { buildTemplateAlerts, formatTime } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { DeleteIcon } from '../components/DeleteIcon';
@@ -1160,11 +1160,22 @@ export default function WeeklyTemplatesPage() {
     if (draggingBarInfo) {
       const { type, staffIndex, shiftIndex, deskIndex } = draggingBarInfo;
       if (type === 'shift') {
+        // Desk time sitting on the deleted shift goes with it, unless another
+        // remaining shift still covers it.
+        const person   = orderedStaff[staffIndex];
+        const orphaned = orphanedByShiftRemoval(
+          person.shifts[shiftIndex],
+          person.shifts.filter((_, j) => j !== shiftIndex),
+          person.deskShifts ?? [],
+        );
+        const orphanedDeskIds = new Set(orphaned.deskShifts.map(d => d.id));
+
         setOrderedStaff(prev => {
           const next = [...prev];
           const p = { ...next[staffIndex] };
-          p.shifts    = p.shifts.filter((_, j) => j !== shiftIndex);
-          p.scheduled = p.shifts.length > 0;
+          p.shifts     = p.shifts.filter((_, j) => j !== shiftIndex);
+          p.scheduled  = p.shifts.length > 0;
+          p.deskShifts = (p.deskShifts ?? []).filter(d => !orphanedDeskIds.has(d.id));
           next[staffIndex] = p;
           return sortByShift(next);
         });

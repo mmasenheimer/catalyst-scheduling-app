@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
-import { buildAlerts, formatTime } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
+import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
@@ -69,23 +70,6 @@ function getStaffForDate(date, getDaySchedule, allStaff) {
   return sortByShift(mergeStaffOverrides(allStaff, saved ?? tplStaff));
 }
 
-function getEventsForDate(date, events) {
-  const dateStr = toDateStr(date);
-  const dow = date.getDay();
-  return events.filter(evt =>
-    evt.days?.some(d => {
-      if (d === dateStr) return true;
-      if (evt.repeating) {
-        const [y, m, day] = d.split('-').map(Number);
-        const anchor = new Date(y, m - 1, day);
-        const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        // Only recur on/after the event's anchor date, matching the Daily view.
-        return anchor.getDay() === dow && target >= anchor;
-      }
-      return false;
-    })
-  );
-}
 
 // Content signature of a day's events, so a DayEditor can be memoized against
 // event *content* rather than array identity (getEventsForDate returns a fresh
@@ -198,7 +182,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
     if (target.type === 'shift') { const sh = orderedStaff[target.staffIndex].shifts[target.shiftIndex]; return { shiftStart: sh.start, shiftEnd: sh.end }; }
     if (target.type === 'desk')  { const dk = orderedStaff[target.staffIndex].deskShifts[target.deskIndex]; return { deskStart: dk.start, deskEnd: dk.end }; }
     const evt = dayEvents.find(e => e.id === target.eventId);
-    return { name: evt?.name||'', type: evt?.type||'program', start: evt?.start||9, end: evt?.end||10, staffNeeded: evt?.staffNeeded||1, notes: evt?.notes||'' };
+    return { name: evt?.name||'', type: evt?.type||'program', start: evt?.start||9, end: evt?.end||10, staffNeeded: evt?.staffNeeded||1, notes: evt?.notes||'', repeating: !!evt?.repeating, repeatFrom: evt?.repeatFrom??null, repeatUntil: evt?.repeatUntil??null, days: evt?.days??[] };
   });
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
@@ -237,6 +221,19 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
             </div>
             <div><label style={fl}>Staff Needed</label><input type="number" min={1} max={20} value={form.staffNeeded} onChange={e=>setForm(f=>({...f,staffNeeded:parseInt(e.target.value)||1}))} style={ti}/></div>
             <div><label style={fl}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...ti,resize:'none'}}/></div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={form.repeating}
+                onChange={e=>setForm(f=>({...f,repeating:e.target.checked,...(e.target.checked?{}:{repeatFrom:null,repeatUntil:null})}))}
+                style={{ width:15, height:15, accentColor:'var(--color-accent)', cursor:'pointer' }}/>
+              <span className="text-sm" style={{ color:'var(--color-text-dim)' }}>Repeats weekly</span>
+            </label>
+            {form.repeating && (<div>
+              <label style={fl}>How long should it repeat?</label>
+              <RangeCalendar from={form.repeatFrom} until={form.repeatUntil}
+                onChange={({from,until})=>setForm(f=>({...f,repeatFrom:from,repeatUntil:until}))}
+                highlightDow={form.days?.[0] ? new Date(form.days[0]+'T00:00:00').getDay() : undefined}/>
+              <p style={{fontSize:11,color:'var(--color-text-dim)',marginTop:6}}>Leave empty to repeat indefinitely.</p>
+            </div>)}
           </>)}
         </div>
         <div className="flex gap-2 mt-5 justify-end">
@@ -842,7 +839,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         next[t.staffIndex]=p; return next;
       });
     } else if (t.type === 'event') {
-      updateEvent(t.eventId, { name:data.name, type:data.type, start:data.start, end:data.end, staffNeeded:data.staffNeeded, notes:data.notes });
+      updateEvent(t.eventId, { name:data.name, type:data.type, start:data.start, end:data.end, staffNeeded:data.staffNeeded, notes:data.notes, repeating:data.repeating, repeatFrom:data.repeatFrom, repeatUntil:data.repeatUntil });
     }
   }
 
@@ -1091,7 +1088,21 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
               setTrashOver(false);
               if (draggingBarInfo) {
                 const {type,staffIndex:si,shiftIndex:shIdx,deskIndex:di,eventId,staffId}=draggingBarInfo;
-                if(type==='shift'){setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.shifts=p.shifts.filter((_,j)=>j!==shIdx);p.scheduled=p.shifts.length>0;next[si]=p;return sortByShift(next);});}
+                if(type==='shift'){
+                  // Clear the desk time and event assignments that sat on this
+                  // shift too — otherwise they stay drawn on a row that's no
+                  // longer scheduled.
+                  const person    = orderedStaff[si];
+                  const removed   = person.shifts[shIdx];
+                  const remaining = person.shifts.filter((_,j)=>j!==shIdx);
+                  const orphaned  = orphanedByShiftRemoval(
+                    removed, remaining, person.deskShifts ?? [],
+                    dayEvents.filter(ev => ev.assignedStaff.includes(person.id)),
+                  );
+                  const orphanedDeskIds = new Set(orphaned.deskShifts.map(d=>d.id));
+                  setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.shifts=p.shifts.filter((_,j)=>j!==shIdx);p.scheduled=p.shifts.length>0;p.deskShifts=(p.deskShifts??[]).filter(d=>!orphanedDeskIds.has(d.id));next[si]=p;return sortByShift(next);});
+                  orphaned.events.forEach(ev => unassignStaffFromEvent(ev.id, person.id));
+                }
                 else if(type==='desk'){setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.deskShifts=p.deskShifts.filter((_,j)=>j!==di);next[si]=p;return next;});}
                 else if(type==='event'){unassignStaffFromEvent(eventId,staffId);}
                 setDraggingBarInfo(null);
