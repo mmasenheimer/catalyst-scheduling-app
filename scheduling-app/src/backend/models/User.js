@@ -41,4 +41,13 @@ const userSchema = new Schema(
   },
 );
 
+// One account per staff member. A plain unique index won't do: the manager's
+// staffId is null, and Mongo treats null as a value — so a second null-staffId
+// account (another manager) would collide. Restricting the index to numeric
+// values enforces uniqueness for employees while leaving managers unconstrained.
+userSchema.index(
+  { staffId: 1 },
+  { unique: true, partialFilterExpression: { staffId: { $type: "number" } } },
+);
+
 module.exports = model("User", userSchema);

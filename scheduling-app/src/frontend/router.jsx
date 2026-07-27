@@ -34,9 +34,11 @@ export const router = createBrowserRouter([
       { path: 'team-schedule', element: <TeamSchedulePage /> },
       { path: 'add-event',        element: <ProtectedRoute managerOnly><AddEventPage /></ProtectedRoute> },
       { path: 'calendar',         element: <CalendarPage /> },
-      { path: 'request-time-off', element: <RequestTimeOffPage /> },
-      { path: 'shift-requests',   element: <ShiftRequestPage /> },
-      { path: 'availability',         element: <AvailabilityPage /> },
+      // Built around the signed-in employee's own shifts — a manager has no
+      // staffId, so these can't render anything meaningful for them.
+      { path: 'request-time-off', element: <ProtectedRoute employeeOnly><RequestTimeOffPage /></ProtectedRoute> },
+      { path: 'shift-requests',   element: <ProtectedRoute employeeOnly><ShiftRequestPage /></ProtectedRoute> },
+      { path: 'availability',     element: <ProtectedRoute employeeOnly><AvailabilityPage /></ProtectedRoute> },
       { path: 'staff-availability',  element: <ProtectedRoute managerOnly><AvailabilityManagerPage /></ProtectedRoute> },
       { path: 'manage-staff',        element: <ProtectedRoute managerOnly><ManageStaffPage /></ProtectedRoute> },
       { path: 'notifications',    element: <NotificationsPage /> },

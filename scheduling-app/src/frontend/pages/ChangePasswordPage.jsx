@@ -14,6 +14,7 @@ const MIN_PASSWORD_LENGTH = 8;
 export default function ChangePasswordPage() {
   const { user, loading, changePassword, logout } = useAuth();
   const navigate = useNavigate();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -30,6 +31,10 @@ export default function ChangePasswordPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    if (!forced && !currentPassword) {
+      setError('Enter your current password.');
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
@@ -40,7 +45,7 @@ export default function ChangePasswordPage() {
     }
     setSubmitting(true);
     try {
-      const updated = await changePassword(password);
+      const updated = await changePassword(password, currentPassword);
       navigate(updated.role === 'manager' ? '/' : '/my-schedule');
     } catch (err) {
       setError(err.message || 'Could not update your password. Please try again.');
@@ -84,6 +89,26 @@ export default function ChangePasswordPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Not asked on the forced first change — they just used the temporary
+              password to get here. */}
+          {!forced && (
+            <div>
+              <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
+                Current password
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                autoFocus
+                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
+                style={inputStyle}
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
               New password
@@ -94,7 +119,7 @@ export default function ChangePasswordPage() {
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="new-password"
-              autoFocus
+              autoFocus={forced}
               className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
               style={inputStyle}
             />

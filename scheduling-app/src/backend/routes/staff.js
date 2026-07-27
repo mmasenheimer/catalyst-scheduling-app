@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Staff = require("../models/Staff");
 const User = require("../models/User");
+const Event = require("../models/Event");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
@@ -87,7 +88,19 @@ router.delete("/:id", requireManager, async (req, res) => {
     const person = await Staff.findByIdAndDelete(staffId);
     if (!person) return res.status(404).json({ error: "Not found" });
 
-    res.json({ ok: true, accountRemoved: account.deletedCount > 0 });
+    // Drop them from any event they were assigned to. Without this their id
+    // lingers in assignedStaff forever, and a departed employee keeps counting
+    // toward each event's staffNeeded — so events look filled when they aren't.
+    const events = await Event.updateMany(
+      { assignedStaff: staffId },
+      { $pull: { assignedStaff: staffId } },
+    );
+
+    res.json({
+      ok: true,
+      accountRemoved: account.deletedCount > 0,
+      eventsUnassigned: events.modifiedCount,
+    });
   } catch (err) {
     sendWriteError(res, err);
   }

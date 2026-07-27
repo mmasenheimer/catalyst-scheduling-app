@@ -39,8 +39,8 @@ export function AuthProvider({ children }) {
   // server also returns a replacement token: changing the password retires all
   // previously-issued tokens, so we must swap ours in or the very next request
   // would 401.
-  const changePassword = useCallback(async (newPassword) => {
-    const { token, user } = await authApi.changePassword(newPassword);
+  const changePassword = useCallback(async (newPassword, currentPassword) => {
+    const { token, user } = await authApi.changePassword(newPassword, currentPassword);
     if (token) setToken(token);
     setUser(user);
     return user;

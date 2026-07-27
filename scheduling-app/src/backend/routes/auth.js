@@ -58,6 +58,19 @@ router.post("/provision", requireAuth, requireManager, async (req, res) => {
       return res.status(409).json({ error: "That username is already taken by an active account" });
     }
 
+    // Don't let a second account attach to a staff member who already has one —
+    // /auth/reset looks accounts up by staffId and would otherwise pick between
+    // them arbitrarily. (The partial unique index backs this up at the DB level;
+    // this check just produces a clearer error.)
+    if (staffId != null) {
+      const clash = await User.findOne({ staffId, ...(existing ? { _id: { $ne: existing._id } } : {}) });
+      if (clash) {
+        return res.status(409).json({
+          error: `That staff member already has an account (${clash.username})`,
+        });
+      }
+    }
+
     const tempPassword = generateTempPassword();
     const passwordHash = await hashPassword(tempPassword);
 
@@ -121,6 +134,21 @@ router.post("/change-password", requireAuth, async (req, res) => {
 
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "Account no longer exists" });
+
+    // A voluntary change must prove the current password, so someone who walks
+    // up to an unattended logged-in browser can't lock the owner out of their
+    // account. The forced first-login change is exempt: they just typed the
+    // temporary password to get here, so re-entering it adds friction without
+    // closing any gap.
+    if (!user.mustChangePassword) {
+      const { currentPassword } = req.body;
+      if (!currentPassword) {
+        return res.status(400).json({ error: "Enter your current password" });
+      }
+      if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+    }
 
     user.passwordHash = await hashPassword(newPassword);
     user.mustChangePassword = false;

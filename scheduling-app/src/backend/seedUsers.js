@@ -42,12 +42,28 @@ async function provision() {
   const staff = await Staff.find().sort({ _id: 1 });
   const staffHash = await hashPassword(STAFF_PASSWORD);
 
+  const renamed = [];
+
   for (const person of staff) {
-    const username = usernameForStaff(person.name);
-    if (await User.findOne({ $or: [{ staffId: person._id }, { username }] })) {
-      skipped.push(username);
+    // Already provisioned — nothing to do.
+    if (await User.findOne({ staffId: person._id })) {
+      skipped.push(usernameForStaff(person.name));
       continue;
     }
+
+    // Two staff whose names normalize the same way (two "Alex C.") would
+    // collide. Previously the second one was silently reported as "skipped"
+    // and simply never got an account; instead, give them a numbered username
+    // and say so loudly.
+    const base = usernameForStaff(person.name);
+    let username = base;
+    let n = 1;
+    while (await User.findOne({ username })) {
+      n += 1;
+      username = `${base}${n}`;
+    }
+    if (username !== base) renamed.push(`${person.name}: ${base} taken → ${username}`);
+
     await User.create({
       username,
       name: person.name,
@@ -62,6 +78,10 @@ async function provision() {
   console.log(`\nCreated ${created.length} account(s):`);
   created.forEach(u => console.log(`  + ${u}`));
   if (skipped.length) console.log(`Skipped ${skipped.length} existing account(s).`);
+  if (renamed.length) {
+    console.log(`\n⚠  ${renamed.length} username collision(s) — tell these people their actual username:`);
+    renamed.forEach(r => console.log(`  ! ${r}`));
+  }
   console.log(`\nSign in with:`);
   console.log(`  MANAGER  ${MANAGER_USERNAME}  /  ${MANAGER_PASSWORD}`);
   console.log(`  STAFF    <name>  /  ${STAFF_PASSWORD}   (e.g. alex.c, michael.m)`);

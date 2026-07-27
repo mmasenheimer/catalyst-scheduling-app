@@ -43,15 +43,37 @@ router.post("/", async (req, res) => {
 // PATCH /api/requests/:id
 // Used to move a request from pending → approved/denied. Manager only.
 
+const DECISIONS = ["approved", "denied"];
+
 router.patch("/:id", requireManager, async (req, res) => {
   try {
     const { status } = req.body;
-    const request = await Request.findByIdAndUpdate(
-      req.params.id,
+    if (!DECISIONS.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${DECISIONS.join(", ")}` });
+    }
+
+    // Only a pending request can be decided, and the check lives in the query
+    // so it's atomic — two managers clicking Approve at the same moment can't
+    // both succeed. This matters because approving a 'cover' request appends
+    // the requester's shifts to the target, so applying it twice double-books
+    // them. The client guards this too, but the client can be bypassed.
+    const request = await Request.findOneAndUpdate(
+      { _id: req.params.id, status: "pending" },
       { status },
       { new: true, runValidators: true },
     );
-    if (!request) return res.status(404).json({ error: "Not found" });
+
+    if (!request) {
+      // Distinguish "no such request" from "already decided" so the caller
+      // knows whether to retry or refresh.
+      const existing = await Request.findById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      return res.status(409).json({
+        error: `This request was already ${existing.status}.`,
+        status: existing.status,
+      });
+    }
+
     res.json(request);
   } catch (err) {
     sendWriteError(res, err);

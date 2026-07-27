@@ -59,8 +59,12 @@ export const authApi = {
     request("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => request("/auth/me"),
   // Set a new password (forced first-login change, or voluntary). Authenticated.
-  changePassword: (newPassword) =>
-    request("/auth/change-password", { method: "POST", body: JSON.stringify({ newPassword }) }),
+  // currentPassword is required for voluntary changes, ignored on the forced one.
+  changePassword: (newPassword, currentPassword) =>
+    request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ newPassword, currentPassword }),
+    }),
   // Manager-only: create/re-provision an account, returns a one-time { tempPassword }.
   provision: (body) =>
     request("/auth/provision", { method: "POST", body: JSON.stringify(body) }),
