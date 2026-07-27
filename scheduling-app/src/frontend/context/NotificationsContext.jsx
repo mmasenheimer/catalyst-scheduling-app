@@ -1,21 +1,21 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { notificationsApi } from '../utils/api';
+import { useLiveRefetch } from '../hooks/useLiveRefetch';
 
 // recipients:
 //   'all'      — every logged-in user sees it
 //   'manager'  — manager only
 //   [1, 2, …]  — those staff IDs (manager always sees everything)
 
+// Mirrors the server's filter. One rule for everybody — a notification is
+// visible to whoever it's addressed to — rather than a role special-case, which
+// is what previously fed every employee's notifications back to the manager.
 function isVisibleTo(notif, user) {
   if (!user) return false;
-  if (user.role === 'manager') {
-    if (notif.type === 'approval') return false;
-    return true;
-  }
   const { recipients } = notif;
   if (recipients === 'all') return true;
-  if (recipients === 'manager') return false;
+  if (recipients === 'manager') return user.role === 'manager';
   if (Array.isArray(recipients)) return recipients.includes(user.staffId);
   return false;
 }
@@ -31,15 +31,18 @@ export function NotificationsProvider({ children }) {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
 
-  // Load notifications for the current user from the API (server-side filtered
-  // by role/staffId); stay empty if the server is unreachable. Refetches when
-  // the logged-in user changes.
-  useEffect(() => {
-    if (!user) return;
-    notificationsApi.getAll()
-      .then(data => setNotifications(data.map(hydrate)))
-      .catch(() => { /* backend not running */ });
-  }, [user]);
+  // Load notifications for the current user (the server filters by the session's
+  // role/staffId). Kept fresh in the background — on mount, when the tab regains
+  // focus, and on a slow poll while visible — so a notification raised elsewhere
+  // shows up without the user reloading the page.
+  const load = useCallback(async () => {
+    try {
+      const data = await notificationsApi.getAll();
+      setNotifications(data.map(hydrate));
+    } catch { /* offline or backend down — keep whatever we already have */ }
+  }, []);
+
+  useLiveRefetch(load, Boolean(user));
 
   const visible = notifications
     .filter(n => isVisibleTo(n, user))

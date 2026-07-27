@@ -22,6 +22,9 @@ export default function ManageStaffPage() {
   const [editValue, setEditValue] = useState('');
   const [editError, setEditError] = useState('');
   // Set after adding an employee → shows their username + one-time temp password.
+  // Errors from the per-row actions (reset / remove), shown inline above the
+  // list rather than in a browser alert.
+  const [actionError, setActionError] = useState('');
   const [inviteResult, setInviteResult] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -73,13 +76,13 @@ export default function ManageStaffPage() {
 
   async function handleReset(person) {
     setResettingId(person.id);
+    setActionError('');
     try {
       const account = await authApi.resetPassword(person.id);
       setCopied(false);
       setInviteResult({ name: person.name, username: account.username, tempPassword: account.tempPassword });
     } catch (err) {
-      console.warn('Failed to reset password:', err.message);
-      window.alert(err.message || 'Could not reset the password.');
+      setActionError(`Couldn't reset ${person.name}'s password — ${err.message}`);
     } finally {
       setResettingId(null);
     }
@@ -87,10 +90,13 @@ export default function ManageStaffPage() {
 
   async function handleRemove(person) {
     setRemovingId(person.id);
+    setActionError('');
     try {
       await removeStaff(person.id);
     } catch (err) {
-      console.warn('Failed to remove staff member:', err.message);
+      // Previously this failed silently — the row just stayed put with no
+      // indication anything had gone wrong.
+      setActionError(`Couldn't remove ${person.name} — ${err.message}`);
     } finally {
       setRemovingId(null);
     }
@@ -142,6 +148,22 @@ export default function ManageStaffPage() {
           + Add Employee
         </button>
       </div>
+
+      {actionError && (
+        <div
+          className="mb-3 px-4 py-3 rounded-lg border text-sm flex items-start justify-between gap-3"
+          style={{ background: 'rgba(200,64,64,0.12)', borderColor: 'var(--color-red)', color: '#f07070' }}
+        >
+          <span>{actionError}</span>
+          <button
+            onClick={() => setActionError('')}
+            className="cursor-pointer shrink-0"
+            style={{ background: 'none', border: 'none', color: '#f07070', fontSize: 16, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Staff list */}
       <div className="rounded-xl border overflow-hidden"

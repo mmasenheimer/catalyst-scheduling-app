@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { useScheduleContext } from './ScheduleContext';
 import { useNotifications } from './NotificationsContext';
 import { useAuth } from './AuthContext';
 import { getStaffForDate } from '../utils/scheduleUtils';
 import { requestsApi, schedulesApi } from '../utils/api';
+import { useLiveRefetch } from '../hooks/useLiveRefetch';
 
 // type: 'time_off' | 'cover' | 'swap'
 // { id, type, status: 'pending'|'approved'|'denied', staffId, staffName,
@@ -19,15 +20,17 @@ export function RequestsProvider({ children }) {
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
 
-  // Load requests for the current user from the API (server-side filtered:
-  // manager gets all, an employee only gets ones they're involved in). Stay
-  // empty if the server is unreachable. Refetches when the user changes.
-  useEffect(() => {
-    if (!user) return;
-    requestsApi.getAll()
-      .then(data => setRequests(data))
-      .catch(() => { /* backend not running */ });
-  }, [user]);
+  // Load requests for the current user (the server filters: a manager gets all,
+  // an employee only the ones they're involved in). Refreshed in the background
+  // on focus and a slow poll, so a manager sees new drop/cover requests without
+  // reloading the page.
+  const load = useCallback(async () => {
+    try {
+      setRequests(await requestsApi.getAll());
+    } catch { /* offline or backend down — keep whatever we already have */ }
+  }, []);
+
+  useLiveRefetch(load, Boolean(user));
 
   const submitRequest = useCallback(async (req) => {
     const created = await requestsApi.create(req);

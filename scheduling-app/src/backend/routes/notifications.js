@@ -6,15 +6,22 @@ const { sendWriteError } = require("../utils/respond");
 // GET /api/notifications
 // Filtered by the *verified* identity on the session token, so a client only
 // ever receives what it may see (not filtered client-side in the UI).
-//   manager  → everything except 'approval' notifications
-//   employee → 'all' broadcasts + any addressed to their staffId
+// Visibility follows who the notification is addressed to:
+//   'all'      → everyone
+//   'manager'  → the manager (request submissions, availability submissions)
+//   [staffId]  → only those employees
+//
+// The manager deliberately does NOT receive employee-addressed notifications.
+// They used to get everything except type 'approval', which meant every
+// per-employee notice — including schedule changes the manager made themselves
+// — landed back in their own inbox.
 
 router.get("/", async (req, res) => {
   try {
     const { role, staffId } = req.user;
     const filter =
       role === "manager"
-        ? { type: { $ne: "approval" } }
+        ? { $or: [{ recipients: "all" }, { recipients: "manager" }] }
         : { $or: [{ recipients: "all" }, { recipients: staffId }] };
     res.json(await Notification.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
