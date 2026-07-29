@@ -382,3 +382,18 @@ schedule-change notifications.
 
 **Possible next steps:** real-time push updates over WebSockets, Slack notification delivery,
 institutional single sign-on (Microsoft/Entra), and reporting on hours worked.
+
+### Next steps: Slack
+
+The Slack groundwork is already in place — Bolt is installed and the backend connects over Socket
+Mode as soon as a bot token, signing secret, and app token are supplied, with the connection kept
+deliberately optional so a bad token can never stop the API from serving. What's missing is the
+bridge between the app and the workspace. The first step is storing a Slack user ID alongside each
+staff record, which is what lets a notification find a person; from there, the existing notification
+pipeline can mirror anything addressed to an employee straight into a DM, so schedule changes and
+cover requests reach people where they already are instead of waiting to be discovered on the
+notifications page. The natural follow-on is making those messages interactive — Accept and Decline
+buttons on a cover request, Approve and Deny for the manager — so a shift can be settled without
+anyone opening the app. Worth noting for whoever picks this up: Socket Mode needs no public URL,
+which is ideal for internal use, but a hosted deployment may be simpler to run in HTTP mode, and
+`slackClient.js` documents the switch.

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates, studioHours } from '../../data/mockData';
+import { HOURS_START, HOURS_END, weeklyTemplates, studioHours, EVENT_TYPES } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
@@ -526,7 +526,6 @@ function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
 
 // ── Edit modal ─────────────────────────────────────────────────────────────────
 
-const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop'];
 const TIME_STEPS  = Array.from({ length: (HOURS_END - HOURS_START) * 2 + 1 }, (_, i) => HOURS_START + i * 0.5);
 
 function TimeSelect({ value, onChange, min, max }) {
@@ -650,20 +649,36 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
                 <label style={fieldLabel}>Notes</label>
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...textInput, resize: 'none' }} />
               </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+              {/* Only single-date events can repeat weekly. */}
+              <label
+                className="flex items-center gap-2 select-none"
+                style={{
+                  cursor: (form.days?.length ?? 0) > 1 ? 'not-allowed' : 'pointer',
+                  opacity: (form.days?.length ?? 0) > 1 ? 0.5 : 1,
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={form.repeating}
+                  disabled={(form.days?.length ?? 0) > 1}
+                  checked={form.repeating && (form.days?.length ?? 0) <= 1}
                   onChange={e => setForm(f => ({
                     ...f,
                     repeating: e.target.checked,
                     ...(e.target.checked ? {} : { repeatFrom: null, repeatUntil: null }),
                   }))}
-                  style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+                  style={{
+                    width: 15, height: 15, accentColor: 'var(--color-accent)',
+                    cursor: (form.days?.length ?? 0) > 1 ? 'not-allowed' : 'pointer',
+                  }}
                 />
                 <span className="text-sm" style={{ color: 'var(--color-text-dim)' }}>Repeats weekly</span>
               </label>
-              {form.repeating && (
+              {(form.days?.length ?? 0) > 1 && (
+                <p style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: -6 }}>
+                  This event has {form.days.length} dates — repetition is only available for single-date events.
+                </p>
+              )}
+              {form.repeating && (form.days?.length ?? 0) <= 1 && (
                 <div>
                   <label style={fieldLabel}>How long should it repeat?</label>
                   <RangeCalendar
@@ -852,7 +867,7 @@ function ApplyTemplateModal({ currentDate, allStaff, templates, onApply, onClose
 
 // ── Save as day template modal ─────────────────────────────────────────────────
 
-function SaveAsDayTemplateModal({ currentDate, staff, templates, onSave, onClose }) {
+function SaveAsDayTemplateModal({ currentDate, staff, onSave, onClose }) {
   const [name,      setName]      = useState('');
   const [desc,      setDesc]      = useState('');
   const [nameError, setNameError] = useState('');
@@ -867,9 +882,7 @@ function SaveAsDayTemplateModal({ currentDate, staff, templates, onSave, onClose
   async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
-    if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
-      setNameError('A template with this name already exists.'); return;
-    }
+    // A duplicate name isn't rejected — addTemplate numbers the copy.
     try {
       await onSave({
         type: 'day',
@@ -1996,7 +2009,6 @@ export default function DailySchedulePage() {
         <SaveAsDayTemplateModal
           currentDate={schedule.currentDate}
           staff={orderedStaff}
-          templates={templates}
           onSave={addTemplate}
           onClose={() => setSaveTplOpen(false)}
         />

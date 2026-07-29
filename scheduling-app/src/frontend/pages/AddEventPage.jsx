@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { formatTime } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 import { DateInput } from '../components/DateInput';
 import { RangeCalendar } from '../components/RangeCalendar';
 
-const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop', 'other'];
 
 function formatDateLabel(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -74,14 +73,23 @@ export default function AddEventPage() {
     });
   }
 
+  // Weekly repetition is only meaningful for a single date, so a second date
+  // disables it.
+  const multiDate = form.days.length > 1;
+
   function addDate() {
     if (!dateInput || form.days.includes(dateInput)) return;
     const d = dateInput;
-    setForm(prev => ({
-      ...prev,
-      days: [...prev.days, d].sort(),
-      assignedByDate: { ...prev.assignedByDate, [d]: prev.assignedByDate[d] ?? [] },
-    }));
+    setForm(prev => {
+      const days = [...prev.days, d].sort();
+      return {
+        ...prev,
+        days,
+        assignedByDate: { ...prev.assignedByDate, [d]: prev.assignedByDate[d] ?? [] },
+        // Turn repetition off rather than submit a combination the server rejects.
+        ...(days.length > 1 ? { repeating: false, repeatFrom: null, repeatUntil: null } : {}),
+      };
+    });
     setActiveStaffDate(d);
     setDateInput('');
   }
@@ -307,22 +315,32 @@ export default function AddEventPage() {
               ))}
             </div>
           )}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          {/* Weekly repetition applies to one date only — see the note below. */}
+          <label
+            className="flex items-center gap-2 select-none"
+            style={{ cursor: multiDate ? 'not-allowed' : 'pointer', opacity: multiDate ? 0.5 : 1 }}
+          >
             <input
               type="checkbox"
-              checked={form.repeating}
+              disabled={multiDate}
+              checked={form.repeating && !multiDate}
               onChange={e => {
                 set('repeating', e.target.checked);
                 // Clearing the bounds when unchecked keeps a stale range from
                 // silently applying if it's switched back on later.
                 if (!e.target.checked) setForm(f => ({ ...f, repeatFrom: null, repeatUntil: null }));
               }}
-              style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+              style={{ width: 15, height: 15, accentColor: 'var(--color-accent)', cursor: multiDate ? 'not-allowed' : 'pointer' }}
             />
             <span className="text-sm" style={{ color: 'var(--color-text-dim)' }}>Repeats weekly</span>
           </label>
+          {multiDate && (
+            <p className="text-xs" style={{ color: 'var(--color-text-dim)', marginTop: -6 }}>
+              Only available with a single date — create a separate event for each day it repeats on.
+            </p>
+          )}
 
-          {form.repeating && (
+          {form.repeating && !multiDate && (
             <div className="mt-2">
               <label className="block text-sm mb-1.5" style={{ color: 'var(--color-text-dim)' }}>
                 How long should it repeat?

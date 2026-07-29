@@ -1,9 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
-import { weeklyTemplates } from '../../data/mockData';
-import { getEventsForDate } from '../utils/scheduleUtils';
+import { EVENT_TYPES } from '../../data/mockData';
+import {
+  getEventsForDate,
+  toDateStr,
+  buildSavedScheduleMap,
+  staffForDateFromSaved,
+  personForDate,
+} from '../utils/scheduleUtils';
+import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
@@ -20,8 +27,6 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop'];
 const H_START = 7, H_END = 20;
 const TIME_STEPS = Array.from({ length: (H_END - H_START) * 2 + 1 }, (_, i) => H_START + i * 0.5);
 
@@ -47,10 +52,6 @@ function getCalendarCells(year, month) {
   }
 
   return cells;
-}
-
-function getTemplate(date) {
-  return weeklyTemplates[DAY_FULL[date.getDay()]] || { staff: [], events: [] };
 }
 
 
@@ -111,7 +112,7 @@ function EditEventModal({ evt, onSave, onClose }) {
   );
 }
 
-function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEvent, onNavigate }) {
+function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEvent, onNavigate, canEdit }) {
   const ref = useRef(null);
   const [top, setTop] = useState(cellBottom + 6);
 
@@ -150,27 +151,43 @@ function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEv
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px' }}>
         {events.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--color-text-dim)', padding: '6px 4px' }}>No events scheduled.</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-dim)', padding: '6px 4px' }}>
+            {canEdit ? 'No events scheduled.' : "You're not working any events this day."}
+          </div>
         )}
-        {events.map(evt => (
-          <button key={evt.id} onClick={() => onEditEvent(evt)}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '6px 8px', borderRadius: 7, background: 'rgba(124,92,191,0.12)', border: '1px solid rgba(124,92,191,0.2)', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,92,191,0.22)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,92,191,0.12)'}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#7c5cbf', flexShrink: 0, marginTop: 3 }}/>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>{evt.name}</div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>
-                {fmtT(evt.start)} – {fmtT(evt.end)} · {evt.type}
-              </div>
-              {evt.staffNeeded > 0 && (
-                <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 1 }}>
-                  {evt.assignedStaff?.length ?? 0}/{evt.staffNeeded} staff assigned
+        {events.map(evt => {
+          const row = (
+            <>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#7c5cbf', flexShrink: 0, marginTop: 3 }}/>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>{evt.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 2 }}>
+                  {fmtT(evt.start)} – {fmtT(evt.end)} · {evt.type}
                 </div>
-              )}
-            </div>
-          </button>
-        ))}
+                {canEdit && evt.staffNeeded > 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--color-text-dim)', marginTop: 1 }}>
+                    {evt.assignedStaff?.length ?? 0}/{evt.staffNeeded} staff assigned
+                  </div>
+                )}
+              </div>
+            </>
+          );
+          const base = { display: 'flex', alignItems: 'flex-start', gap: 7, padding: '6px 8px', borderRadius: 7, background: 'rgba(124,92,191,0.12)', border: '1px solid rgba(124,92,191,0.2)', textAlign: 'left', width: '100%' };
+
+          // Only managers can edit an event, so for everyone else this is a
+          // plain read-only row rather than a button that can't do anything.
+          if (!canEdit) {
+            return <div key={evt.id} style={{ ...base, boxSizing: 'border-box' }}>{row}</div>;
+          }
+          return (
+            <button key={evt.id} onClick={() => onEditEvent(evt)}
+              style={{ ...base, cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,92,191,0.22)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,92,191,0.12)'}>
+              {row}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ padding: '6px 8px 8px', borderTop: '1px solid var(--color-border)' }}>
@@ -183,9 +200,7 @@ function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEv
   );
 }
 
-function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, myDesk, me, events, isManager, onOverflowClick }) {
-  const template = getTemplate(date);
-  const staffCount = template.staff.length;
+function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts, myDeskShifts, staffCount, events, isManager, onOverflowClick }) {
   const dateEvents = getEventsForDate(date, events);
   const shown = dateEvents.slice(0, 2);
   const overflow = dateEvents.length - shown.length;
@@ -232,26 +247,28 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShift, 
         )}
       </div>
 
-      {/* Shift / desk indicators */}
+      {/* Shift / desk indicators — one pill per shift, since a day can have several */}
       <div className="flex flex-col gap-0.5 mb-0.5">
-        {myShift && me && (
+        {myShifts.map(sh => (
           <div
+            key={sh.id ?? `s${sh.start}-${sh.end}`}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
             style={{ background: 'rgba(74,124,94,0.6)', color: 'white', fontSize: 10 }}
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-green)' }} />
-            <span>{fmtT(me.shiftStart)} – {fmtT(me.shiftEnd)}</span>
+            <span>{fmtT(sh.start)} – {fmtT(sh.end)}</span>
           </div>
-        )}
-        {myDesk && me && me.deskStart != null && (
+        ))}
+        {myDeskShifts.map(dk => (
           <div
+            key={dk.id ?? `d${dk.start}-${dk.end}`}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded leading-tight"
             style={{ background: 'rgba(176,126,40,0.65)', color: 'white', fontSize: 10 }}
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-yellow)' }} />
-            <span>Desk {fmtT(me.deskStart)} – {fmtT(me.deskEnd)}</span>
+            <span>Desk {fmtT(dk.start)} – {fmtT(dk.end)}</span>
           </div>
-        )}
+        ))}
       </div>
 
       {/* Events */}
@@ -309,8 +326,43 @@ export default function CalendarPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const me = user?.staffId ? staff.find(s => s.id === user.staffId) : null;
+  const isManager = user?.role === 'manager';
 
-  const cells = getCalendarCells(viewYear, viewMonth);
+  // A manager is planning the whole studio, so they see every event. An
+  // employee is looking at their own calendar, so an event they aren't working
+  // is just noise alongside their shifts — show only the ones they're on.
+  const visibleEvents = useMemo(
+    () => (isManager ? events : events.filter(e => (e.assignedStaff ?? []).includes(me?.id))),
+    [events, isManager, me?.id],
+  );
+
+  const cells = useMemo(() => getCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
+
+  // Saved schedules covering every cell on screen — including the leading and
+  // trailing days that belong to the neighbouring months. Without this the grid
+  // would fall back to the weekly template and never show real reschedules.
+  const [savedByDate, setSavedByDate] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const from = toDateStr(cells[0].date);
+    const to   = toDateStr(cells[cells.length - 1].date);
+    schedulesApi.getRange(from, to)
+      .then(rows => { if (!cancelled) setSavedByDate(buildSavedScheduleMap(rows)); })
+      .catch(() => { if (!cancelled) setSavedByDate({}); });
+    return () => { cancelled = true; };
+  }, [cells]);
+
+  // Saved schedule for the date if there is one, otherwise the day's template —
+  // the same resolution the manager's own views use.
+  const rosterFor = useMemo(
+    () => (date) => staffForDateFromSaved(date, savedByDate, staff),
+    [savedByDate, staff],
+  );
+  const myDayOn = useMemo(
+    () => (date) => personForDate(date, savedByDate, staff, me?.id),
+    [savedByDate, staff, me?.id],
+  );
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -328,7 +380,7 @@ export default function CalendarPage() {
   }
 
   function handleDayClick(e, date) {
-    const dateEvts = getEventsForDate(date, events);
+    const dateEvts = getEventsForDate(date, visibleEvents);
     const rect = e.currentTarget.getBoundingClientRect();
     setPopover({ date, events: dateEvts, x: rect.left, cellTop: rect.top, cellBottom: rect.bottom });
   }
@@ -350,21 +402,28 @@ export default function CalendarPage() {
 
   const totalEventsThisMonth = cells
     .filter(c => c.current)
-    .reduce((sum, c) => sum + getEventsForDate(c.date, events).length, 0);
+    .reduce((sum, c) => sum + getEventsForDate(c.date, visibleEvents).length, 0);
+
+  const monthCells = cells.filter(c => c.current);
 
   const avgStaffThisMonth = Math.round(
-    cells.filter(c => c.current).reduce((sum, c) => sum + getTemplate(c.date).staff.length, 0) /
-    cells.filter(c => c.current).length
+    monthCells.reduce((sum, c) => sum + rosterFor(c.date).filter(p => p.shifts.length > 0).length, 0) /
+    monthCells.length
   );
 
+  // Days actually worked and the real length of those shifts, rather than
+  // "template days × default shift length".
   const myShiftsThisMonth = me
-    ? cells.filter(c => c.current && getTemplate(c.date).staff.some(s => s.id === me.id)).length
+    ? monthCells.filter(c => (myDayOn(c.date)?.shifts.length ?? 0) > 0).length
     : 0;
 
   const myHoursThisMonth = me
-    ? cells
-        .filter(c => c.current && getTemplate(c.date).staff.some(s => s.id === me.id))
-        .reduce((sum) => sum + (me.shiftEnd - me.shiftStart), 0)
+    ? Math.round(
+        monthCells.reduce(
+          (sum, c) => sum + (myDayOn(c.date)?.shifts ?? []).reduce((h, sh) => h + (sh.end - sh.start), 0),
+          0,
+        ) * 10,
+      ) / 10
     : 0;
 
   return (
@@ -456,9 +515,7 @@ export default function CalendarPage() {
         {/* Day cells */}
         <div className="grid grid-cols-7">
           {cells.map(({ date, current }, i) => {
-            const tpl = getTemplate(date);
-            const myShift = me ? tpl.staff.some(s => s.id === me.id) : false;
-            const myDesk  = myShift && me?.deskStart != null;
+            const mine = me ? myDayOn(date) : null;
             return (
               <DayCell
                 key={i}
@@ -467,11 +524,11 @@ export default function CalendarPage() {
                 isToday={isSameDay(date, today)}
                 isSelected={isSameDay(date, currentDate)}
                 onClick={e => handleDayClick(e, date)}
-                myShift={myShift}
-                myDesk={myDesk}
-                me={me}
-                events={events}
-                isManager={user?.role === 'manager'}
+                myShifts={mine?.shifts ?? []}
+                myDeskShifts={mine?.deskShifts ?? []}
+                staffCount={isManager ? rosterFor(date).filter(p => p.shifts.length > 0).length : 0}
+                events={visibleEvents}
+                isManager={isManager}
                 onOverflowClick={handleOverflowClick}
               />
             );
@@ -489,6 +546,7 @@ export default function CalendarPage() {
           onClose={() => setPopover(null)}
           onEditEvent={evt => { setEditingEvt(evt); }}
           onNavigate={() => navigateToDay(popover.date)}
+          canEdit={isManager}
         />
       )}
       {editingEvt && (

@@ -1,9 +1,15 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
-import { formatTime, getEventsForDate } from '../utils/scheduleUtils';
+import { HOURS_START, HOURS_END } from '../../data/mockData';
+import {
+  formatTime,
+  getEventsForDate,
+  toDateStr,
+  buildSavedScheduleMap,
+  personForDate,
+} from '../utils/scheduleUtils';
+import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
@@ -36,12 +42,6 @@ function isToday(date) {
   return date.getFullYear() === t.getFullYear() &&
          date.getMonth()    === t.getMonth()    &&
          date.getDate()     === t.getDate();
-}
-
-function isScheduledOn(date, staffId) {
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const tpl = weeklyTemplates[dayName];
-  return tpl ? tpl.staff.some(s => s.id === staffId) : false;
 }
 
 
@@ -110,7 +110,7 @@ function WeekHeader({ me, weekDays, onPrev, onNext, shiftsCount, hoursCount, eve
 
 // ── Schedule grid (read-only) ──────────────────────────────────────────────────
 
-function MyScheduleGrid({ me, weekDays, events }) {
+function MyScheduleGrid({ me, weekDays, events, personFor }) {
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   return (
@@ -140,8 +140,12 @@ function MyScheduleGrid({ me, weekDays, events }) {
         </div>
 
         {weekDays.map(date => {
-          const scheduled = isScheduledOn(date, me.id);
-          const dayEvents = getEventsForDate(date, events).filter(e => e.assignedStaff.includes(me.id));
+          // Real shifts for this date, not the recurring template default.
+          const person     = personFor(date);
+          const shifts     = person?.shifts ?? [];
+          const deskShifts = person?.deskShifts ?? [];
+          const scheduled  = shifts.length > 0;
+          const dayEvents  = getEventsForDate(date, events).filter(e => e.assignedStaff.includes(me.id));
           const today     = isToday(date);
 
           return (
@@ -177,7 +181,7 @@ function MyScheduleGrid({ me, weekDays, events }) {
                 </span>
                 {scheduled && (
                   <span className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-                    {formatTime(me.shiftStart)} – {formatTime(me.shiftEnd)}
+                    {shifts.map(s => `${formatTime(s.start)} – ${formatTime(s.end)}`).join(', ')}
                   </span>
                 )}
                 {!scheduled && (
@@ -190,14 +194,19 @@ function MyScheduleGrid({ me, weekDays, events }) {
               <div className="flex-1 relative" style={{ height: 64 }}>
                 {scheduled ? (
                   <>
-                    <div
-                      className="absolute top-3 h-8 rounded select-none"
-                      style={{ ...posStyle(me.shiftStart, me.shiftEnd), background: 'var(--color-green)', opacity: 0.65 }}
-                    />
-                    {me.deskStart !== null && (
+                    {/* One bar per shift — a day can have more than one. */}
+                    {shifts.map(sh => (
                       <div
+                        key={sh.id ?? `${sh.start}-${sh.end}`}
                         className="absolute top-3 h-8 rounded select-none"
-                        style={{ ...posStyle(me.deskStart, me.deskEnd), background: 'var(--color-yellow)', opacity: 0.75, zIndex: 2 }}
+                        style={{ ...posStyle(sh.start, sh.end), background: 'var(--color-green)', opacity: 0.65 }}
+                      />
+                    ))}
+                    {deskShifts.map(dk => (
+                      <div
+                        key={dk.id ?? `${dk.start}-${dk.end}`}
+                        className="absolute top-3 h-8 rounded select-none"
+                        style={{ ...posStyle(dk.start, dk.end), background: 'var(--color-yellow)', opacity: 0.75, zIndex: 2 }}
                       >
                         <span
                           className="absolute inset-0 flex items-center justify-center pointer-events-none"
@@ -206,7 +215,7 @@ function MyScheduleGrid({ me, weekDays, events }) {
                           Desk
                         </span>
                       </div>
-                    )}
+                    ))}
                     {dayEvents.map(evt => {
                       return (
                         <div
@@ -302,11 +311,29 @@ function MyEventsPanel({ me, weekDays, events }) {
 export default function MySchedulePage() {
   const { user } = useAuth();
   const { staff, events } = useScheduleContext();
-  const navigate = useNavigate();
   const me = staff.find(s => s.id === user?.staffId);
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
-  const weekDays = getWeekDays(weekStart);
+  const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
+
+  // Saved schedules for the displayed week, so this page shows what the manager
+  // actually published rather than the recurring weekly template.
+  // { 'YYYY-MM-DD': staffArray } — dates absent from the map fall back to the
+  // template, which is what personForDate does.
+  const [savedByDate, setSavedByDate] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    schedulesApi.getRange(toDateStr(weekDays[0]), toDateStr(weekDays[6]))
+      .then(rows => { if (!cancelled) setSavedByDate(buildSavedScheduleMap(rows)); })
+      .catch(() => { if (!cancelled) setSavedByDate({}); });
+    return () => { cancelled = true; };
+  }, [weekDays]);
+
+  const personFor = useMemo(
+    () => (date) => personForDate(date, savedByDate, staff, me?.id),
+    [savedByDate, staff, me?.id],
+  );
 
   if (!me) {
     return (
@@ -325,8 +352,13 @@ export default function MySchedulePage() {
     );
   }
 
-  const scheduledDays = weekDays.filter(d => isScheduledOn(d, me.id));
-  const hoursCount    = scheduledDays.length * (me.shiftEnd - me.shiftStart);
+  // Totals come from the real shifts, so a day with two shifts counts both and
+  // a shortened shift counts its actual length.
+  const scheduledDays = weekDays.filter(d => (personFor(d)?.shifts?.length ?? 0) > 0);
+  const hoursCount    = weekDays.reduce(
+    (sum, d) => sum + (personFor(d)?.shifts ?? []).reduce((h, sh) => h + (sh.end - sh.start), 0),
+    0
+  );
   const eventsCount   = weekDays.reduce(
     (sum, d) => sum + getEventsForDate(d, events).filter(e => e.assignedStaff.includes(me.id)).length,
     0
@@ -347,10 +379,10 @@ export default function MySchedulePage() {
         onPrev={prevWeek}
         onNext={nextWeek}
         shiftsCount={scheduledDays.length}
-        hoursCount={hoursCount}
+        hoursCount={Math.round(hoursCount * 10) / 10}
         eventsCount={eventsCount}
       />
-      <MyScheduleGrid me={me} weekDays={weekDays} events={events} />
+      <MyScheduleGrid me={me} weekDays={weekDays} events={events} personFor={personFor} />
       <MyEventsPanel me={me} weekDays={weekDays} events={events} />
     </div>
   );

@@ -7,7 +7,8 @@ import { requestsApi, schedulesApi } from '../utils/api';
 import { useLiveRefetch } from '../hooks/useLiveRefetch';
 
 // type: 'time_off' | 'cover' | 'swap'
-// { id, type, status: 'pending'|'approved'|'denied', staffId, staffName,
+// { id, type, status: 'pending_peer'|'pending'|'approved'|'denied'|'declined',
+//   staffId, staffName,
 //   targetStaffId, targetName, date /* YYYY-MM-DD */, dayLabel, note, createdAt }
 
 const RequestsContext = createContext(null);
@@ -32,21 +33,30 @@ export function RequestsProvider({ children }) {
 
   useLiveRefetch(load, Boolean(user));
 
+  // A request that names a coworker goes to that coworker first — they have to
+  // accept before the manager ever sees it. A drop-shift request has nobody to
+  // ask, so it goes straight to the manager as before.
   const submitRequest = useCallback(async (req) => {
     const created = await requestsApi.create(req);
     setRequests(prev => [created, ...prev]);
-    addNotification({
-      requestId: created.id,
-      type: req.type === 'time_off' ? 'coverage' : 'shift_change',
-      title: req.type === 'time_off' ? 'Drop Shift Request' : req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
-      message: req.type === 'time_off'
-        ? `${req.staffName} requested to drop their ${req.dayLabel} shift.${req.note ? ` "${req.note}"` : ''}`
-        : req.type === 'cover'
-          ? `${req.staffName} asked ${req.targetName} to cover their ${req.dayLabel} shift.`
-          : `${req.staffName} proposed a shift swap with ${req.targetName} on ${req.dayLabel}.`,
-      from: req.staffName,
-      recipients: 'manager',
-    }).catch(() => {});
+
+    const notif = req.type === 'time_off'
+      ? {
+          type: 'coverage',
+          title: 'Drop Shift Request',
+          message: `${req.staffName} requested to drop their ${req.dayLabel} shift.${req.note ? ` "${req.note}"` : ''}`,
+          recipients: 'manager',
+        }
+      : {
+          type: 'shift_change',
+          title: req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
+          message: req.type === 'cover'
+            ? `${req.staffName} asked you to cover their ${req.dayLabel} shift.${req.note ? ` "${req.note}"` : ''} Accept to send it to the manager for approval.`
+            : `${req.staffName} proposed swapping shifts with you on ${req.dayLabel}.${req.note ? ` "${req.note}"` : ''} Accept to send it to the manager for approval.`,
+          recipients: [req.targetStaffId],
+        };
+
+    addNotification({ ...notif, requestId: created.id, from: req.staffName }).catch(() => {});
     return created.id;
   }, [addNotification]);
 
@@ -80,6 +90,70 @@ export function RequestsProvider({ children }) {
   // Ids currently being approved/denied — guards against a double-click or two
   // managers acting at once from both running the (non-idempotent) approval.
   const processingRef = useRef(new Set());
+
+  // ── Peer stage ──────────────────────────────────────────────────────────────
+  // The coworker a cover/swap request names accepts or declines it before the
+  // manager sees it. Neither of these touches the schedule — accepting only
+  // moves the request onto the manager's desk.
+
+  const acceptPeerRequest = useCallback(async (id) => {
+    const req = requests.find(r => r.id === id);
+    if (!req || req.status !== 'pending_peer') return;
+    if (processingRef.current.has(id)) return;
+    processingRef.current.add(id);
+
+    try {
+      await requestsApi.update(id, { status: 'pending' });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'pending' } : r));
+
+      // Now it's the manager's call — this is the notification they act on.
+      addNotification({
+        requestId: id,
+        type: 'shift_change',
+        title: req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
+        message: req.type === 'cover'
+          ? `${req.targetName} accepted ${req.staffName}'s request to cover their ${req.dayLabel} shift. Approve to apply it to the schedule.`
+          : `${req.targetName} accepted ${req.staffName}'s shift swap for ${req.dayLabel}. Approve to apply it to the schedule.`,
+        from: req.targetName,
+        recipients: 'manager',
+      }).catch(() => {});
+
+      addNotification({
+        requestId: id,
+        type: 'shift_change',
+        title: 'Request Accepted',
+        message: `${req.targetName} accepted your ${TYPE_LABEL[req.type]} request for ${req.dayLabel}. It's now waiting on manager approval.`,
+        from: req.targetName,
+        recipients: [req.staffId],
+      }).catch(() => {});
+    } finally {
+      processingRef.current.delete(id);
+    }
+  }, [requests, addNotification]);
+
+  const declinePeerRequest = useCallback(async (id) => {
+    const req = requests.find(r => r.id === id);
+    if (!req || req.status !== 'pending_peer') return;
+    if (processingRef.current.has(id)) return;
+    processingRef.current.add(id);
+
+    try {
+      await requestsApi.update(id, { status: 'declined' });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'declined' } : r));
+
+      // Declining ends the request — the manager is never asked.
+      addNotification({
+        requestId: id,
+        type: 'shift_change',
+        title: 'Request Declined',
+        message: `${req.targetName} declined your ${TYPE_LABEL[req.type]} request for ${req.dayLabel}.`,
+        from: req.targetName,
+        recipients: [req.staffId],
+      }).catch(() => {});
+    } finally {
+      processingRef.current.delete(id);
+    }
+  }, [requests, addNotification]);
 
   const approveRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
@@ -173,7 +247,9 @@ export function RequestsProvider({ children }) {
   }, [requests, addNotification]);
 
   return (
-    <RequestsContext.Provider value={{ requests, submitRequest, approveRequest, denyRequest }}>
+    <RequestsContext.Provider
+      value={{ requests, submitRequest, acceptPeerRequest, declinePeerRequest, approveRequest, denyRequest }}
+    >
       {children}
     </RequestsContext.Provider>
   );

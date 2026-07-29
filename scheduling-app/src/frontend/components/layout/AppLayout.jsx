@@ -6,6 +6,7 @@ import { NotificationsProvider, useNotifications } from "../../context/Notificat
 import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
+import { GenerateTemplateModal } from "../GenerateTemplateModal";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
 import { SunMediumIcon } from "../SunMediumIcon";
 import { MoonIcon } from "../MoonIcon";
@@ -88,6 +89,21 @@ function AppLayoutInner() {
   const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading, teamScheduleLoading, setTeamScheduleLoading } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
   const [applyTplOpen, setApplyTplOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+
+  // Build a weekly template from submitted availability, then open it in the
+  // editor so the manager can adjust before it's used.
+  async function handleGenerateTemplate({ name, days }) {
+    const created = await addTemplate({
+      type: 'week',
+      name,
+      description: 'Auto-generated from submitted availability',
+      days,
+    });
+    setSelectedId(created.id);
+    setGenerateOpen(false);
+    navigate('/templates');
+  }
 
   // New-template modal state
   const [newTplStep,    setNewTplStep]    = useState(null); // null | 'pick' | 'day-form'
@@ -101,9 +117,7 @@ function AppLayoutInner() {
   async function createDayTemplate() {
     const trimmed = dayTplName.trim();
     if (!trimmed) { setDayTplError('Name is required.'); return; }
-    if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
-      setDayTplError('A template with this name already exists.'); return;
-    }
+    // A duplicate name isn't rejected — addTemplate numbers the copy.
     try {
       const created = await addTemplate({ type: 'day', name: trimmed, description: dayTplDesc.trim(), staff: [] });
       setSelectedId(created.id);
@@ -316,7 +330,7 @@ function AppLayoutInner() {
           </button>
 
           <button
-            onClick={() => {}}
+            onClick={() => setGenerateOpen(true)}
             style={{
               width: '100%', padding: '7px 10px', borderRadius: 8,
               border: '1px solid var(--color-accent)',
@@ -421,6 +435,14 @@ function AppLayoutInner() {
           allStaff={staff}
           saveDaySchedule={saveDaySchedule}
           onClose={() => setApplyTplOpen(false)}
+        />
+      )}
+
+      {generateOpen && (
+        <GenerateTemplateModal
+          staff={staff}
+          onCreate={handleGenerateTemplate}
+          onClose={() => setGenerateOpen(false)}
         />
       )}
 

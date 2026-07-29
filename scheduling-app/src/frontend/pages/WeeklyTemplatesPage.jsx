@@ -578,7 +578,6 @@ export default function WeeklyTemplatesPage() {
   const [templateDesc,  setTemplateDesc]  = useState('');
   const [nameError,     setNameError]     = useState('');
   const [justSaved,     setJustSaved]     = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [currentDay,    setCurrentDay]    = useState('Monday');
   const [orderedStaff,  setOrderedStaff]  = useState([]);
   const templateDaysRef    = useRef({});
@@ -664,7 +663,6 @@ export default function WeeklyTemplatesPage() {
     setTemplateName(tpl.name);
     setTemplateDesc(tpl.description ?? '');
     setNameError('');
-    setDeleteConfirm(false);
     if (tpl.type === 'day') {
       setCurrentDay('_day');
       templateDaysRef.current = { '_day': reconcileTemplateStaff(tpl.staff, staff) };
@@ -691,7 +689,6 @@ export default function WeeklyTemplatesPage() {
     setTemplateName('');
     setTemplateDesc('');
     setNameError('');
-    setDeleteConfirm(false);
     setCurrentDay('Monday');
     templateDaysRef.current = Object.fromEntries(TEMPLATE_DAYS.map(d => [d, []]));
     setOrderedStaff([]);
@@ -722,18 +719,16 @@ export default function WeeklyTemplatesPage() {
 
   // ── Delete ────────────────────────────────────────────────────────────────────
   async function handleDelete() {
-    if (!deleteConfirm) { setDeleteConfirm(true); return; }
     try {
       await removeTemplate(selectedId);
     } catch (err) {
-      window.alert(err.message || 'Failed to delete template.');
+      setNameError(err.message || 'Failed to delete template.');
       return;
     }
     setSelectedId(null);
     setTemplateName('');
     setTemplateDesc('');
     setOrderedStaff([]);
-    setDeleteConfirm(false);
   }
 
   // ── Toolbar drag ──────────────────────────────────────────────────────────────
@@ -1284,29 +1279,23 @@ export default function WeeklyTemplatesPage() {
                   <button
                     onClick={handleDelete}
                     style={{
-                      padding: '7px 18px', borderRadius: 8, border: '1px solid',
-                      borderColor: deleteConfirm ? 'var(--color-red)' : 'var(--color-border)',
-                      background: deleteConfirm ? 'rgba(200,64,64,0.12)' : 'transparent',
-                      color: deleteConfirm ? '#f07070' : 'var(--color-text-dim)',
+                      padding: '7px 18px', borderRadius: 8,
+                      border: '1px solid var(--color-border)',
+                      background: 'transparent', color: 'var(--color-text-dim)',
                       fontSize: 13, cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-red)';
+                      e.currentTarget.style.color = '#f07070';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)';
+                      e.currentTarget.style.color = 'var(--color-text-dim)';
+                    }}
                   >
-                    {deleteConfirm ? 'Confirm Delete' : 'Delete'}
+                    Delete
                   </button>
-                  {deleteConfirm && (
-                    <button
-                      onClick={() => setDeleteConfirm(false)}
-                      style={{
-                        padding: '7px 14px', borderRadius: 8,
-                        border: '1px solid var(--color-border)',
-                        background: 'transparent', color: 'var(--color-text-dim)',
-                        fontSize: 13, cursor: 'pointer',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

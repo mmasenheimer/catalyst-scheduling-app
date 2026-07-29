@@ -24,9 +24,25 @@ function formatRelativeTime(date) {
   return `${diffDay}d ago`;
 }
 
-function NotificationCard({ notif, onDismiss, onApprove, onDeny, isManager, requestStatus }) {
+// The two decision points a card can present. A request waits on the coworker
+// it names first ('pending_peer'), then on the manager ('pending') — so which
+// buttons you see, if any, depends on the request's stage and who you are.
+function actionModeFor(request, user) {
+  if (!request) return null;
+  if (request.status === 'pending_peer') {
+    return request.targetStaffId === user?.staffId ? 'peer' : null;
+  }
+  if (request.status === 'pending') {
+    return user?.role === 'manager' ? 'manager' : null;
+  }
+  return null;
+}
+
+function NotificationCard({ notif, onDismiss, onApprove, onDeny, user, request }) {
   const cfg = TYPE_CONFIG[notif.type];
-  const showActions = isManager && notif.requestId != null && requestStatus === 'pending';
+  const requestStatus = request?.status ?? null;
+  const mode = notif.requestId != null ? actionModeFor(request, user) : null;
+  const isManager = user?.role === 'manager';
 
   return (
     <div
@@ -72,6 +88,31 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, isManager, requ
                 ✕ Denied
               </span>
             )}
+            {requestStatus === 'declined' && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(200,64,64,0.15)', color: '#f07070', border: '1px solid rgba(200,64,64,0.4)' }}
+              >
+                ✕ Declined by {request.targetName}
+              </span>
+            )}
+            {/* Waiting states, shown to anyone who can't act on it right now. */}
+            {requestStatus === 'pending_peer' && mode !== 'peer' && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(200,148,56,0.15)', color: '#d8a848', border: '1px solid rgba(200,148,56,0.4)' }}
+              >
+                Awaiting {request.targetName}
+              </span>
+            )}
+            {requestStatus === 'pending' && !isManager && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(200,148,56,0.15)', color: '#d8a848', border: '1px solid rgba(200,148,56,0.4)' }}
+              >
+                Awaiting manager
+              </span>
+            )}
           </div>
           <span className="text-xs shrink-0 mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
             {formatRelativeTime(notif.timestamp)}
@@ -82,21 +123,21 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, isManager, requ
           {notif.message}
         </p>
 
-        {showActions && (
+        {mode && (
           <div className="flex gap-2 mb-2">
             <button
-              onClick={() => onApprove(notif.requestId)}
+              onClick={() => onApprove(notif.requestId, mode)}
               className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
               style={{ background: 'rgba(74,124,94,0.2)', color: '#6ab888', border: '1px solid rgba(74,124,94,0.4)' }}
             >
-              ✓ Approve
+              {mode === 'peer' ? '✓ Accept' : '✓ Approve'}
             </button>
             <button
-              onClick={() => onDeny(notif.requestId)}
+              onClick={() => onDeny(notif.requestId, mode)}
               className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
               style={{ background: 'rgba(200,64,64,0.15)', color: '#f07070', border: '1px solid rgba(200,64,64,0.4)' }}
             >
-              ✕ Deny
+              {mode === 'peer' ? '✕ Decline' : '✕ Deny'}
             </button>
           </div>
         )}
@@ -120,29 +161,34 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, isManager, requ
 
 export default function NotificationsPage() {
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
-  const { requests, approveRequest, denyRequest } = useRequests();
+  const { requests, acceptPeerRequest, declinePeerRequest, approveRequest, denyRequest } = useRequests();
   const { user } = useAuth();
-  const isManager = user?.role === 'manager';
   const [actionError, setActionError] = useState('');
 
-  function requestStatusFor(notif) {
+  function requestFor(notif) {
     if (notif.requestId == null) return null;
-    return requests.find(r => r.id === notif.requestId)?.status ?? null;
+    return requests.find(r => r.id === notif.requestId) ?? null;
   }
 
-  async function handleApprove(id) {
+  // 'peer' accepts on the coworker's behalf and only moves the request along;
+  // 'manager' is the decision that actually rewrites the schedule.
+  async function handleApprove(id, mode) {
     setActionError('');
     try {
-      await approveRequest(id);
+      if (mode === 'peer') await acceptPeerRequest(id);
+      else await approveRequest(id);
     } catch {
-      setActionError('Could not fully apply that approval. It may not have saved — please refresh and try again.');
+      setActionError(mode === 'peer'
+        ? 'Could not accept that request. Please refresh and try again.'
+        : 'Could not fully apply that approval. It may not have saved — please refresh and try again.');
     }
   }
 
-  async function handleDeny(id) {
+  async function handleDeny(id, mode) {
     setActionError('');
     try {
-      await denyRequest(id);
+      if (mode === 'peer') await declinePeerRequest(id);
+      else await denyRequest(id);
     } catch {
       setActionError('Could not update that request. Please refresh and try again.');
     }
@@ -210,8 +256,8 @@ export default function NotificationsPage() {
               onDismiss={dismiss}
               onApprove={handleApprove}
               onDeny={handleDeny}
-              isManager={isManager}
-              requestStatus={requestStatusFor(n)}
+              user={user}
+              request={requestFor(n)}
             />
           ))
         )}

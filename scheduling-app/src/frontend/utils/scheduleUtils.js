@@ -295,13 +295,42 @@ export function buildAlerts(staff, events, dow = 1) {
   });
 
   events.forEach(evt => {
-    const gap = evt.staffNeeded - evt.assignedStaff.length;
+    // Count only people actually on shift. Assignment lives on the event, not
+    // on each occurrence, so a repeating event keeps whoever was assigned when
+    // it was created — even on later weeks where they aren't working. Counting
+    // raw `assignedStaff.length` would report such an event as fully covered
+    // when nobody assigned is present.
+    const assigned = evt.assignedStaff ?? [];
+    // "Covered" means on shift *during* the event, not merely working that day —
+    // a 9–11 shift can't staff a 3pm event.
+    const working = assigned.filter(id => {
+      const person = staff.find(p => p.id === id);
+      return (person?.shifts ?? []).some(sh => sh.start < evt.end && sh.end > evt.start);
+    });
+
+    const gap = evt.staffNeeded - working.length;
     if (gap > 0) {
       alerts.push({
         type: 'event',
         text: `Unfilled: "${evt.name}" needs ${gap} more person(s) (${formatTime(evt.start)}–${formatTime(evt.end)}).`,
       });
     }
+
+    // Name whoever is assigned but not scheduled, so the manager knows who to
+    // replace rather than just that a number is short.
+    assigned
+      .filter(id => !working.includes(id))
+      .forEach(id => {
+        const person = staff.find(p => p.id === id);
+        if (!person) return;   // off the roster entirely — nothing useful to say
+        const scheduledAtAll = (person.shifts?.length ?? 0) > 0;
+        alerts.push({
+          type: 'event',
+          text: scheduledAtAll
+            ? `${person.name} is assigned to "${evt.name}" but their shift doesn't cover ${formatTime(evt.start)}–${formatTime(evt.end)}.`
+            : `${person.name} is assigned to "${evt.name}" but isn't scheduled to work.`,
+        });
+      });
   });
 
   if (alerts.length === 0) {

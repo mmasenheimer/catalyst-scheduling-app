@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates } from '../../data/mockData';
+import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 import { getAvailability } from '../../data/mockAvailability';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
@@ -16,7 +16,6 @@ const NAME_COL    = 140;
 const ROW_H       = 46;
 const ALL_DAYS    = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DOW_TO_TPL  = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
-const EVENT_TYPES = ['program', 'service', 'meeting', 'workshop'];
 const TIME_STEPS  = Array.from({ length: (HOURS_END - HOURS_START) * 2 + 1 }, (_, i) => HOURS_START + i * 0.5);
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -221,13 +220,20 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
             </div>
             <div><label style={fl}>Staff Needed</label><input type="number" min={1} max={20} value={form.staffNeeded} onChange={e=>setForm(f=>({...f,staffNeeded:parseInt(e.target.value)||1}))} style={ti}/></div>
             <div><label style={fl}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...ti,resize:'none'}}/></div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={form.repeating}
+            {/* Only single-date events can repeat weekly. */}
+            <label className="flex items-center gap-2 select-none"
+              style={{ cursor: (form.days?.length ?? 0) > 1 ? 'not-allowed' : 'pointer', opacity: (form.days?.length ?? 0) > 1 ? 0.5 : 1 }}>
+              <input type="checkbox" disabled={(form.days?.length ?? 0) > 1} checked={form.repeating && (form.days?.length ?? 0) <= 1}
                 onChange={e=>setForm(f=>({...f,repeating:e.target.checked,...(e.target.checked?{}:{repeatFrom:null,repeatUntil:null})}))}
-                style={{ width:15, height:15, accentColor:'var(--color-accent)', cursor:'pointer' }}/>
+                style={{ width:15, height:15, accentColor:'var(--color-accent)', cursor:(form.days?.length ?? 0) > 1 ? 'not-allowed' : 'pointer' }}/>
               <span className="text-sm" style={{ color:'var(--color-text-dim)' }}>Repeats weekly</span>
             </label>
-            {form.repeating && (<div>
+            {(form.days?.length ?? 0) > 1 && (
+              <p style={{fontSize:11,color:'var(--color-text-dim)',marginTop:-6}}>
+                This event has {form.days.length} dates — repetition is only available for single-date events.
+              </p>
+            )}
+            {form.repeating && (form.days?.length ?? 0) <= 1 && (<div>
               <label style={fl}>How long should it repeat?</label>
               <RangeCalendar from={form.repeatFrom} until={form.repeatUntil}
                 onChange={({from,until})=>setForm(f=>({...f,repeatFrom:from,repeatUntil:until}))}
@@ -272,7 +278,7 @@ function AvailWarningModal({ staffName, title, message, confirmLabel='Schedule A
   );
 }
 
-function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
+function SaveAsDayTemplateModal({ date, staff, onSave, onClose }) {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [nameError, setNameError] = useState('');
@@ -284,7 +290,7 @@ function SaveAsDayTemplateModal({ date, staff, templates, onSave, onClose }) {
   async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
-    if (templates.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) { setNameError('A template with this name already exists.'); return; }
+    // A duplicate name isn't rejected — addTemplate numbers the copy.
     try {
       await onSave({ type: 'day', name: trimmed, description: desc.trim(), staff: staff.filter(s => s.shifts?.length > 0) });
       onClose();
@@ -1167,7 +1173,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {availWarning && <AvailWarningModal staffName={availWarning.staffName} title={availWarning.title} message={availWarning.message} confirmLabel={availWarning.confirmLabel} onConfirm={availWarning.onConfirm} onCancel={availWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
-      {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} templates={templates} onSave={addTemplate} onClose={()=>setSaveTplOpen(false)}/>}
+      {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} onSave={addTemplate} onClose={()=>setSaveTplOpen(false)}/>}
       {finalizeWarn && (
         <AvailWarningModal
           title="Schedule Has Issues"
@@ -1341,7 +1347,7 @@ export default function WeeklyViewPage() {
   async function handleSaveTemplate() {
     const trimmed = tplName.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
-    if (templates.some(t=>t.name.toLowerCase()===trimmed.toLowerCase())) { setNameError('A template with this name already exists.'); return; }
+    // A duplicate name isn't rejected — addTemplate numbers the copy.
     const days = Object.fromEntries(weekDays.map((date,i) => {
       const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
       const src   = saved ?? (weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? []);

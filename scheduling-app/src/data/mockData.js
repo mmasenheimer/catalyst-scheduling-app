@@ -5,6 +5,12 @@ export const HOURS_END = 20;
 // ── Studio hours ──────────────────────────────────────────────────────────────
 export const studioHours = { open: 8, close: 18 };
 
+// ── Event types ───────────────────────────────────────────────────────────────
+// Single source of truth — this list was previously copy-pasted into four pages
+// and had drifted, so an event could be created with a type the edit dialogs
+// couldn't offer back.
+export const EVENT_TYPES = ['program', 'certification', 'meeting', 'workshop', 'other'];
+
 // ── Staff ─────────────────────────────────────────────────────────────────────
 export const initialStaff = [
   { id: 1,  name: 'Alex C.',      shiftStart: 7.5,  shiftEnd: 12.5, deskStart: 8.5,  deskEnd: 9.5,  maxHoursPerWeek: 30 },
@@ -62,7 +68,7 @@ export const initialEvents = [
   {
     id: 3,
     name: 'Tech Help Session',
-    type: 'service',
+    type: 'program',
     start: 15,
     end: 17,
     staffNeeded: 2,
@@ -146,7 +152,7 @@ export const initialEvents = [
   {
     id: 10,
     name: 'Library Orientation',
-    type: 'service',
+    type: 'program',
     start: 9,
     end: 10,
     staffNeeded: 2,
@@ -182,7 +188,7 @@ export const initialEvents = [
   {
     id: 13,
     name: 'ESL Conversation Circle',
-    type: 'service',
+    type: 'program',
     start: 10,
     end: 12,
     staffNeeded: 1,

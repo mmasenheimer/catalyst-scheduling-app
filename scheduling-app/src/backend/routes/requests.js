@@ -1,7 +1,6 @@
 "use strict";
 const router = require("express").Router();
 const Request = require("../models/Request");
-const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
 
 // GET /api/requests
@@ -31,8 +30,13 @@ router.post("/", async (req, res) => {
     if (req.user.role !== "manager" && staffId !== req.user.staffId) {
       return res.status(403).json({ error: "Cannot submit a request for another staff member" });
     }
+    // The starting state is derived from the request, never taken from the
+    // client: a request that names a coworker has to clear that coworker first,
+    // while a drop-shift request goes straight to the manager.
+    const status = targetStaffId != null ? "pending_peer" : "pending";
+
     const request = await Request.create({
-      type, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
+      type, status, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
     });
     res.status(201).json(request);
   } catch (err) {
@@ -41,33 +45,63 @@ router.post("/", async (req, res) => {
 });
 
 // PATCH /api/requests/:id
-// Used to move a request from pending → approved/denied. Manager only.
+// Two distinct transitions live here, each with its own authority:
+//
+//   pending_peer → pending | declined   the named coworker accepts or declines
+//   pending      → approved | denied    the manager decides
+//
+// Both are written as a precondition inside the update query rather than a
+// read-then-write, so they're atomic — two clients acting at the same moment
+// can't both succeed. That matters most for the manager leg, because approving
+// a 'cover' request appends the requester's shifts to the target and applying
+// it twice would double-book them.
 
-const DECISIONS = ["approved", "denied"];
+const MANAGER_DECISIONS = ["approved", "denied"];
+const PEER_DECISIONS = ["pending", "declined"]; // 'pending' == the peer accepted
 
-router.patch("/:id", requireManager, async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
     const { status } = req.body;
-    if (!DECISIONS.includes(status)) {
-      return res.status(400).json({ error: `status must be one of: ${DECISIONS.join(", ")}` });
+    const isManagerDecision = MANAGER_DECISIONS.includes(status);
+    const isPeerDecision = PEER_DECISIONS.includes(status);
+
+    if (!isManagerDecision && !isPeerDecision) {
+      const all = [...PEER_DECISIONS, ...MANAGER_DECISIONS].join(", ");
+      return res.status(400).json({ error: `status must be one of: ${all}` });
     }
 
-    // Only a pending request can be decided, and the check lives in the query
-    // so it's atomic — two managers clicking Approve at the same moment can't
-    // both succeed. This matters because approving a 'cover' request appends
-    // the requester's shifts to the target, so applying it twice double-books
-    // them. The client guards this too, but the client can be bypassed.
+    let filter;
+    if (isManagerDecision) {
+      if (req.user?.role !== "manager") {
+        return res.status(403).json({ error: "Manager access required" });
+      }
+      filter = { _id: req.params.id, status: "pending" };
+    } else {
+      // Matching on targetStaffId does the authorization and the state guard in
+      // the same query: only the coworker the request actually names can accept
+      // or decline it, and only while it's still waiting on them.
+      filter = {
+        _id: req.params.id,
+        status: "pending_peer",
+        targetStaffId: req.user?.staffId ?? null,
+      };
+    }
+
     const request = await Request.findOneAndUpdate(
-      { _id: req.params.id, status: "pending" },
+      filter,
       { status },
       { new: true, runValidators: true },
     );
 
     if (!request) {
-      // Distinguish "no such request" from "already decided" so the caller
-      // knows whether to retry or refresh.
+      // Nothing matched — work out why, so the caller knows whether to retry,
+      // refresh, or give up.
       const existing = await Request.findById(req.params.id);
       if (!existing) return res.status(404).json({ error: "Not found" });
+
+      if (isPeerDecision && existing.status === "pending_peer") {
+        return res.status(403).json({ error: "This request wasn't sent to you" });
+      }
       return res.status(409).json({
         error: `This request was already ${existing.status}.`,
         status: existing.status,
