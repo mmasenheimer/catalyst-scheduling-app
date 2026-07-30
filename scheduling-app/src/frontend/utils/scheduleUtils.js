@@ -1,4 +1,4 @@
-import { staffingTargetsByDay, weeklyTemplates, HOURS_START, HOURS_END } from '../../data/mockData';
+import { staffingTargetsByDay, deskHoursByDay, weeklyTemplates, HOURS_START, HOURS_END } from '../../data/mockData';
 
 const DOW_TO_TPL = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
 
@@ -149,6 +149,99 @@ export function orphanedByShiftRemoval(removedShift, remainingShifts = [], deskS
   };
 }
 
+/**
+ * Row order for a day: earliest shift first, anyone unscheduled at the bottom.
+ *
+ * Four pages each declare an identical private copy of this (DailySchedulePage,
+ * WeeklyViewPage, WeeklyTemplatesPage, TeamSchedulePage). This is the shared
+ * version for code outside those pages — worth collapsing the copies into it,
+ * but they're load-bearing in the editors so that's a separate change.
+ */
+export function sortByShift(arr) {
+  return [...arr].sort((a, b) => {
+    const aMin = a.shifts?.length ? Math.min(...a.shifts.map(s => s.start)) : Infinity;
+    const bMin = b.shifts?.length ? Math.min(...b.shifts.map(s => s.start)) : Infinity;
+    return aMin - bMin;
+  });
+}
+
+const overlapsAnyShift = (item, shifts) =>
+  (shifts ?? []).some(sh => sh.start < item.end && sh.end > item.start);
+
+/**
+ * The same "is it still covered?" question as `orphanedByShiftRemoval`, but asked
+ * about a final set of shifts rather than about one shift being deleted. Used
+ * when a whole day is rewritten at once — approving a drop, cover, or swap —
+ * where someone's shifts are replaced outright and everything sitting on top of
+ * them has to be re-checked. Pass `[]` for someone left unscheduled.
+ *
+ * Works on anything with `start`/`end`: event assignments and desk shifts alike.
+ * Desk shifts live on the day's staff record and events live on the Event
+ * document, but neither moves when shifts are rewritten — the caller reconciles.
+ */
+export function coveredBy(shifts, items) {
+  return (items ?? []).filter(item => overlapsAnyShift(item, shifts));
+}
+
+/** The complement of `coveredBy` — items no remaining shift overlaps. */
+export function notCoveredBy(shifts, items) {
+  return (items ?? []).filter(item => !overlapsAnyShift(item, shifts));
+}
+
+/**
+ * Being assigned to an event means being scheduled to work it, so a shift is
+ * stretched out to cover any event the person is assigned to that day. Both
+ * editors already do this when you drag an event onto a row; this is the same
+ * rule expressed as a function so it can be enforced wherever a day is saved.
+ *
+ * That matters most for repeating events: `assignedStaff` is one array shared by
+ * every occurrence, so there's no per-date moment when someone gets "assigned"
+ * to next Thursday's class. Without a save-time pass, the event shows on their
+ * schedule on every repeat date with no shift behind it.
+ *
+ * A shift that already overlaps the event is widened; if none does, a new shift
+ * spanning the event is added. Returns the same array when nothing changed, so
+ * callers can cheaply detect a no-op.
+ */
+export function stretchShiftsToCoverEvents(staffList, eventsOnDate) {
+  const events = eventsOnDate ?? [];
+  if (events.length === 0) return staffList;
+
+  let changed = false;
+  const next = staffList.map(person => {
+    const mine = events.filter(evt => (evt.assignedStaff ?? []).includes(person.id));
+    if (mine.length === 0) return person;
+
+    let shifts = person.shifts ?? [];
+    let personChanged = false;
+
+    mine.forEach(evt => {
+      // Already covered end-to-end — nothing to do.
+      if (shifts.some(sh => sh.start <= evt.start && sh.end >= evt.end)) return;
+
+      const hostIdx = shifts.findIndex(sh => sh.start <= evt.end && sh.end >= evt.start);
+      if (hostIdx !== -1) {
+        const host = shifts[hostIdx];
+        const start = Math.min(host.start, evt.start);
+        const end = Math.max(host.end, evt.end);
+        if (start !== host.start || end !== host.end) {
+          shifts = shifts.map((sh, i) => (i === hostIdx ? { ...sh, start, end } : sh));
+          personChanged = true;
+        }
+      } else {
+        shifts = [...shifts, { id: `s${person.id}-evt${evt.id}`, start: evt.start, end: evt.end }];
+        personChanged = true;
+      }
+    });
+
+    if (!personChanged) return person;
+    changed = true;
+    return { ...person, shifts, scheduled: true };
+  });
+
+  return changed ? next : staffList;
+}
+
 /** Convert decimal hour (e.g. 13.5) → "1:30 PM" */
 export function formatTime(t) {
   const h = Math.floor(t);
@@ -167,6 +260,23 @@ export function getTarget(hour, dow = 1) {
     if (hour >= rule.start && hour < rule.end) return rule.min;
   }
   return 0;
+}
+
+/** The hours the front desk needs manning on this weekday, or null if none. */
+export function getDeskWindow(dow = 1) {
+  return deskHoursByDay[dow] ?? null;
+}
+
+/**
+ * Does the half-hour slot starting at `hour` need someone on the desk?
+ *
+ * Overlap, not containment: Friday's desk closes at 5:45 PM, which isn't on the
+ * 30-minute grid, so the 5:30–6:00 slot still counts as needing cover. Rounding
+ * down instead would leave the desk unmanned for the last 15 minutes.
+ */
+export function isDeskRequired(hour, dow = 1, slot = 0.5) {
+  const w = getDeskWindow(dow);
+  return w != null && hour < w.end && hour + slot > w.start;
 }
 
 /** Count how many staff are on shift at a given hour (handles shifts array or legacy shiftStart/shiftEnd) */
@@ -230,34 +340,27 @@ export function buildAlerts(staff, events, dow = 1) {
     }
   }
 
-  // Desk coverage gaps: flag stretches when staff are working but nobody is on desk
-  const allShifts = staff.flatMap(s => s.shifts ?? []);
-  if (allShifts.length > 0) {
-    const dayStart = Math.min(...allShifts.map(sh => sh.start));
-    const dayEnd   = Math.max(...allShifts.map(sh => sh.end));
+  // Desk coverage gaps — only inside the hours the desk actually needs manning
+  // (see deskHoursByDay). Shifts outside that window need no desk cover, so an
+  // early opener or a late closer is no longer flagged for it.
+  const deskWindow = getDeskWindow(dow);
+  const anyoneScheduled = staff.some(s => (s.shifts ?? []).length > 0);
+  if (deskWindow && anyoneScheduled) {
     let gapStart = null;
-    for (let h = dayStart; h < dayEnd; h += 0.5) {
-      const anyoneWorking = staff.some(s => (s.shifts ?? []).some(sh => sh.start <= h && sh.end > h));
-      if (!anyoneWorking) {
-        if (gapStart !== null) {
-          alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(h)}.` });
-          gapStart = null;
-        }
-        continue;
-      }
+    const closeGap = (end) => {
+      if (gapStart === null) return;
+      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(end)}.` });
+      gapStart = null;
+    };
+    for (let h = deskWindow.start; h < deskWindow.end; h += 0.5) {
       const onDesk = staff.some(s => (s.deskShifts ?? []).some(d => d.start <= h && d.end > h));
       if (!onDesk) {
         if (gapStart === null) gapStart = h;
       } else {
-        if (gapStart !== null) {
-          alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(h)}.` });
-          gapStart = null;
-        }
+        closeGap(h);
       }
     }
-    if (gapStart !== null) {
-      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(dayEnd)}.` });
-    }
+    closeGap(deskWindow.end);
   }
 
   // Concurrent desk: one alert per conflict window listing everyone on desk at that time
@@ -357,9 +460,38 @@ export function autoAssignDesks(staff, events) {
   });
 }
 
-/** Build alerts for templates — desk gaps + concurrent desk only (no staffing minimums) */
-export function buildTemplateAlerts(staff) {
+/**
+ * Build alerts for templates — desk gaps + concurrent desk only (no staffing
+ * minimums, since a template isn't a real day).
+ *
+ * `dow` is needed for the gap check because desk hours differ by weekday; pass
+ * it and gaps are reported, omit it and only concurrency is. The gap half was
+ * promised by this function's old comment but never implemented — it matters now
+ * that auto-generated templates carry desk shifts of their own.
+ */
+export function buildTemplateAlerts(staff, dow = null) {
   const alerts = [];
+
+  // Desk coverage gaps, within this weekday's desk hours only.
+  const deskWindow = dow == null ? null : getDeskWindow(dow);
+  const anyoneScheduled = staff.some(s => (s.shifts ?? []).length > 0);
+  if (deskWindow && anyoneScheduled) {
+    let gapStart = null;
+    const closeGap = (end) => {
+      if (gapStart === null) return;
+      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(end)}.` });
+      gapStart = null;
+    };
+    for (let h = deskWindow.start; h < deskWindow.end; h += 0.5) {
+      const onDesk = staff.some(s => (s.deskShifts ?? []).some(d => d.start <= h && d.end > h));
+      if (!onDesk) {
+        if (gapStart === null) gapStart = h;
+      } else {
+        closeGap(h);
+      }
+    }
+    closeGap(deskWindow.end);
+  }
 
   // Concurrent desk
   const withDesks = staff.filter(s => s.deskShifts?.length > 0);

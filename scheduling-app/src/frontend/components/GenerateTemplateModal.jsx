@@ -144,6 +144,8 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                           <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{day}</span>
                           <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>
                             {people.length} staff · {people.reduce((n, p) => n + p.shifts.length, 0)} shifts
+                            {' · '}
+                            {people.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0)} desk
                           </span>
                         </div>
                         {people.length === 0
@@ -151,10 +153,16 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                           : (
                             <div className="flex flex-col gap-0.5">
                               {people.map(p => (
-                                <div key={p.id} className="flex justify-between text-xs">
+                                <div key={p.id} className="flex justify-between text-xs gap-3">
                                   <span style={{ color: 'var(--color-text)' }}>{p.name}</span>
-                                  <span style={{ color: 'var(--color-accent-bright)' }}>
+                                  <span className="text-right" style={{ color: 'var(--color-accent-bright)' }}>
                                     {p.shifts.map(s => `${formatTime(s.start)}–${formatTime(s.end)}`).join(', ')}
+                                    {p.deskShifts?.length > 0 && (
+                                      <span style={{ color: 'var(--color-yellow)' }}>
+                                        {' · desk '}
+                                        {p.deskShifts.map(d => `${formatTime(d.start)}–${formatTime(d.end)}`).join(', ')}
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                               ))}
@@ -171,10 +179,11 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                 <div style={label} className="mb-1.5">Weekly hours per person</div>
                 <div style={card} className="flex flex-col gap-0.5">
                   {result.stats.map(s => (
-                    <div key={s.id} className="flex justify-between text-xs">
+                    <div key={s.id} className="flex justify-between text-xs gap-3">
                       <span style={{ color: s.hours === 0 ? 'var(--color-text-dim)' : 'var(--color-text)' }}>{s.name}</span>
                       <span style={{ color: s.cap != null && s.hours >= s.cap ? 'var(--color-yellow)' : 'var(--color-text-dim)' }}>
                         {s.hours}h{s.cap != null && ` / ${s.cap}h cap`}
+                        {s.desk > 0 && ` · ${s.desk}h desk`}
                       </span>
                     </div>
                   ))}

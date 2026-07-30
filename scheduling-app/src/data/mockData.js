@@ -5,6 +5,25 @@ export const HOURS_END = 20;
 // ── Studio hours ──────────────────────────────────────────────────────────────
 export const studioHours = { open: 8, close: 18 };
 
+// ── Desk coverage hours ───────────────────────────────────────────────────────
+// The front desk only needs manning during these windows — which is narrower
+// than the hours staff are in the building, so shifts outside them need no desk
+// cover at all. Keyed by JS day-of-week (0 = Sunday); null means no desk needed.
+//
+// Friday's 5:45 PM close doesn't land on the 30-minute grid the editor snaps to.
+// Coverage is therefore treated as overlapping rather than contained, so the
+// 5:30–6:00 slot still gets someone: a 15-minute desk shift can't be expressed,
+// and rounding down would leave the desk unmanned for the last 15 minutes.
+export const deskHoursByDay = {
+  0: { start: 13, end: 18 },    // Sunday     1:00–6:00 PM
+  1: { start: 9,  end: 18 },    // Monday     9:00 AM–6:00 PM
+  2: { start: 9,  end: 18 },    // Tuesday
+  3: { start: 9,  end: 18 },    // Wednesday
+  4: { start: 9,  end: 18 },    // Thursday
+  5: { start: 9,  end: 17.75 }, // Friday     9:00 AM–5:45 PM
+  6: null,                      // Saturday — studio closed
+};
+
 // ── Event types ───────────────────────────────────────────────────────────────
 // Single source of truth — this list was previously copy-pasted into four pages
 // and had drifted, so an event could be created with a type the edit dialogs

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
-import { getAvailability } from '../../data/mockAvailability';
+// Availability comes from ScheduleContext (backed by the database), not from a
+// hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
@@ -46,8 +47,14 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
 
 // ── Alerts bar ─────────────────────────────────────────────────────────────────
 
-function AlertsBar({ staff }) {
-  const alerts   = buildTemplateAlerts(staff);
+// Desk hours differ by weekday, so the day being edited has to come through for
+// the desk-gap check to know which window applies.
+const DAY_NAME_TO_DOW = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
+};
+
+function AlertsBar({ staff, day }) {
+  const alerts   = buildTemplateAlerts(staff, DAY_NAME_TO_DOW[day] ?? null);
   const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', blue: 'var(--color-accent-bright)' };
   return (
     <div className="p-3 rounded-xl mb-5 border"
@@ -573,7 +580,7 @@ function TemplateGrid({
 
 export default function WeeklyTemplatesPage() {
   const { templates, selectedId, setSelectedId, triggerNew, addTemplate, updateTemplate, removeTemplate } = useTemplates();
-  const { staff } = useScheduleContext();
+  const { staff, getAvailability } = useScheduleContext();
   const [templateName,  setTemplateName]  = useState('');
   const [templateDesc,  setTemplateDesc]  = useState('');
   const [nameError,     setNameError]     = useState('');
@@ -1324,7 +1331,7 @@ export default function WeeklyTemplatesPage() {
             </div>
 
             {/* Alerts */}
-            <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} />
+            <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} day={currentDay} />
 
             {/* Staff pool */}
             <div className="p-3 rounded-xl border mb-4"

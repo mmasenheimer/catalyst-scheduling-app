@@ -1,6 +1,7 @@
 "use strict";
 const router = require("express").Router();
 const Event = require("../models/Event");
+const Schedule = require("../models/Schedule");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
@@ -98,12 +99,30 @@ router.patch("/:id", requireManager, async (req, res) => {
 });
 
 // DELETE /api/events/:id
-
+//
+// Saved days carry a snapshot copy of that day's events alongside the staff
+// snapshot. Nothing renders from it — the editors always derive events live — but
+// it isn't inert either: the approval flow and event creation both read it and
+// write it straight back to preserve it. So a deleted event's copy would be
+// round-tripped forever, and any future reader of the snapshot (a report, an
+// export) would resurrect an event that no longer exists.
 router.delete("/:id", requireManager, async (req, res) => {
   try {
-    const event = await Event.findByIdAndDelete(req.params.id);
+    const eventId = Number(req.params.id);
+    if (!Number.isInteger(eventId)) {
+      return res.status(400).json({ error: "Invalid event id" });
+    }
+
+    const event = await Event.findByIdAndDelete(eventId);
     if (!event) return res.status(404).json({ error: "Not found" });
-    res.json({ ok: true });
+
+    // Snapshot entries are serialised events, so they carry `id`, not `_id`.
+    const schedules = await Schedule.updateMany(
+      { "events.id": eventId },
+      { $pull: { events: { id: eventId } } },
+    );
+
+    res.json({ ok: true, schedulesCleaned: schedules.modifiedCount });
   } catch (err) {
     sendWriteError(res, err);
   }

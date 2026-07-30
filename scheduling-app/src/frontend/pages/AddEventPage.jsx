@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { formatTime } from '../utils/scheduleUtils';
+import {
+  formatTime,
+  staffForDateFromSaved,
+  stretchShiftsToCoverEvents,
+} from '../utils/scheduleUtils';
+import { schedulesApi } from '../utils/api';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 import { DateInput } from '../components/DateInput';
 import { RangeCalendar } from '../components/RangeCalendar';
@@ -157,6 +162,32 @@ export default function AddEventPage() {
       setSaving(false);
       return;
     }
+    // Assigning someone to an event means scheduling them to work it, so widen
+    // their shifts on each date to cover it. The per-date selections are used
+    // here rather than the flattened list, so somebody picked for Tuesday only
+    // doesn't get Thursday's shift stretched too. Best-effort: the event itself
+    // is already saved, and a failure here leaves a coverage warning for the
+    // manager rather than losing the event.
+    await Promise.all(
+      Object.entries(form.assignedByDate).map(async ([dateStr, ids]) => {
+        if (!ids?.length || !form.days.includes(dateStr)) return;
+        const evt = { start: form.start, end: form.end, assignedStaff: ids };
+        try {
+          const existing = await schedulesApi.getDay(dateStr).catch(() => null);
+          // Saved day if there is one, otherwise the day's template — the same
+          // resolution every other view uses, always merged onto the live roster.
+          const savedByDate = existing?.staff ? { [dateStr]: existing.staff } : {};
+          const base = staffForDateFromSaved(new Date(dateStr + 'T00:00:00'), savedByDate, staff);
+          const next = stretchShiftsToCoverEvents(base, [evt]);
+          if (next === base) return; // already covered — nothing to write
+          await schedulesApi.saveDay(dateStr, {
+            staff: next,
+            events: existing?.events ?? [],
+            finalized: existing?.finalized ?? true,
+          });
+        } catch { /* leave it to the manager's coverage warnings */ }
+      }),
+    );
     setSaving(false);
     setSubmitted(true);
     setTimeout(() => navigate('/'), 1500);

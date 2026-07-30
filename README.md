@@ -208,7 +208,11 @@ Ask a coworker to cover a shift, or propose a swap.
 
 - **Cover** — pick one of your scheduled days; coworkers are separated into those free that day and those already working
 - **Swap** — coworkers grouped by whether their hours overlap yours
-- Optional note; the manager is notified and approves or denies
+- Optional note
+- **Two-stage approval** — the request goes to the coworker you named first, who can **Accept** or
+  **Decline**. Only once they accept does it reach the manager for final **Approve / Deny**. A
+  decline ends the request and the manager never sees it, so nobody is scheduled onto a shift they
+  didn't agree to.
 
 ### Drop Shift
 Request to drop a scheduled shift, with a **two-week minimum notice** rule.
@@ -230,11 +234,15 @@ One feed for both roles, with an unread badge in the sidebar.
 
 **Employees receive**
 - **Schedule changes** — when a published schedule affecting them changes, with specific before/after times
-- Approval or denial of their requests
+- **Cover and swap requests aimed at them** — with **Accept / Decline** buttons on the notification
+- Progress on requests they sent: accepted by the coworker, declined by the coworker, or approved
+  or denied by the manager
 - Confirmation when they're covering a shift or a swap is approved
 
 **Managers receive**
-- New drop, cover, and swap requests — with **Approve / Deny** buttons directly on the notification
+- New **drop-shift** requests — with **Approve / Deny** buttons directly on the notification
+- **Cover and swap requests that the named coworker has already accepted** — these don't reach the
+  manager until then
 - Availability submissions
 
 Notifications can be marked read individually or dismissed in bulk. Employees only receive
@@ -326,7 +334,7 @@ Manager-only routes are marked **M**.
 | GET · POST | `/notifications` | Read (scoped to the caller) / create |
 | PATCH · DELETE | `/notifications/:id` | Mark read / dismiss |
 | GET · POST | `/requests` | Read (scoped to the caller) / submit |
-| PATCH | `/requests/:id` **M** | Approve or deny |
+| PATCH | `/requests/:id` | Coworker accepts/declines a request aimed at them, or **M** approves/denies |
 
 ---
 

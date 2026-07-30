@@ -2,6 +2,9 @@
 const router = require("express").Router();
 const Request = require("../models/Request");
 const { sendWriteError } = require("../utils/respond");
+const {
+  notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined,
+} = require("../utils/notify");
 
 // GET /api/requests
 // The manager needs every request (to approve/deny); an employee only gets the
@@ -38,6 +41,12 @@ router.post("/", async (req, res) => {
     const request = await Request.create({
       type, status, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
     });
+
+    // Announced from here rather than by the client: this notification is
+    // addressed to someone else and carries the requestId that drives the
+    // Accept/Approve buttons, so its wording can't be left to the submitter.
+    await notifyRequestSubmitted(request);
+
     res.status(201).json(request);
   } catch (err) {
     sendWriteError(res, err);
@@ -106,6 +115,16 @@ router.patch("/:id", async (req, res) => {
         error: `This request was already ${existing.status}.`,
         status: existing.status,
       });
+    }
+
+    // The peer leg is announced here for the same reason as submission: the
+    // coworker acting is an employee, and the notification it produces is what
+    // puts the request on the manager's desk with an Approve button. The
+    // manager's own decision still notifies from the client, where it stays
+    // ordered behind the schedule mutation it describes.
+    if (isPeerDecision) {
+      if (status === "pending") await notifyPeerAccepted(request);
+      else await notifyPeerDeclined(request);
     }
 
     res.json(request);

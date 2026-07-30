@@ -1,5 +1,5 @@
 import { HOURS_START, HOURS_END } from "../../data/mockData";
-import { getTarget, formatTime } from "./scheduleUtils";
+import { getTarget, formatTime, getDeskWindow, isDeskRequired } from "./scheduleUtils";
 
 // Half-hour resolution, matching the editor's snapping.
 const SLOT = 0.5;
@@ -20,6 +20,104 @@ const round1 = (n) => Math.round(n * 10) / 10;
 /** Is this person free to work the slot starting at `h` on this weekday? */
 function isAvailable(windows, h) {
   return (windows ?? []).some((w) => w.start <= h && w.end >= h + SLOT);
+}
+
+const worksAt = (person, h) =>
+  person.shifts.some((sh) => sh.start <= h && sh.end >= h + SLOT);
+
+/**
+ * Put exactly one person on the desk for every half-hour the desk needs manning,
+ * drawing only on hours people are actually scheduled.
+ *
+ * The desk window is narrower than the working day — see deskHoursByDay — so
+ * early openers and late closers get no desk duty at all.
+ *
+ * These are the two rules `buildAlerts` enforces on a real day: no gap inside the
+ * desk window, and never two people on desk at once. Both hold by construction
+ * here — each slot is handed to exactly one person, and only ever to someone
+ * whose shift already covers it. Desk/event conflicts, the third rule, can't
+ * arise because generated templates contain no events.
+ *
+ * No single desk block may exceed `maxDeskRun`. That's a hard cap, so blocks are
+ * built as the walk proceeds rather than by merging slots afterwards — merging
+ * would silently fuse two consecutive turns by the same person back into one
+ * over-long block.
+ *
+ * Whoever is on the desk keeps it until the cap or the end of their shift, so
+ * cover reads as a handful of blocks rather than a mosaic of 30-minute handoffs.
+ * At each handover the desk goes to whoever has had the least desk time all week,
+ * so duty rotates instead of landing on whoever opens. If nobody else is on
+ * shift, the same person starts a fresh block rather than the desk going unmanned
+ * — a coverage gap is a real problem, back-to-back turns are just untidy.
+ */
+function assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow) {
+  if (dayStaff.length === 0) return dayStaff;
+
+  const slots = [];
+  for (let h = HOURS_START; h < HOURS_END; h += SLOT) {
+    // Only where the desk is needed *and* somebody is there to man it.
+    if (isDeskRequired(h, dow, SLOT) && dayStaff.some((p) => worksAt(p, h))) {
+      slots.push(h);
+    }
+  }
+  if (slots.length === 0) return dayStaff;
+
+  const blocks = []; // { staffId, start, end }
+  const turnsToday = new Map(); // staffId → desk blocks already given today
+  let cur = null;
+
+  for (const h of slots) {
+    const onShift = dayStaff.filter((p) => worksAt(p, h));
+
+    // The incumbent keeps the desk only while still on shift, still under the
+    // cap, and with no break in the slots (a closed studio hour ends a block).
+    const canContinue =
+      cur != null &&
+      cur.end === h &&
+      cur.end - cur.start + SLOT <= maxDeskRun &&
+      onShift.some((p) => p.id === cur.staffId);
+
+    if (canContinue) {
+      cur.end += SLOT;
+      deskHours.set(cur.staffId, (deskHours.get(cur.staffId) ?? 0) + SLOT);
+      continue;
+    }
+
+    // Handover: prefer anyone but the outgoing person so the desk rotates, and
+    // fall back to them only if they're the sole person on shift.
+    const others = onShift.filter((p) => p.id !== cur?.staffId);
+    const pool = others.length ? others : onShift;
+    // Nobody takes a second turn today while somebody on shift hasn't had a
+    // first — that's the whole point of staffing one person per desk turn. Only
+    // once today is even does weekly desk time decide, so it still evens out
+    // across the week for people who work different numbers of days.
+    pool.sort(
+      (a, b) =>
+        (turnsToday.get(a.id) ?? 0) - (turnsToday.get(b.id) ?? 0) ||
+        (deskHours.get(a.id) ?? 0) - (deskHours.get(b.id) ?? 0) ||
+        a.id - b.id,
+    );
+    const pick = pool[0].id;
+
+    if (cur) blocks.push(cur);
+    cur = { staffId: pick, start: h, end: h + SLOT };
+    turnsToday.set(pick, (turnsToday.get(pick) ?? 0) + 1);
+    deskHours.set(pick, (deskHours.get(pick) ?? 0) + SLOT);
+  }
+  if (cur) blocks.push(cur);
+
+  return dayStaff.map((person) => {
+    const mine = blocks.filter((b) => b.staffId === person.id);
+    if (mine.length === 0) return person;
+    return {
+      ...person,
+      deskShifts: mine.map((b, i) => ({
+        id: `gend-${person.id}-${i}`,
+        start: b.start,
+        end: b.end,
+      })),
+    };
+  });
 }
 
 /**
@@ -45,8 +143,16 @@ function isAvailable(windows, h) {
  *
  * @param staff               live roster (needs id, name, maxHoursPerWeek)
  * @param availabilityByStaff { [staffId]: { [dow]: [{start,end}] } }
+ * Desk cover is layered on afterwards, once each day's shifts are settled — see
+ * assignDeskCoverage. It can only draw on hours people are already scheduled, so
+ * it has to run second.
+ *
  * @param minShiftHours       shifts shorter than this get extended if possible
  * @param maxShiftHours       cap on a single continuous shift
+ * @param assignDesks         also fill the desk rota (one person on at all times)
+ * @param maxDeskRun          hard cap on the length of a single desk shift
+ * @param minStaffPerDay      distinct staff to schedule per day; defaults to one
+ *                            per desk turn, so nobody needs two desk shifts
  * @returns { days, stats, gaps, warnings }
  */
 export function generateWeeklyTemplate({
@@ -56,8 +162,14 @@ export function generateWeeklyTemplate({
   maxShiftHours = 8,
   maxDailyHours = 8,
   padding = 1,
+  assignDesks = true,
+  maxDeskRun = 1,
+  minStaffPerDay = null,
 }) {
   const weeklyHours = new Map(staff.map((s) => [s.id, 0]));
+  // Tracked across the whole week, not per day, so desk duty evens out over the
+  // week rather than repeatedly landing on whoever opens each morning.
+  const deskHours = new Map(staff.map((s) => [s.id, 0]));
   const capOf = (s) =>
     s.maxHoursPerWeek == null ? Infinity : s.maxHoursPerWeek;
 
@@ -186,12 +298,96 @@ export function generateWeeklyTemplate({
     }
   };
 
+  // How many desk turns a day needs: the length of its desk window divided by
+  // the desk-shift cap. A 9-hour desk window at 1-hour turns needs 9 of them —
+  // which is also the headcount that lets everyone have at most one turn.
+  const deskTurnsFor = (ctx) => {
+    const w = getDeskWindow(ctx.dow);
+    return w ? Math.ceil((w.end - w.start) / maxDeskRun) : 0;
+  };
+
+  // Bring a day's distinct headcount up to `target` by giving unused staff a
+  // real shift, over and above the coverage minimum and padding.
+  //
+  // This exists for the desk rota. Desk shifts are capped at maxDeskRun, so an
+  // 11-hour day needs 11 turns; with only 10 people on, somebody has to take two
+  // — that's pigeonhole, not a scheduling flaw. Recruiting up to one body per
+  // turn is what lets the rota give everybody at most one.
+  //
+  // Each recruit gets their longest viable run, so they get a shift worth coming
+  // in for rather than a token half hour. Availability, weekly caps, daily and
+  // shift-length limits are all still hard constraints — if nobody is left who
+  // can take a real shift, the day simply stays short-handed.
+  const recruitDay = (ctx, target) => {
+    const { dow, demand, assignedAt, dayHours } = ctx;
+    if (demand.length === 0) return;
+
+    const workingIds = () =>
+      new Set([...assignedAt.values()].flatMap((set) => [...set]));
+
+    for (let guard = 0; guard < staff.length; guard += 1) {
+      const already = workingIds();
+      if (already.size >= target) return;
+
+      let best = null;
+      for (const s of staff) {
+        if (already.has(s.id)) continue;
+        const windows = availabilityByStaff[s.id]?.[dow];
+        if (!windows?.length) continue;
+
+        for (const { h } of demand) {
+          let run = 0;
+          let hours = weeklyHours.get(s.id);
+          let today = 0;
+          for (let t = h; t < HOURS_END && run * SLOT < maxShiftHours; t += SLOT) {
+            if (getTarget(t, dow) === 0) break;
+            if (!isAvailable(windows, t)) break;
+            if (hours + SLOT > capOf(s)) break;
+            if (today + SLOT > maxDailyHours) break;
+            run += 1;
+            hours += SLOT;
+            today += SLOT;
+          }
+          if (run * SLOT < minShiftHours) continue;
+
+          const cand = { s, start: h, run, load: loadOf(s) };
+          const better =
+            !best ||
+            cand.run > best.run ||
+            (cand.run === best.run &&
+              (cand.load < best.load ||
+                (cand.load === best.load && cand.s.id < best.s.id)));
+          if (better) best = cand;
+        }
+      }
+
+      if (!best) return; // nobody left who could take a real shift
+
+      for (let i = 0; i < best.run; i += 1) {
+        const t = best.start + i * SLOT;
+        const set = assignedAt.get(t) ?? new Set();
+        set.add(best.s.id);
+        assignedAt.set(t, set);
+        weeklyHours.set(best.s.id, weeklyHours.get(best.s.id) + SLOT);
+        dayHours.set(best.s.id, (dayHours.get(best.s.id) ?? 0) + SLOT);
+      }
+    }
+  };
+
   // Every day's hard minimum is satisfied before any day gets padding.
   // Sequencing matters: padding Monday first would spend hours that Friday's
   // minimum still needs, turning an optional cushion into a real coverage gap.
   dayStates.forEach((ctx) => fillDay(ctx, (need) => need, true));
   if (padding > 0) {
     dayStates.forEach((ctx) => fillDay(ctx, (need) => need + padding, false));
+  }
+  // Headcount for desk rotation comes last, for the same reason padding does:
+  // it's the most optional thing here, so it spends hours only after every day's
+  // real coverage is already satisfied.
+  if (assignDesks) {
+    dayStates.forEach((ctx) =>
+      recruitDay(ctx, minStaffPerDay ?? deskTurnsFor(ctx)),
+    );
   }
 
   for (const { name, assignedAt, dayHours, dow } of dayStates) {
@@ -273,14 +469,16 @@ export function generateWeeklyTemplate({
           start: sh.start,
           end: sh.end,
         })),
-        deskShifts: [], // desk time and events are assigned manually
+        deskShifts: [], // filled by assignDeskCoverage once the day is settled
         scheduled: true,
       });
     }
 
     // Earliest start first, matching how the editor orders rows.
     dayStaff.sort((a, b) => a.shifts[0].start - b.shifts[0].start);
-    days[name] = dayStaff;
+    days[name] = assignDesks
+      ? assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow)
+      : dayStaff;
   }
 
   // Per-person summary for the preview.
@@ -289,6 +487,7 @@ export function generateWeeklyTemplate({
       id: s.id,
       name: s.name,
       hours: round1(weeklyHours.get(s.id) ?? 0),
+      desk: round1(deskHours.get(s.id) ?? 0),
       cap: s.maxHoursPerWeek ?? null,
       days: TEMPLATE_DAYS.filter((d) =>
         days[d.name]?.some((p) => p.id === s.id),

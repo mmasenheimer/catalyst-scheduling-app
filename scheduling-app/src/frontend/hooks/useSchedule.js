@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialStaff, initialEvents } from '../../data/mockData';
+import mockAvailability from '../../data/mockAvailability';
 import { autoAssignDesks } from '../utils/scheduleUtils';
-import { staffApi, eventsApi } from '../utils/api';
+import { staffApi, eventsApi, availabilityApi } from '../utils/api';
+import { useLiveRefetch } from './useLiveRefetch';
+import { useAuth } from '../context/AuthContext';
+
+// Returned for anyone with no availability on a given day. A shared constant, not
+// a fresh `[]` per call: the weekly view passes these blocks straight into a
+// shallow-memoized StaffRow, and a new array each render would defeat the memo.
+const NO_AVAILABILITY = Object.freeze([]);
 
 export function useSchedule() {
+  const { user } = useAuth();
   const [staff, setStaff] = useState(initialStaff);
 
   // Load staff from the API on mount; fall back to mock data if the server is unreachable.
@@ -27,6 +36,63 @@ export function useSchedule() {
   // days on every mousemove of an event resize.
   const eventsRef = useRef(events);
   useEffect(() => { eventsRef.current = events; }, [events]);
+
+  // ── Availability ────────────────────────────────────────────────────────────
+  // The single source for "when can this person work", shaped
+  // { [staffId]: { [dayOfWeek]: [{ start, end }] } }.
+  //
+  // This used to be split: the three schedule editors read the hardcoded
+  // src/data/mockAvailability.js while the generator, the manager's availability
+  // page and the employee's own submissions all used the database. They agreed
+  // only until somebody actually changed their availability in the app — after
+  // which the editors drew stale blue bars and flagged perfectly valid shifts as
+  // "outside availability". Everything reads this now; the mock file is only
+  // seed data for the backend's seed:availability script.
+  //
+  // Mock data is the offline fallback, matching how staff and events behave when
+  // the backend is unreachable.
+  const [availability, setAvailability] = useState(mockAvailability);
+
+  const loadAvailability = useCallback(async () => {
+    try {
+      const rows = await availabilityApi.getAll();
+      const byStaff = {};
+      rows.forEach(row => { byStaff[row.staffId] = row.days ?? {}; });
+      // Only swap the object when something actually changed. The identity of
+      // this state is what memoized consumers compare, so replacing it on every
+      // poll would re-render all seven weekly-view days every 45 seconds for
+      // nothing.
+      setAvailability(prev =>
+        JSON.stringify(prev) === JSON.stringify(byStaff) ? prev : byStaff,
+      );
+    } catch {
+      /* not a manager, logged out, or backend down — keep what we have */
+    }
+  }, []);
+
+  // Refetched on focus and a slow poll, so a manager building a schedule picks up
+  // an availability submission without reloading the page.
+  //
+  // Manager-only: reading everyone's availability requires it (the endpoint is
+  // behind requireManager), and only the manager-side schedule editors draw those
+  // blue bars. Without this gate every signed-in employee would poll a 403 every
+  // 45 seconds. Employees see their own availability through their own page,
+  // which fetches just their record.
+  useLiveRefetch(loadAvailability, user?.role === 'manager');
+
+  // Read through a ref so the getter's identity never changes. The weekly view's
+  // DayEditor is React.memo'd with a hand-written comparator; an unstable
+  // callback prop there re-renders all seven days on every mousemove. Components
+  // that need to re-render when availability *arrives* should depend on the
+  // `availability` object itself, which this deliberately doesn't close over.
+  const availabilityRef = useRef(availability);
+  useEffect(() => { availabilityRef.current = availability; }, [availability]);
+
+  const getAvailability = useCallback(
+    (staffId, dayOfWeek) =>
+      availabilityRef.current?.[staffId]?.[dayOfWeek] ?? NO_AVAILABILITY,
+    [],
+  );
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [daySchedules, setDaySchedules] = useState({});
@@ -143,6 +209,12 @@ export function useSchedule() {
   return {
     staff,
     events,
+    // `availability` is the re-render signal (its identity changes when a fetch
+    // lands); `getAvailability` is the stable reader. Memoized consumers need
+    // both — see the comment where they're defined.
+    availability,
+    getAvailability,
+    reloadAvailability: loadAvailability,
     currentDate,
     addEvent,
     updateEvent,

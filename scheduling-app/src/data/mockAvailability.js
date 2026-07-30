@@ -1,7 +1,20 @@
-// Mock weekly availability per staff member.
+// Sample weekly availability per staff member.
 // Keys: staffId → dayOfWeek (0=Sun, 1=Mon … 5=Fri) → [{start, end}]
 // Saturday omitted — library closed.
 // Availability windows are intentionally wider than assigned shifts.
+//
+// ⚠ This is seed data, not a runtime source. Real availability lives in the
+// database (the Availability collection) and reaches the UI through
+// ScheduleContext — see `getAvailability` in hooks/useSchedule.js.
+//
+// The schedule editors used to read this file directly while everything else
+// read the database, so the two silently diverged the moment anybody updated
+// their availability in the app: the editors drew stale blue bars and flagged
+// valid shifts as "outside availability". Don't reintroduce that — if you need
+// availability in a component, take it from ScheduleContext.
+//
+// The only legitimate uses left: `npm run seed:availability`, and as an offline
+// fallback when the backend is unreachable.
 
 function days(mf, sun) {
   return { 1: [mf], 2: [mf], 3: [mf], 4: [mf], 5: [mf], 0: sun ? [sun] : [] };
@@ -53,9 +66,9 @@ const submittedAt = {
   15: '2026-06-21T09:52:00',
 };
 
-export function getAvailability(staffId, dayOfWeek) {
-  return mockAvailability[staffId]?.[dayOfWeek] ?? [];
-}
+// A getAvailability() used to live here. It's deliberately gone: an importable
+// reader on this file is exactly how the editors ended up bypassing the database.
+// Use ScheduleContext's getAvailability instead.
 
 export function getSubmittedAt(staffId) {
   return submittedAt[staffId] ?? null;

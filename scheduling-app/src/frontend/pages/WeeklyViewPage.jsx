@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
-import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
-import { getAvailability } from '../../data/mockAvailability';
+// Availability comes from ScheduleContext (backed by the database), not from a
+// hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 import { RangeCalendar } from '../components/RangeCalendar';
@@ -334,7 +335,11 @@ function SaveAsDayTemplateModal({ date, staff, onSave, onClose }) {
 // the memo; every other prop is sliced per-row so it stays reference-stable unless
 // this row's data actually changed.
 const StaffRow = React.memo(function StaffRow({
-  person, rowIndex, isLast, finalized, dow,
+  person, rowIndex, isLast, finalized,
+  // Resolved by the parent rather than looked up here, so this stays a plain
+  // memoized row and no longer needs `dow` at all. The array is
+  // reference-stable for a given person/day, so shallow memo still holds.
+  availBlocks,
   preview, isHover, activeDragType, draggingBarInfo, activeBar, dayEvents, handlers,
 }) {
   const h = handlers.current;
@@ -378,7 +383,7 @@ const StaffRow = React.memo(function StaffRow({
         {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:'25%',height:'50%',left:pct(hr),width:1,background:'var(--color-border)',opacity:0.2,pointerEvents:'none'}}/>)}
 
         {/* Availability */}
-        {getAvailability(person.id, dow).map((blk,bi) => (
+        {availBlocks.map((blk,bi) => (
           <div key={`av-${bi}`} style={{position:'absolute',top:0,bottom:0,...posStyle(blk.start,blk.end),background:'rgba(96,165,250,0.10)',border:'1px solid rgba(96,165,250,0.22)',borderRadius:4,zIndex:0,pointerEvents:'none'}}/>
         ))}
 
@@ -453,7 +458,10 @@ const StaffRow = React.memo(function StaffRow({
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange, onReloadDay }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange, onReloadDay, getAvailability }, ref) {
+  // NOTE: `availability` is also passed in but deliberately not destructured —
+  // nothing in here reads it. It exists so the memo comparator below can detect
+  // that a fetch landed; React.memo sees every prop whether destructured or not.
   const dow     = date.getDay();
   const dateStr = toDateStr(date);
   const isToday = dateStr === toDateStr(new Date());
@@ -557,16 +565,26 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: false }).catch(() => {});
+      schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: dayEvents, finalized: false }).catch(() => {});
     }, 600);
   }, [orderedStaff, dayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Being assigned to an event means being scheduled to work it, so shifts are
+  // widened to cover assigned events on the way out. Dragging an event onto a
+  // row already does this; enforcing it at every save is what covers the paths
+  // that have no drag — above all repeating events, whose assignedStaff list is
+  // shared by every occurrence and so never gets dropped onto a later day's row.
+  function staffForSave() {
+    return stretchShiftsToCoverEvents(orderedStaff, dayEvents);
+  }
 
   // Commit this day: persist to in-memory schedule state (both key formats the
   // rest of the app reads) and push to the backend as finalized.
   function commitFinalize() {
-    saveDaySchedule(dateStr, orderedStaff);
-    saveDaySchedule(date.toDateString(), orderedStaff);
-    schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: true })
+    const staff = staffForSave();
+    saveDaySchedule(dateStr, staff);
+    saveDaySchedule(date.toDateString(), staff);
+    schedulesApi.saveDay(dateStr, { staff, events: dayEvents, finalized: true })
       .catch(err => console.warn('Schedule save failed — finalized locally only:', err.message));
     // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
     justLoadedRef.current = true;
@@ -576,7 +594,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   async function handleUnfinalize() {
     setFinalized(false);
     try {
-      await schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: dayEvents, finalized: false });
+      await schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: dayEvents, finalized: false });
     } catch (err) {
       console.warn('Schedule save failed — unfinalized locally only:', err.message);
     }
@@ -1141,13 +1159,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
             rowIndex={i}
             isLast={i === orderedStaff.length - 1}
             finalized={finalized}
-            dow={dow}
             preview={previewInfo?.staffIndex === i ? previewInfo : null}
             isHover={hoverRow === i}
             activeDragType={activeDragType}
             draggingBarInfo={draggingBarInfo}
             activeBar={activeBar}
             dayEvents={dayEvents}
+            availBlocks={getAvailability(person.id, dow)}
             handlers={handlersRef}
           />
         ))}
@@ -1211,13 +1229,18 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.addTemplate === next.addTemplate &&
          prev.onFinalizedChange === next.onFinalizedChange &&
          prev.onLoadingChange === next.onLoadingChange &&
-         prev.onReloadDay === next.onReloadDay;
+         prev.onReloadDay === next.onReloadDay &&
+         // getAvailability is reference-stable, so this is effectively free;
+         // `availability` is the one that actually changes, and it has to be
+         // compared or a landed fetch would never redraw the blue bars.
+         prev.getAvailability === next.getAvailability &&
+         prev.availability === next.availability;
 });
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyViewPage() {
-  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading } = useScheduleContext();
+  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
   const { templates, addTemplate } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);
@@ -1423,6 +1446,8 @@ export default function WeeklyViewPage() {
             date={date}
             allStaff={staff}
             dayEvents={dayEvents}
+            availability={availability}
+            getAvailability={getAvailability}
             getDaySchedule={getDaySchedule}
             saveDaySchedule={saveDaySchedule}
             assignStaffToEvent={assignStaffToEvent}

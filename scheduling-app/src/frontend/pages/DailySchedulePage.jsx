@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, studioHours, EVENT_TYPES } from '../../data/mockData';
-import { getAvailability } from '../../data/mockAvailability';
+// Availability comes from ScheduleContext (backed by the database), not from a
+// hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { useTemplates } from '../context/TemplatesContext';
 import { schedulesApi } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
@@ -718,6 +719,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
 // ── Apply template modal (replaced by ApplyTemplateCalendarModal) ──────────────
 
 function ApplyTemplateModal({ currentDate, allStaff, templates, onApply, onClose }) {
+  const { getAvailability } = useScheduleContext();
   const todayDayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
   const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
   const dailyTpls  = templates.filter(t => t.type === 'day' && t.day === todayDayName);
@@ -1068,6 +1070,9 @@ function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
 
 export default function DailySchedulePage() {
   const schedule = useScheduleContext();
+  // Stable reader; `schedule.availability` is what changes identity when a fetch
+  // lands, and it's already part of `schedule` so this page re-renders with it.
+  const { getAvailability } = schedule;
   const { templates, addTemplate } = useTemplates();
   const navigate = useNavigate();
 
@@ -1148,7 +1153,11 @@ export default function DailySchedulePage() {
         // reflected correctly, respecting the finalized flag (older docs saved before
         // this field existed default to finalized). Events are never restored from the
         // snapshot — they're always derived live (see todayEvents).
-        setOrderedStaff(mergeStaffOverrides(schedule.staff, saved.staff).map(normalizeStaff));
+        // Sorted on load, the same way the weekly editor does it. A saved array
+        // keeps whatever order it was written in, and approving a drop/cover
+        // clears someone's shifts without reordering — so without this they'd
+        // stay stranded mid-list instead of sinking to the unscheduled group.
+        setOrderedStaff(sortByShift(mergeStaffOverrides(schedule.staff, saved.staff).map(normalizeStaff)));
         setFinalized(saved.finalized ?? true);
         justLoadedRef.current = true;
       })
@@ -1157,10 +1166,10 @@ export default function DailySchedulePage() {
         // A never-touched day is the standard template, so it starts finalized.
         const inMemory = schedule.getDaySchedule(schedule.currentDate.toDateString());
         if (inMemory) {
-          setOrderedStaff(mergeStaffOverrides(schedule.staff, inMemory).map(normalizeStaff));
+          setOrderedStaff(sortByShift(mergeStaffOverrides(schedule.staff, inMemory).map(normalizeStaff)));
         } else {
           const ids = getScheduledIds(schedule.currentDate);
-          setOrderedStaff(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) })));
+          setOrderedStaff(sortByShift(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }))));
         }
         setFinalized(true);
         justLoadedRef.current = true;
@@ -1184,17 +1193,26 @@ export default function DailySchedulePage() {
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       const dateStr = toDateStr(schedule.currentDate);
-      schedulesApi.saveDay(dateStr, { staff: orderedStaff, events: todayEvents, finalized: false }).catch(() => {});
+      schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: todayEvents, finalized: false }).catch(() => {});
     }, 600);
   }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Being assigned to an event means being scheduled to work it, so shifts are
+  // widened to cover assigned events on the way out. Dragging an event onto a
+  // row already does this; enforcing it at every save is what covers the paths
+  // that have no drag — above all repeating events, whose assignedStaff list is
+  // shared by every occurrence and so never gets dropped onto a later day's row.
+  function staffForSave() {
+    return stretchShiftsToCoverEvents(orderedStaff, todayEvents);
+  }
+
   function handlePrevDay() {
-    schedule.saveDaySchedule(schedule.currentDate.toDateString(), orderedStaff);
+    schedule.saveDaySchedule(schedule.currentDate.toDateString(), staffForSave());
     schedule.goToPrevDay();
   }
 
   function handleNextDay() {
-    schedule.saveDaySchedule(schedule.currentDate.toDateString(), orderedStaff);
+    schedule.saveDaySchedule(schedule.currentDate.toDateString(), staffForSave());
     schedule.goToNextDay();
   }
 
@@ -1807,7 +1825,7 @@ export default function DailySchedulePage() {
   async function doFinalize() {
     const date = toDateStr(schedule.currentDate);
     try {
-      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: true });
+      await schedulesApi.saveDay(date, { staff: staffForSave(), events: todayEvents, finalized: true });
     } catch (err) {
       console.warn('Schedule save failed — finalized locally only:', err.message);
     }
@@ -1820,7 +1838,7 @@ export default function DailySchedulePage() {
     setFinalized(false);
     const date = toDateStr(schedule.currentDate);
     try {
-      await schedulesApi.saveDay(date, { staff: orderedStaff, events: todayEvents, finalized: false });
+      await schedulesApi.saveDay(date, { staff: staffForSave(), events: todayEvents, finalized: false });
     } catch (err) {
       console.warn('Schedule save failed — unfinalized locally only:', err.message);
     }

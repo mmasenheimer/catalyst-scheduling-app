@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef } from 'react'
 import { useScheduleContext } from './ScheduleContext';
 import { useNotifications } from './NotificationsContext';
 import { useAuth } from './AuthContext';
-import { getStaffForDate } from '../utils/scheduleUtils';
+import { getStaffForDate, getEventsForDate, coveredBy, notCoveredBy, sortByShift } from '../utils/scheduleUtils';
 import { requestsApi, schedulesApi } from '../utils/api';
 import { useLiveRefetch } from '../hooks/useLiveRefetch';
 
@@ -16,7 +16,7 @@ const RequestsContext = createContext(null);
 const TYPE_LABEL = { time_off: 'drop shift', cover: 'cover', swap: 'swap' };
 
 export function RequestsProvider({ children }) {
-  const { staff, getDaySchedule, saveDaySchedule } = useScheduleContext();
+  const { staff, events, getDaySchedule, saveDaySchedule, unassignStaffFromEvent } = useScheduleContext();
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
@@ -36,29 +36,15 @@ export function RequestsProvider({ children }) {
   // A request that names a coworker goes to that coworker first — they have to
   // accept before the manager ever sees it. A drop-shift request has nobody to
   // ask, so it goes straight to the manager as before.
+  //
+  // The notification is raised by the server (see backend utils/notify.js): it's
+  // addressed to somebody else and carries the requestId that puts Accept and
+  // Approve buttons on their card, so the submitter doesn't get to write it.
   const submitRequest = useCallback(async (req) => {
     const created = await requestsApi.create(req);
     setRequests(prev => [created, ...prev]);
-
-    const notif = req.type === 'time_off'
-      ? {
-          type: 'coverage',
-          title: 'Drop Shift Request',
-          message: `${req.staffName} requested to drop their ${req.dayLabel} shift.${req.note ? ` "${req.note}"` : ''}`,
-          recipients: 'manager',
-        }
-      : {
-          type: 'shift_change',
-          title: req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
-          message: req.type === 'cover'
-            ? `${req.staffName} asked you to cover their ${req.dayLabel} shift.${req.note ? ` "${req.note}"` : ''} Accept to send it to the manager for approval.`
-            : `${req.staffName} proposed swapping shifts with you on ${req.dayLabel}.${req.note ? ` "${req.note}"` : ''} Accept to send it to the manager for approval.`,
-          recipients: [req.targetStaffId],
-        };
-
-    addNotification({ ...notif, requestId: created.id, from: req.staffName }).catch(() => {});
     return created.id;
-  }, [addNotification]);
+  }, []);
 
   // Returns a promise that resolves once the change is persisted to the
   // backend, so callers can await it and detect a persistence failure. The
@@ -66,7 +52,11 @@ export function RequestsProvider({ children }) {
   const applyScheduleChange = useCallback((dateStr, mutate) => {
     const date = new Date(dateStr + 'T00:00:00');
     const current = getStaffForDate(date, getDaySchedule, staff);
-    const next = mutate(current);
+    // Re-sorted after the mutation, matching what the editors write: earliest
+    // shift first, anyone left unscheduled at the bottom. Approving a drop or a
+    // cover empties somebody's shifts, and without this they'd keep their old
+    // position in the saved snapshot instead of joining the unscheduled group.
+    const next = sortByShift(mutate(current));
     // Update the in-memory cache under both key formats readers check.
     saveDaySchedule(dateStr, next);
     saveDaySchedule(date.toDateString(), next);
@@ -87,6 +77,20 @@ export function RequestsProvider({ children }) {
       ));
   }, [staff, getDaySchedule, saveDaySchedule]);
 
+  // Approving a request rewrites somebody's shifts for the day, but their event
+  // assignments live on the Event documents and don't move with them. Without
+  // this, dropping or handing off a shift left the person still assigned to that
+  // day's events — showing on their schedule with no shift to work it. This is
+  // the same cleanup the editor does when a manager deletes a shift by hand.
+  const releaseOrphanedEvents = useCallback((dateStr, staffId, remainingShifts) => {
+    if (staffId == null) return;
+    const date = new Date(dateStr + 'T00:00:00');
+    const assigned = getEventsForDate(date, events)
+      .filter(evt => (evt.assignedStaff ?? []).includes(staffId));
+    notCoveredBy(remainingShifts, assigned)
+      .forEach(evt => unassignStaffFromEvent(evt.id, staffId));
+  }, [events, unassignStaffFromEvent]);
+
   // Ids currently being approved/denied — guards against a double-click or two
   // managers acting at once from both running the (non-idempotent) approval.
   const processingRef = useRef(new Set());
@@ -95,6 +99,10 @@ export function RequestsProvider({ children }) {
   // The coworker a cover/swap request names accepts or declines it before the
   // manager sees it. Neither of these touches the schedule — accepting only
   // moves the request onto the manager's desk.
+  //
+  // Both notify from the server (backend utils/notify.js). Accepting is what puts
+  // the request in front of the manager with an Approve button, so an employee
+  // must not be the one writing that message.
 
   const acceptPeerRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
@@ -105,31 +113,10 @@ export function RequestsProvider({ children }) {
     try {
       await requestsApi.update(id, { status: 'pending' });
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'pending' } : r));
-
-      // Now it's the manager's call — this is the notification they act on.
-      addNotification({
-        requestId: id,
-        type: 'shift_change',
-        title: req.type === 'cover' ? 'Cover Request' : 'Swap Proposal',
-        message: req.type === 'cover'
-          ? `${req.targetName} accepted ${req.staffName}'s request to cover their ${req.dayLabel} shift. Approve to apply it to the schedule.`
-          : `${req.targetName} accepted ${req.staffName}'s shift swap for ${req.dayLabel}. Approve to apply it to the schedule.`,
-        from: req.targetName,
-        recipients: 'manager',
-      }).catch(() => {});
-
-      addNotification({
-        requestId: id,
-        type: 'shift_change',
-        title: 'Request Accepted',
-        message: `${req.targetName} accepted your ${TYPE_LABEL[req.type]} request for ${req.dayLabel}. It's now waiting on manager approval.`,
-        from: req.targetName,
-        recipients: [req.staffId],
-      }).catch(() => {});
     } finally {
       processingRef.current.delete(id);
     }
-  }, [requests, addNotification]);
+  }, [requests]);
 
   const declinePeerRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
@@ -138,22 +125,13 @@ export function RequestsProvider({ children }) {
     processingRef.current.add(id);
 
     try {
+      // Declining ends the request — the manager is never asked.
       await requestsApi.update(id, { status: 'declined' });
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'declined' } : r));
-
-      // Declining ends the request — the manager is never asked.
-      addNotification({
-        requestId: id,
-        type: 'shift_change',
-        title: 'Request Declined',
-        message: `${req.targetName} declined your ${TYPE_LABEL[req.type]} request for ${req.dayLabel}.`,
-        from: req.targetName,
-        recipients: [req.staffId],
-      }).catch(() => {});
     } finally {
       processingRef.current.delete(id);
     }
-  }, [requests, addNotification]);
+  }, [requests]);
 
   const approveRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
@@ -174,6 +152,8 @@ export function RequestsProvider({ children }) {
         await applyScheduleChange(req.date, list =>
           list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [] } : s)
         );
+        // No shifts left, so nothing that day can still be covered.
+        releaseOrphanedEvents(req.date, req.staffId, []);
       } else if (req.type === 'cover') {
         await applyScheduleChange(req.date, list => {
           const requesterShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
@@ -185,16 +165,39 @@ export function RequestsProvider({ children }) {
             return s;
           });
         });
+        // The requester is off the day entirely. The person covering is not
+        // auto-assigned to those events — taking a shift isn't agreeing to run
+        // someone's event — so the event shows short and the manager is alerted.
+        releaseOrphanedEvents(req.date, req.staffId, []);
       } else if (req.type === 'swap') {
+        // Captured from inside the mutation so the release step below can check
+        // each person's assignments against the shifts they ended up with.
+        let requesterEndsWith = [];
+        let targetEndsWith = [];
         await applyScheduleChange(req.date, list => {
           const aShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
           const bShifts = list.find(s => s.id === req.targetStaffId)?.shifts ?? [];
+          requesterEndsWith = bShifts;
+          targetEndsWith = aShifts;
+          // Only the shifts trade hands. Desk duty doesn't transfer — picking up
+          // someone's shift isn't agreeing to their desk slot — but desk time
+          // that no longer sits on a shift is dropped rather than left orphaned
+          // on a row the person isn't working. The manager then sees a desk
+          // coverage gap and reassigns deliberately. Same test the editor uses
+          // when a shift is deleted by hand.
           return list.map(s => {
-            if (s.id === req.staffId) return { ...s, shifts: bShifts };
-            if (s.id === req.targetStaffId) return { ...s, shifts: aShifts };
+            if (s.id === req.staffId) {
+              return { ...s, shifts: bShifts, deskShifts: coveredBy(bShifts, s.deskShifts) };
+            }
+            if (s.id === req.targetStaffId) {
+              return { ...s, shifts: aShifts, deskShifts: coveredBy(aShifts, s.deskShifts) };
+            }
             return s;
           });
         });
+        // A swap can leave either side outside an event they were assigned to.
+        releaseOrphanedEvents(req.date, req.staffId, requesterEndsWith);
+        releaseOrphanedEvents(req.date, req.targetStaffId, targetEndsWith);
       }
 
       // 3. Notify affected staff — best-effort; a failed notification must not
@@ -223,7 +226,7 @@ export function RequestsProvider({ children }) {
       // instead of the approval silently looking like it succeeded.
       processingRef.current.delete(id);
     }
-  }, [requests, applyScheduleChange, addNotification]);
+  }, [requests, applyScheduleChange, releaseOrphanedEvents, addNotification]);
 
   const denyRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
