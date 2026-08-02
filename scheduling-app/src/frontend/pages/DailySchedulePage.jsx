@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -1084,7 +1084,10 @@ export default function DailySchedulePage() {
   // that have no drag — above all repeating events, whose assignedStaff list is
   // shared by every occurrence and so never gets dropped onto a later day's row.
   function staffForSave() {
-    return stretchShiftsToCoverEvents(orderedStaff, todayEvents);
+    // Merge after stretching: widening a shift to cover an event can leave it
+    // butted against the next one, which is then the same continuous stretch
+    // described twice.
+    return mergeStaffShifts(stretchShiftsToCoverEvents(orderedStaff, todayEvents));
   }
 
   function handlePrevDay() {

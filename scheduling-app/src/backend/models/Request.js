@@ -44,6 +44,20 @@ const requestSchema = new Schema(
     // case the check is skipped rather than failing them all.
     requesterShifts: { type: [Schema.Types.Mixed], default: undefined },
     targetShifts: { type: [Schema.Types.Mixed], default: undefined },
+    // Which single shift is actually changing hands, as { start, end }.
+    //
+    // A day can hold more than one shift, and a cover or swap concerns exactly
+    // one of them — without this, approving moved the person's entire day.
+    // Identified by its hours rather than its id because shift ids are minted
+    // fresh on every drag, by the event-stretch pass, and by the cover approval
+    // itself, so an id says nothing a day later. The hours are what was agreed.
+    //
+    // Only set on 'cover' and 'swap'. A drop request gives up the whole day, so
+    // it keeps using requesterShifts alone. Requests written before this existed
+    // have neither, and approval falls back to moving everything — which is what
+    // they meant at the time.
+    requesterShift: { type: Schema.Types.Mixed, default: undefined },
+    targetShift: { type: Schema.Types.Mixed, default: undefined },
     note: { type: String, default: "" },
     createdAt: { type: Date, default: Date.now, index: true }, // sorted by on every list fetch
   },

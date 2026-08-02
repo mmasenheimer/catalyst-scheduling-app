@@ -8,11 +8,23 @@ const {
   formatDayLabel, diffStaffShifts, describeChange, messageFromDetails,
 } = require("../utils/scheduleDiff");
 
-const NOTIFY_TITLE = "Schedule Updated";
 // Publishing a whole week ("Finalize All") sends seven separate requests in
 // quick succession. Rather than seven notifications per person, changes landing
 // inside this window fold into the person's existing unread notification.
 const MERGE_WINDOW_MS = 5 * 60 * 1000;
+
+// Losing a shift isn't the same news as having one moved, so the two are kept
+// apart. The notification's chip is driven by its `type`, and a single card can
+// only carry one label — merging a removal into a "Shift Change" card would file
+// a cancelled shift under a heading that doesn't describe it.
+//
+// Scoped by title as well as type, because the cover/swap approval flow also
+// uses 'shift_change' and its notifications must not absorb these lines.
+const BUCKETS = {
+  removed: { type: "shift_removed", title: "Shift Removed" },
+  other:   { type: "shift_change",  title: "Schedule Updated" },
+};
+const bucketFor = kind => (kind === "removed" ? BUCKETS.removed : BUCKETS.other);
 
 async function notifyScheduleChanges(date, beforeStaff, afterStaff) {
   const changes = diffStaffShifts(beforeStaff, afterStaff);
@@ -20,15 +32,37 @@ async function notifyScheduleChanges(date, beforeStaff, afterStaff) {
 
   const dayLabel = formatDayLabel(date);
   const since = new Date(Date.now() - MERGE_WINDOW_MS);
+  const isThisDay = line => line.startsWith(`${dayLabel}:`);
 
   for (const change of changes) {
     const detail = describeChange(change, dayLabel);
+    const bucket = bucketFor(change.kind);
+    const other = bucket === BUCKETS.removed ? BUCKETS.other : BUCKETS.removed;
 
-    // Scoped by title as well as type: the cover/swap approval flow also uses
-    // 'shift_change', and its notifications must not absorb these lines.
+    // A shift moved and then removed inside the same window would otherwise leave
+    // both statements standing in different cards, which contradict each other.
+    // The newer one wins, so strip this day from the bucket it isn't going in.
+    const stale = await Notification.findOne({
+      type: other.type,
+      title: other.title,
+      recipients: change.staffId,
+      read: false,
+      createdAt: { $gte: since },
+    }).sort({ createdAt: -1 });
+    if (stale) {
+      const kept = (stale.details ?? []).filter(d => !isThisDay(d));
+      if (kept.length === 0) {
+        await stale.deleteOne();
+      } else if (kept.length !== (stale.details ?? []).length) {
+        stale.details = kept;
+        stale.message = messageFromDetails(kept);
+        await stale.save();
+      }
+    }
+
     const existing = await Notification.findOne({
-      type: "shift_change",
-      title: NOTIFY_TITLE,
+      type: bucket.type,
+      title: bucket.title,
       recipients: change.staffId,
       read: false,
       createdAt: { $gte: since },
@@ -37,16 +71,15 @@ async function notifyScheduleChanges(date, beforeStaff, afterStaff) {
     if (existing) {
       // Replacing an earlier line for the same day keeps repeated edits to one
       // day from stacking up duplicates.
-      const kept = (existing.details ?? []).filter(d => !d.startsWith(`${dayLabel}:`));
-      const details = [...kept, detail];
+      const details = [...(existing.details ?? []).filter(d => !isThisDay(d)), detail];
       existing.details = details;
       existing.message = messageFromDetails(details);
       existing.createdAt = new Date();
       await existing.save();
     } else {
       await Notification.create({
-        type: "shift_change",
-        title: NOTIFY_TITLE,
+        type: bucket.type,
+        title: bucket.title,
         message: messageFromDetails([detail]),
         details: [detail],
         from: "Manager",
@@ -119,7 +152,19 @@ router.put("/:date", requireManager, async (req, res) => {
       $inc: { version: 1 },
     };
     // Publishing sets the new baseline that future changes are measured against.
-    if (isPublishing) update.$set.lastPublishedStaff = staff;
+    //
+    // Not when the caller suppressed notifications, though. `suppressNotify` means
+    // "don't announce this change" — it does not mean "consider it announced".
+    // Advancing the baseline anyway made the change permanently invisible: an
+    // approved cover request removes the requester's shift with suppressNotify
+    // set (the approval sends its own message instead), and that write used to
+    // record them as having no shift in lastPublishedStaff. Every later Finalize
+    // then compared empty against empty, found nothing, and stayed silent — so a
+    // subsequent manual deletion was never reported to anyone.
+    //
+    // Leaving the baseline alone keeps the change pending until a save that
+    // genuinely publishes it, which is the one that should carry the news.
+    if (isPublishing && !suppressNotify) update.$set.lastPublishedStaff = staff;
 
     const checkVersion = Number.isInteger(expectedVersion);
     const filter = { date };

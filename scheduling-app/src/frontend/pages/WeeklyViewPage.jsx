@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -607,7 +607,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // that have no drag — above all repeating events, whose assignedStaff list is
   // shared by every occurrence and so never gets dropped onto a later day's row.
   function staffForSave() {
-    return stretchShiftsToCoverEvents(orderedStaff, dayEvents);
+    // Merge after stretching — see the matching note in DailySchedulePage.
+    return mergeStaffShifts(stretchShiftsToCoverEvents(orderedStaff, dayEvents));
   }
 
   // Commit this day: persist to in-memory schedule state (both key formats the
@@ -1453,28 +1454,35 @@ export default function WeeklyViewPage() {
 
   return (
     <div style={{ fontFamily:'inherit' }}>
-      {/* Page header */}
-      <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
-        <h2 style={{ position:'absolute', left:0, fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0 }}>
+      {/* Page header.
+          Everything sits in normal flow and is allowed to wrap. The title and the
+          button group used to be absolutely positioned against a centred week
+          nav, which looks right on a wide screen but takes both out of flow — so
+          at narrow widths nothing could push anything else aside and the buttons
+          simply printed over the title and arrows.
+          The two side regions share flex:1, which keeps the nav optically centred
+          when there's room without needing absolute positioning to do it. */}
+      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:10, marginBottom:14 }}>
+        <h2 style={{ flex:'1 1 auto', fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
           Weekly View
         </h2>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
           <button onClick={prevWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={16} /></button>
           <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text)', minWidth:190, textAlign:'center' }}>{weekLabel}</span>
           <button onClick={nextWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={16} /></button>
         </div>
-        <div style={{ position:'absolute', right:0, display:'flex', gap:8 }}>
-          <button onClick={()=>setApplyTplOpen(true)} style={{ padding:'6px 14px', borderRadius:8, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, fontWeight:600, cursor:'pointer' }}
+        <div style={{ flex:'1 1 auto', display:'flex', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
+          <button onClick={()=>setApplyTplOpen(true)} style={{ padding:'6px 14px', borderRadius:8, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
             onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--color-accent)';e.currentTarget.style.color='var(--color-accent)';}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--color-border)';e.currentTarget.style.color='var(--color-text)';}}>
             Apply Template
           </button>
-          <button onClick={()=>{setTplName('');setTplDesc('');setNameError('');setSaveModal(true);}} style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'var(--color-accent)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}
+          <button onClick={()=>{setTplName('');setTplDesc('');setNameError('');setSaveModal(true);}} style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'var(--color-accent)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
             onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
             Save as Weekly Template
           </button>
           <button onClick={handleFinalizeAll}
-            style={{ padding:'6px 14px', borderRadius:8, border:'none', fontSize:13, fontWeight:600, cursor:'pointer', ...(weekFinalized ? { background:'#1a2a1a', color:'#6ab888' } : { background:'var(--color-green)', color:'white' }) }}
+            style={{ padding:'6px 14px', borderRadius:8, border:'none', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', ...(weekFinalized ? { background:'#1a2a1a', color:'#6ab888' } : { background:'var(--color-green)', color:'white' }) }}
             onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
             {weekFinalized ? '✓ All Finalized' : 'Finalize All'}
           </button>

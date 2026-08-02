@@ -3,7 +3,7 @@ import { useScheduleContext } from './ScheduleContext';
 import { useNotifications } from './NotificationsContext';
 import { useAuth } from './AuthContext';
 import {
-  getStaffForDate, getEventsForDate, mergeStaffOverrides,
+  getStaffForDate, getEventsForDate, mergeStaffOverrides, mergeStaffShifts,
   coveredBy, notCoveredBy, sortByShift, formatTime,
 } from '../utils/scheduleUtils';
 import { requestsApi, schedulesApi } from '../utils/api';
@@ -32,17 +32,41 @@ const describeHours = list =>
     ? list.map(s => `${formatTime(s.start)}–${formatTime(s.end)}`).join(', ')
     : 'no shift';
 
+/** Is this exact shift (by hours) still among the person's shifts? */
+const hasShift = (shifts, shift) =>
+  !!shift && (shifts ?? []).some(s => Number(s.start) === Number(shift.start)
+    && Number(s.end) === Number(shift.end));
+
+/** Everything except the named shift — what the person keeps after giving it up. */
+const withoutShift = (shifts, shift) =>
+  (shifts ?? []).filter(s => !(Number(s.start) === Number(shift.start)
+    && Number(s.end) === Number(shift.end)));
+
+const describeShift = shift =>
+  shift ? `${formatTime(shift.start)}–${formatTime(shift.end)}` : 'their shift';
+
 /**
  * Throws if the day no longer matches what the request was agreed on.
  *
- * Requests carry a snapshot of the hours involved (see the Request model). Older
- * requests predate it and carry nothing, so they're allowed through rather than
- * being made permanently un-approvable.
+ * Two generations of request are handled. A cover or swap now names the single
+ * shift changing hands, so the check is narrow: is that shift still there? A
+ * manager moving somebody's *other* shift that day is irrelevant to it. Drop
+ * requests, and anything written before shifts were named, carry a snapshot of
+ * the whole day instead, and are checked against that. Requests carrying neither
+ * predate both and are let through rather than made permanently un-approvable.
  */
 function assertStillMatchesAgreement(req, currentStaff) {
   const shiftsOf = id => currentStaff.find(p => p.id === id)?.shifts ?? [];
+  const gone = (who, shift, current) => new Error(
+    `${who}'s ${describeShift(shift)} shift on ${req.dayLabel} is no longer on the schedule `
+    + `(they now have ${describeHours(current)}). Deny it and ask them to send a new one.`,
+  );
 
-  if (req.requesterShifts && !sameHours(req.requesterShifts, shiftsOf(req.staffId))) {
+  if (req.requesterShift) {
+    if (!hasShift(shiftsOf(req.staffId), req.requesterShift)) {
+      throw gone(req.staffName, req.requesterShift, shiftsOf(req.staffId));
+    }
+  } else if (req.requesterShifts && !sameHours(req.requesterShifts, shiftsOf(req.staffId))) {
     throw new Error(
       `${req.staffName}'s ${req.dayLabel} shift has changed since this was requested `
       + `(now ${describeHours(shiftsOf(req.staffId))}, was ${describeHours(req.requesterShifts)}). `
@@ -50,8 +74,13 @@ function assertStillMatchesAgreement(req, currentStaff) {
     );
   }
 
-  if (req.targetStaffId != null && req.targetShifts
-      && !sameHours(req.targetShifts, shiftsOf(req.targetStaffId))) {
+  if (req.targetStaffId == null) return;
+
+  if (req.targetShift) {
+    if (!hasShift(shiftsOf(req.targetStaffId), req.targetShift)) {
+      throw gone(req.targetName, req.targetShift, shiftsOf(req.targetStaffId));
+    }
+  } else if (req.targetShifts && !sameHours(req.targetShifts, shiftsOf(req.targetStaffId))) {
     throw new Error(
       `${req.targetName}'s ${req.dayLabel} shift has changed since this was agreed `
       + `(now ${describeHours(shiftsOf(req.targetStaffId))}, was ${describeHours(req.targetShifts)}). `
@@ -122,7 +151,10 @@ export function RequestsProvider({ children }) {
     // shift first, anyone left unscheduled at the bottom. Approving a drop or a
     // cover empties somebody's shifts, and without this they'd keep their old
     // position in the saved snapshot instead of joining the unscheduled group.
-    const next = sortByShift(mutate(current));
+    // Merged as well as sorted: approving a cover appends the requester's shifts
+    // to whoever picked it up, which routinely butts them against a shift that
+    // person already had — 9–1 plus a handed-over 1–5 is one 9–5 stretch, not two.
+    const next = sortByShift(mergeStaffShifts(mutate(current)));
 
     // Update the in-memory cache under both key formats readers check.
     saveDaySchedule(dateStr, next);
@@ -252,30 +284,54 @@ export function RequestsProvider({ children }) {
         // No shifts left, so nothing that day can still be covered.
         releaseOrphanedEvents(req.date, req.staffId, []);
       } else if (req.type === 'cover') {
+        // Only the shift that was actually asked about moves. Requests written
+        // before shifts were named don't say which, and meant the whole day.
+        let requesterKeeps = [];
         await applyScheduleChange(req.date, list => {
-          const requesterShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
+          const mine = list.find(s => s.id === req.staffId)?.shifts ?? [];
+          const handedOver = req.requesterShift ? [req.requesterShift] : mine;
+          requesterKeeps = req.requesterShift ? withoutShift(mine, req.requesterShift) : [];
+
           return list.map(s => {
-            if (s.id === req.staffId) return { ...s, shifts: [], deskShifts: [] };
+            if (s.id === req.staffId) {
+              // Desk time sitting on a shift they still have is theirs to keep;
+              // desk time on the shift they gave away has nothing left under it.
+              return { ...s, shifts: requesterKeeps, deskShifts: coveredBy(requesterKeeps, s.deskShifts) };
+            }
             if (s.id === req.targetStaffId) {
-              return { ...s, shifts: [...s.shifts, ...requesterShifts.map(sh => ({ ...sh, id: `s${Date.now()}-${sh.id}` }))] };
+              return {
+                ...s,
+                shifts: [...s.shifts, ...handedOver.map((sh, i) => ({
+                  ...sh, id: `s${Date.now()}-${i}`,
+                }))],
+              };
             }
             return s;
           });
         });
-        // The requester is off the day entirely. The person covering is not
+        // Checked against whatever they kept. The person covering is not
         // auto-assigned to those events — taking a shift isn't agreeing to run
         // someone's event — so the event shows short and the manager is alerted.
-        releaseOrphanedEvents(req.date, req.staffId, []);
+        releaseOrphanedEvents(req.date, req.staffId, requesterKeeps);
       } else if (req.type === 'swap') {
         // Captured from inside the mutation so the release step below can check
         // each person's assignments against the shifts they ended up with.
         let requesterEndsWith = [];
         let targetEndsWith = [];
         await applyScheduleChange(req.date, list => {
-          const aShifts = list.find(s => s.id === req.staffId)?.shifts ?? [];
-          const bShifts = list.find(s => s.id === req.targetStaffId)?.shifts ?? [];
-          requesterEndsWith = bShifts;
-          targetEndsWith = aShifts;
+          const mine = list.find(s => s.id === req.staffId)?.shifts ?? [];
+          const theirs = list.find(s => s.id === req.targetStaffId)?.shifts ?? [];
+
+          // One shift each when the request names them; otherwise the legacy
+          // whole-day exchange, which is what those older requests proposed.
+          const named = req.requesterShift && req.targetShift;
+          requesterEndsWith = named
+            ? [...withoutShift(mine, req.requesterShift), { ...req.targetShift, id: `s${Date.now()}-a` }]
+            : theirs;
+          targetEndsWith = named
+            ? [...withoutShift(theirs, req.targetShift), { ...req.requesterShift, id: `s${Date.now()}-b` }]
+            : mine;
+
           // Only the shifts trade hands. Desk duty doesn't transfer — picking up
           // someone's shift isn't agreeing to their desk slot — but desk time
           // that no longer sits on a shift is dropped rather than left orphaned
@@ -284,10 +340,10 @@ export function RequestsProvider({ children }) {
           // when a shift is deleted by hand.
           return list.map(s => {
             if (s.id === req.staffId) {
-              return { ...s, shifts: bShifts, deskShifts: coveredBy(bShifts, s.deskShifts) };
+              return { ...s, shifts: requesterEndsWith, deskShifts: coveredBy(requesterEndsWith, s.deskShifts) };
             }
             if (s.id === req.targetStaffId) {
-              return { ...s, shifts: aShifts, deskShifts: coveredBy(aShifts, s.deskShifts) };
+              return { ...s, shifts: targetEndsWith, deskShifts: coveredBy(targetEndsWith, s.deskShifts) };
             }
             return s;
           });
@@ -311,8 +367,9 @@ export function RequestsProvider({ children }) {
           type: 'shift_change',
           title: req.type === 'cover' ? "You're Covering a Shift" : 'Shift Swap Confirmed',
           message: req.type === 'cover'
-            ? `You are now covering ${req.staffName}'s shift on ${req.dayLabel}.`
-            : `Your shift swap with ${req.staffName} on ${req.dayLabel} has been confirmed.`,
+            ? `You are now covering ${req.staffName}'s ${describeShift(req.requesterShift)} on ${req.dayLabel}.`
+            : `Your swap with ${req.staffName} on ${req.dayLabel} is confirmed —`
+              + ` you now work ${describeShift(req.requesterShift)}.`,
           from: 'Manager',
           recipients: [req.targetStaffId],
         }).catch(() => {});

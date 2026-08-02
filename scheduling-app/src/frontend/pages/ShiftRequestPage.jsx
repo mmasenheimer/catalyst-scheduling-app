@@ -9,14 +9,57 @@ import {
 } from '../utils/scheduleUtils';
 
 
+// How far ahead somebody can ask for cover or propose a swap. Also sets the range
+// of saved schedules this page loads, so widening it costs one longer request
+// rather than more of them.
+const LOOKAHEAD_DAYS = 21;
+const LOOKAHEAD_LABEL = '3 weeks';
+
 function getUpcomingDates() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return Array.from({ length: 14 }, (_, i) => {
+  return Array.from({ length: LOOKAHEAD_DAYS }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     return d;
   });
+}
+
+/** Monday of the week `date` falls in — the week start used everywhere else. */
+function mondayOf(date) {
+  const d = new Date(date);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Split the scheduled days into the weeks they belong to.
+ *
+ * Three weeks of shifts in one flat row is a lot of buttons to read as a single
+ * list. Only weeks that actually contain a shift appear, so this never shows an
+ * empty box.
+ */
+function groupIntoWeeks(dates) {
+  const weeks = new Map();
+  dates.forEach(date => {
+    const start = mondayOf(date);
+    const key = start.toDateString();
+    if (!weeks.has(key)) weeks.set(key, { key, start, dates: [] });
+    weeks.get(key).dates.push(date);
+  });
+  return [...weeks.values()].sort((a, b) => a.start - b.start);
+}
+
+/** "This week" / "Next week", falling back to the date range further out. */
+function weekHeading(start) {
+  const offset = Math.round((start - mondayOf(new Date())) / (7 * 24 * 60 * 60 * 1000));
+  if (offset === 0) return 'This week';
+  if (offset === 1) return 'Next week';
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(start)} – ${fmt(end)}`;
 }
 
 function formatDateLabel(date) {
@@ -45,12 +88,135 @@ function workingOnDate(date, staffId, roster, savedByDate) {
     .filter(s => s.id !== staffId && (s.shifts?.length ?? 0) > 0);
 }
 
-function overlaps(a, b) {
-  return a.shiftStart < b.shiftEnd && a.shiftEnd > b.shiftStart;
+/**
+ * Identifies a shift by its hours.
+ *
+ * Not by `id` — those are regenerated on every drag, by the event-stretch pass,
+ * and by the cover approval itself, so an id is meaningless a moment later. The
+ * hours are what people actually agree about.
+ */
+const shiftKey = shift => `${shift.start}-${shift.end}`;
+
+/**
+ * Do these two sets of shifts collide at any point?
+ *
+ * Replaces a comparison of `shiftStart`/`shiftEnd`, which are the *default* hours
+ * on a Staff record rather than what anyone actually works on a given date — so
+ * the old version answered a question about nobody's real schedule, and couldn't
+ * see a second shift at all.
+ */
+function shiftsOverlap(aShifts, bShifts) {
+  return (aShifts ?? []).some(a =>
+    (bShifts ?? []).some(b => a.start < b.end && a.end > b.start),
+  );
 }
 
 function initials(name) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2);
+}
+
+/**
+ * The days you're scheduled, grouped by week, one of them selected.
+ *
+ * Shared by both tabs. The swap tab used to have no picker at all, which meant
+ * `activeDay` silently fell back to the first scheduled day in the window — so a
+ * swap was submitted for a date the requester never chose and never saw.
+ */
+function ScheduledDayPicker({ myDates, activeDay, onPick }) {
+  return (
+    <div>
+      <div
+        className="text-xs font-semibold uppercase tracking-wide mb-2"
+        style={{ color: 'var(--color-text-dim)' }}
+      >
+        Your scheduled days — next {LOOKAHEAD_LABEL}
+      </div>
+      {myDates.length === 0 ? (
+        <p className="text-sm" style={{ color: 'var(--color-text-dim)' }}>
+          You have no scheduled shifts in the next {LOOKAHEAD_LABEL}.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {groupIntoWeeks(myDates).map(week => (
+            <div
+              key={week.key}
+              className="rounded-lg border p-3"
+              style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+            >
+              <div
+                className="text-xs font-semibold uppercase tracking-wide mb-2"
+                style={{ color: 'var(--color-text-dim)' }}
+              >
+                {weekHeading(week.start)}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {week.dates.map(date => {
+                  const isActive = activeDay?.toDateString() === date.toDateString();
+                  return (
+                    <button
+                      key={date.toISOString()}
+                      onClick={() => onPick(date)}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors"
+                      style={{
+                        background: isActive ? 'var(--color-accent)' : 'var(--color-surface)',
+                        borderWidth: 1,
+                        borderStyle: 'solid',
+                        borderColor: isActive ? 'var(--color-accent)' : 'var(--color-border)',
+                        color: isActive ? 'white' : 'var(--color-text)',
+                      }}
+                    >
+                      {formatDateLabel(date)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which shift on the chosen day is being offered.
+ *
+ * Renders nothing when there's only one — asking somebody to choose between a
+ * single option is just an extra click. Only a genuinely split day gets a picker.
+ */
+function ShiftPicker({ shifts, selected, onPick }) {
+  if ((shifts?.length ?? 0) < 2) return null;
+  return (
+    <div>
+      <div
+        className="text-xs font-semibold uppercase tracking-wide mb-2"
+        style={{ color: 'var(--color-text-dim)' }}
+      >
+        Which shift?
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        {shifts.map(shift => {
+          const isActive = selected && shiftKey(selected) === shiftKey(shift);
+          return (
+            <button
+              key={shiftKey(shift)}
+              onClick={() => onPick(shift)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors"
+              style={{
+                background: isActive ? 'var(--color-accent)' : 'var(--color-surface)',
+                borderWidth: 1,
+                borderStyle: 'solid',
+                borderColor: isActive ? 'var(--color-accent)' : 'var(--color-border)',
+                color: isActive ? 'white' : 'var(--color-text)',
+              }}
+            >
+              {formatTime(shift.start)} – {formatTime(shift.end)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ── Staff row ─────────────────────────────────────────────────────────────────
@@ -117,6 +283,40 @@ function StaffList({ people, badge, badgeStyle, actionLabel, onAction, selectedI
           onAction={onAction}
           isSelected={selectedId === p.id}
           subLabel={subLabelFor?.(p)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One row per colleague *shift*, rather than per colleague.
+ *
+ * Somebody working twice that day offers two different trades, and a proposal has
+ * to name which one — so they appear as two rows. Reuses StaffRow by closing over
+ * the candidate, since selection here is per person-and-shift rather than per id.
+ */
+function SwapCandidateList({ candidates, badge, badgeStyle, onPick, pending }) {
+  const isPicked = c =>
+    pending?.person?.id === c.person.id
+    && pending?.shift
+    && shiftKey(pending.shift) === shiftKey(c.shift);
+
+  return (
+    <div
+      className="rounded-xl border overflow-hidden flex flex-col gap-px"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-border)' }}
+    >
+      {candidates.map(c => (
+        <StaffRow
+          key={c.key}
+          person={c.person}
+          badge={badge}
+          badgeStyle={badgeStyle}
+          actionLabel="Propose Swap"
+          onAction={() => onPick(c.person, c.shift)}
+          isSelected={isPicked(c)}
+          subLabel={`${formatTime(c.shift.start)} – ${formatTime(c.shift.end)}`}
         />
       ))}
     </div>
@@ -291,6 +491,11 @@ export default function ShiftRequestPage() {
   const { submitRequest } = useRequests();
   const [tab, setTab] = useState('cover');
   const [selectedDay, setSelectedDay] = useState(null);
+  // Which of that day's shifts is being offered. Null means "the day only has
+  // one", which the resolver below fills in — so the common case never asks.
+  const [selectedShiftKey, setSelectedShiftKey] = useState(null);
+  // { person, shift } — `shift` is the colleague's shift being traded for, and is
+  // null for a cover, where they aren't giving anything up.
   const [pending, setPending] = useState(null);
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
@@ -335,13 +540,38 @@ export default function ShiftRequestPage() {
   const available = activeDay ? notWorkingOnDate(activeDay, me.id, staff, savedByDate) : [];
   const alreadyWorking = activeDay ? workingOnDate(activeDay, me.id, staff, savedByDate) : [];
 
-  const others = staff.filter(s => s.id !== me.id);
-  const noOverlapStaff = others.filter(s => !overlaps(me, s));
-  const overlapStaff = others.filter(s => overlaps(me, s));
+  const myShiftsThatDay = activeDay
+    ? personForDate(activeDay, savedByDate, staff, me.id)?.shifts ?? []
+    : [];
 
-  function select(person) {
-    setPending(person);
+  // The shift being offered. Falls back to the first when the day holds only one,
+  // or when a previous selection no longer exists because the day changed.
+  const myShift =
+    myShiftsThatDay.find(s => shiftKey(s) === selectedShiftKey) ?? myShiftsThatDay[0] ?? null;
+
+  // Swap candidates are one row per colleague *shift*, not per colleague: if they
+  // work twice that day, those are two different trades and the proposal has to
+  // say which. Split by whether their shift collides with the one being offered.
+  const swapCandidates = alreadyWorking.flatMap(person =>
+    (person.shifts ?? []).map(shift => ({ key: `${person.id}:${shiftKey(shift)}`, person, shift })),
+  );
+  const noOverlapCandidates = swapCandidates.filter(c => !shiftsOverlap(myShift ? [myShift] : [], [c.shift]));
+  const overlapCandidates   = swapCandidates.filter(c =>  shiftsOverlap(myShift ? [myShift] : [], [c.shift]));
+
+  function select(person, shift = null) {
+    setPending({ person, shift });
     setNote('');
+  }
+
+  function pickDay(date) {
+    setSelectedDay(date);
+    setSelectedShiftKey(null);
+    setPending(null);
+  }
+
+  function pickShift(shift) {
+    setSelectedShiftKey(shiftKey(shift));
+    setPending(null);
   }
 
   async function handleSubmit() {
@@ -353,17 +583,18 @@ export default function ShiftRequestPage() {
         type: tab,
         staffId: me.id,
         staffName: me.name,
-        targetStaffId: pending.id,
-        targetName: pending.name,
+        targetStaffId: pending.person.id,
+        targetName: pending.person.name,
         date: toDateStr(day),
         dayLabel: formatDateLong(day),
         note,
-        // The hours both people are agreeing about, recorded as they stand right
-        // now. Approval can come days later, and it refuses if either side has
-        // been rescheduled since — otherwise it would quietly exchange whatever
-        // shifts exist by then, which is not what anyone said yes to.
-        requesterShifts: personForDate(day, savedByDate, staff, me.id)?.shifts ?? [],
-        targetShifts: personForDate(day, savedByDate, staff, pending.id)?.shifts ?? [],
+        // The single shift changing hands, recorded as it stands right now.
+        // Approval can come days later and refuses if this shift is no longer on
+        // the schedule — otherwise it would move whatever happens to be there by
+        // then, which is not what anyone agreed to. `targetShift` is null for a
+        // cover, where the colleague isn't giving anything up.
+        requesterShift: myShift ?? undefined,
+        targetShift: pending.shift ?? undefined,
       });
     } catch (err) {
       setSubmitError(err.message || 'Failed to submit request. Please try again.');
@@ -371,7 +602,7 @@ export default function ShiftRequestPage() {
       return;
     }
     setSaving(false);
-    setSubmitted({ type: tab, target: pending, day: activeDay ? formatDateLong(activeDay) : '', note });
+    setSubmitted({ type: tab, target: pending.person, day: activeDay ? formatDateLong(activeDay) : '', note });
     setPending(null);
     setNote('');
   }
@@ -427,7 +658,7 @@ export default function ShiftRequestPage() {
           {pending && (
             <RequestForm
               type={tab}
-              target={pending}
+              target={pending.person}
               day={activeDay ? formatDateLong(activeDay) : ''}
               me={me}
               note={note}
@@ -442,49 +673,17 @@ export default function ShiftRequestPage() {
           {/* ── Cover tab ─────────────────────────────────────────────────── */}
           {tab === 'cover' && (
             <div className="flex flex-col gap-6">
-              {/* Day selector */}
-              <div>
-                <div
-                  className="text-xs font-semibold uppercase tracking-wide mb-2"
-                  style={{ color: 'var(--color-text-dim)' }}
-                >
-                  Your scheduled days — next 2 weeks
-                </div>
-                {myDates.length === 0 ? (
-                  <p className="text-sm" style={{ color: 'var(--color-text-dim)' }}>
-                    You have no scheduled shifts in the next 2 weeks.
-                  </p>
-                ) : (
-                  <div className="flex gap-2 flex-wrap">
-                    {myDates.map(date => {
-                      const isActive = activeDay?.toDateString() === date.toDateString();
-                      return (
-                        <button
-                          key={date.toISOString()}
-                          onClick={() => { setSelectedDay(date); setPending(null); }}
-                          className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors"
-                          style={{
-                            background: isActive ? 'var(--color-accent)' : 'var(--color-surface)',
-                            borderWidth: 1,
-                            borderStyle: 'solid',
-                            borderColor: isActive ? 'var(--color-accent)' : 'var(--color-border)',
-                            color: isActive ? 'white' : 'var(--color-text)',
-                          }}
-                        >
-                          {formatDateLabel(date)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <ScheduledDayPicker myDates={myDates} activeDay={activeDay} onPick={pickDay} />
+              <ShiftPicker shifts={myShiftsThatDay} selected={myShift} onPick={pickShift} />
 
               {/* Not working that day */}
               {activeDay && (
                 <div>
                   <SectionHeading
                     title={`Not working ${activeDay ? formatDateLong(activeDay) : ''}`}
-                    sub="available to cover your shift"
+                    sub={myShift
+                      ? `available to cover your ${formatTime(myShift.start)}–${formatTime(myShift.end)} shift`
+                      : 'available to cover your shift'}
                   />
                   {available.length === 0 ? (
                     <EmptyState text={`Everyone is already scheduled on ${activeDay ? formatDateLong(activeDay) : 'that day'}.`} />
@@ -495,7 +694,7 @@ export default function ShiftRequestPage() {
                       badgeStyle={{ background: '#1a2a1a', color: '#6ab888' }}
                       actionLabel="Ask to Cover"
                       onAction={select}
-                      selectedId={pending?.id}
+                      selectedId={pending?.person?.id}
                       subLabelFor={() => 'Not scheduled this day'}
                     />
                   )}
@@ -523,38 +722,45 @@ export default function ShiftRequestPage() {
           {/* ── Swap tab ──────────────────────────────────────────────────── */}
           {tab === 'swap' && (
             <div className="flex flex-col gap-6">
-              {/* No-overlap staff — ideal candidates */}
-              {noOverlapStaff.length > 0 && (
+              <ScheduledDayPicker myDates={myDates} activeDay={activeDay} onPick={pickDay} />
+              <ShiftPicker shifts={myShiftsThatDay} selected={myShift} onPick={pickShift} />
+
+              {activeDay && swapCandidates.length === 0 && (
+                <EmptyState text={`Nobody else is scheduled on ${formatDateLong(activeDay)}, so there's no shift to swap with.`} />
+              )}
+
+              {/* Working that day, hours that don't collide with the one offered */}
+              {activeDay && noOverlapCandidates.length > 0 && (
                 <div>
                   <SectionHeading
                     title="Different shift hours"
-                    sub={`no overlap with your ${formatTime(me.shiftStart)}–${formatTime(me.shiftEnd)} shift`}
+                    sub={myShift
+                      ? `no overlap with your ${formatTime(myShift.start)}–${formatTime(myShift.end)} on ${formatDateLong(activeDay)}`
+                      : `on ${formatDateLong(activeDay)}`}
                   />
-                  <StaffList
-                    people={noOverlapStaff}
+                  <SwapCandidateList
+                    candidates={noOverlapCandidates}
                     badge="No overlap"
                     badgeStyle={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}
-                    actionLabel="Propose Swap"
-                    onAction={select}
-                    selectedId={pending?.id}
+                    onPick={select}
+                    pending={pending}
                   />
                 </div>
               )}
 
-              {/* Overlapping staff */}
-              {overlapStaff.length > 0 && (
+              {/* Working that day, but their hours collide with the one offered */}
+              {activeDay && overlapCandidates.length > 0 && (
                 <div>
                   <SectionHeading
                     title="Overlapping shifts"
-                    sub="you share some working hours"
+                    sub="these clash with the shift you're offering"
                   />
-                  <StaffList
-                    people={overlapStaff}
+                  <SwapCandidateList
+                    candidates={overlapCandidates}
                     badge="Overlap"
                     badgeStyle={{ background: '#241a06', color: 'var(--color-yellow)' }}
-                    actionLabel="Propose Swap"
-                    onAction={select}
-                    selectedId={pending?.id}
+                    onPick={select}
+                    pending={pending}
                   />
                 </div>
               )}

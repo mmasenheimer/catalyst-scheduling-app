@@ -1,5 +1,6 @@
 "use strict";
 const Notification = require("../models/Notification");
+const { formatTime, formatDayLabel } = require("./scheduleDiff");
 
 // Server-authored notifications for the request pipeline.
 //
@@ -18,6 +19,12 @@ const Notification = require("../models/Notification");
 
 const TYPE_LABEL = { time_off: "drop shift", cover: "cover", swap: "swap" };
 
+// A day can hold more than one shift, so naming the hours is the difference
+// between "cover my Tuesday" and something the reader can actually act on.
+// Falls back to a bare "shift" for requests written before shifts were named.
+const shiftPhrase = shift =>
+  shift ? `${formatTime(shift.start)}–${formatTime(shift.end)} shift` : "shift";
+
 async function emit(fields) {
   try {
     return await Notification.create(fields);
@@ -33,8 +40,12 @@ async function emit(fields) {
  * ever sees it.
  */
 async function notifyRequestSubmitted(request) {
-  const { type, staffId, staffName, targetName, targetStaffId, dayLabel, note } = request;
+  const {
+    type, staffId, staffName, targetName, targetStaffId, dayLabel, note,
+    requesterShift, targetShift,
+  } = request;
   const quoted = note ? ` "${note}"` : "";
+  const mine = shiftPhrase(requesterShift);
 
   if (type === "time_off") {
     await emit({
@@ -52,8 +63,8 @@ async function notifyRequestSubmitted(request) {
       title: type === "cover" ? "Cover Request" : "Swap Proposal",
       message:
         type === "cover"
-          ? `${staffName} asked you to cover their ${dayLabel} shift.${quoted} Accept to send it to the manager for approval.`
-          : `${staffName} proposed swapping shifts with you on ${dayLabel}.${quoted} Accept to send it to the manager for approval.`,
+          ? `${staffName} asked you to cover their ${mine} on ${dayLabel}.${quoted} Accept to send it to the manager for approval.`
+          : `${staffName} offered their ${mine} on ${dayLabel} for your ${shiftPhrase(targetShift)}.${quoted} Accept to send it to the manager for approval.`,
       from: staffName,
       recipients: [targetStaffId],
     });
@@ -125,7 +136,10 @@ async function notifyRequestWithdrawn(request, previousStatus) {
  * through. Only the manager's copy carries Approve/Deny.
  */
 async function notifyPeerAccepted(request) {
-  const { type, staffId, staffName, targetName, dayLabel } = request;
+  const { type, staffId, staffName, targetName, dayLabel, requesterShift, targetShift } = request;
+  // The manager is about to move specific hours, so the card has to say which.
+  const mine = shiftPhrase(requesterShift);
+  const theirs = shiftPhrase(targetShift);
 
   await emit({
     requestId: String(request._id),
@@ -133,8 +147,8 @@ async function notifyPeerAccepted(request) {
     title: type === "cover" ? "Cover Request" : "Swap Proposal",
     message:
       type === "cover"
-        ? `${targetName} accepted ${staffName}'s request to cover their ${dayLabel} shift. Approve to apply it to the schedule.`
-        : `${targetName} accepted ${staffName}'s shift swap for ${dayLabel}. Approve to apply it to the schedule.`,
+        ? `${targetName} accepted ${staffName}'s ${mine} on ${dayLabel}. Approve to apply it to the schedule.`
+        : `${targetName} accepted a swap on ${dayLabel}: ${staffName}'s ${mine} for ${targetName}'s ${theirs}. Approve to apply it to the schedule.`,
     from: targetName,
     recipients: "manager",
   });
@@ -162,9 +176,83 @@ async function notifyPeerDeclined(request) {
   });
 }
 
+// ── Event assignments ─────────────────────────────────────────────────────────
+
+/** "Thu, Jul 23", "Thu, Jul 23 and 2 more dates", plus a note if it recurs. */
+function describeWhen(event) {
+  const days = event.days ?? [];
+  const first = days.length ? formatDayLabel(days[0]) : null;
+  const more = days.length > 1 ? ` and ${days.length - 1} more date${days.length > 2 ? "s" : ""}` : "";
+  const recurs = event.repeating ? ", repeating weekly" : "";
+  return first ? `${first}${more}${recurs}` : "an unscheduled date";
+}
+
+/**
+ * Somebody was put on an event.
+ *
+ * Raised from the route rather than the editor so it fires however the assignment
+ * happened — dragging an event onto a row, picking staff while creating it, or
+ * anything added later. Being handed an event is a commitment with a time
+ * attached, so the message carries the name, the date and the hours; "you've been
+ * assigned to something" would just prompt a trip to the schedule to find out
+ * what.
+ *
+ * One notification per person: they're addressed individually so each reads as
+ * their own, and so dismissing one doesn't clear it for everybody else.
+ */
+async function notifyEventAssigned(event, staffIds) {
+  const ids = (staffIds ?? []).filter(id => Number.isInteger(id));
+  if (ids.length === 0) return null;
+
+  const message =
+    `You've been assigned to "${event.name}" on ${describeWhen(event)}`
+    + `, ${formatTime(event.start)}–${formatTime(event.end)}.`;
+
+  return Promise.all(ids.map(id => emit({
+    type: "event_assigned",
+    title: "Assigned to an Event",
+    message,
+    from: "Manager",
+    recipients: [id],
+  })));
+}
+
+/**
+ * Somebody came off an event.
+ *
+ * Worth saying for the same reason the assignment was: they may have planned
+ * around it. It also covers a case nothing else announces — approving a cover or
+ * swap releases the requester from events their remaining shifts no longer reach,
+ * and the approval message only talks about shifts, so without this the event
+ * quietly disappears from their schedule.
+ *
+ * `reason` distinguishes being taken off from the whole event being called off,
+ * which read identically from the schedule but are not the same news.
+ */
+async function notifyEventUnassigned(event, staffIds, reason = "removed") {
+  const ids = (staffIds ?? []).filter(id => Number.isInteger(id));
+  if (ids.length === 0) return null;
+
+  const when = describeWhen(event);
+  const cancelled = reason === "cancelled";
+  const message = cancelled
+    ? `"${event.name}" on ${when} was cancelled — you're no longer assigned to it.`
+    : `You're no longer assigned to "${event.name}" on ${when}.`;
+
+  return Promise.all(ids.map(id => emit({
+    type: "event_unassigned",
+    title: cancelled ? "Event Cancelled" : "Removed from an Event",
+    message,
+    from: "Manager",
+    recipients: [id],
+  })));
+}
+
 module.exports = {
   notifyRequestSubmitted,
   notifyPeerAccepted,
   notifyPeerDeclined,
   notifyRequestWithdrawn,
+  notifyEventAssigned,
+  notifyEventUnassigned,
 };

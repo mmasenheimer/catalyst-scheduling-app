@@ -5,6 +5,7 @@ import {
   formatTime,
   staffForDateFromSaved,
   stretchShiftsToCoverEvents,
+  mergeStaffShifts,
 } from '../utils/scheduleUtils';
 import { schedulesApi } from '../utils/api';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
@@ -178,7 +179,7 @@ export default function AddEventPage() {
           // resolution every other view uses, always merged onto the live roster.
           const savedByDate = existing?.staff ? { [dateStr]: existing.staff } : {};
           const base = staffForDateFromSaved(new Date(dateStr + 'T00:00:00'), savedByDate, staff);
-          const next = stretchShiftsToCoverEvents(base, [evt]);
+          const next = mergeStaffShifts(stretchShiftsToCoverEvents(base, [evt]));
           if (next === base) return; // already covered — nothing to write
           await schedulesApi.saveDay(dateStr, {
             staff: next,

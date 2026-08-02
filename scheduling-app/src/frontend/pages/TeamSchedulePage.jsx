@@ -191,21 +191,24 @@ export default function TeamSchedulePage() {
 
   return (
     <div style={{ fontFamily:'inherit' }}>
-      <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
-        <h2 style={{ position:'absolute', left:0, fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0 }}>
+      {/* Wraps rather than overlapping on a narrow screen — the title and hours
+          used to be absolutely positioned either side of a centred week nav,
+          which takes them out of flow so nothing could push anything aside.
+          Matching flex on both sides keeps the nav centred without that. */}
+      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:10, marginBottom:14 }}>
+        <h2 style={{ flex:'1 1 auto', fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
           Weekly View
         </h2>
 
-        {/* The employee's own hours for this week */}
-        {myWeek && (
-          <div style={{ position:'absolute', right:0, fontSize:18, fontWeight:700, color:'var(--color-accent-bright)' }}>
-            {fmtHours(myWeek.hours)} hours
-          </div>
-        )}
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
           <button onClick={()=>setWeekStart(d=>addDays(d,-7))} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={16} /></button>
           <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text)', minWidth:190, textAlign:'center' }}>{weekLabel}</span>
           <button onClick={()=>setWeekStart(d=>addDays(d,7))} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={16} /></button>
+        </div>
+
+        {/* The employee's own hours for this week */}
+        <div style={{ flex:'1 1 auto', display:'flex', justifyContent:'flex-end', fontSize:18, fontWeight:700, color:'var(--color-accent-bright)', whiteSpace:'nowrap' }}>
+          {myWeek ? `${fmtHours(myWeek.hours)} hours` : ''}
         </div>
       </div>
 

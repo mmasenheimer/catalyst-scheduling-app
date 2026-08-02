@@ -30,7 +30,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       type, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
-      requesterShifts, targetShifts,
+      requesterShifts, targetShifts, requesterShift, targetShift,
     } = req.body;
     // An employee may only file requests as themselves.
     if (req.user.role !== "manager" && staffId !== req.user.staffId) {
@@ -45,17 +45,20 @@ router.post("/", async (req, res) => {
     // not an authority claim. A requester who faked it would only break their own
     // request, since approval compares it against the live schedule and refuses
     // on any mismatch.
+    const isShift = s =>
+      s && Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end));
+    const one = s => (isShift(s) ? { start: Number(s.start), end: Number(s.end) } : undefined);
     const snapshot = shifts =>
-      Array.isArray(shifts)
-        ? shifts
-            .filter(s => s && Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end)))
-            .map(s => ({ start: Number(s.start), end: Number(s.end) }))
-        : undefined;
+      Array.isArray(shifts) ? shifts.filter(isShift).map(one) : undefined;
 
     const request = await Request.create({
       type, status, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
       requesterShifts: snapshot(requesterShifts),
       targetShifts: snapshot(targetShifts),
+      // The one shift changing hands. Only meaningful for cover/swap — a drop
+      // gives up the whole day, so it's ignored there even if sent.
+      requesterShift: type === "time_off" ? undefined : one(requesterShift),
+      targetShift: type === "time_off" ? undefined : one(targetShift),
     });
 
     // Announced from here rather than by the client: this notification is

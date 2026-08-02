@@ -1,5 +1,7 @@
 import { HOURS_START, HOURS_END } from "../../data/mockData";
-import { getTarget, formatTime, getDeskWindow, isDeskRequired } from "./scheduleUtils";
+import {
+  getTarget, formatTime, getDeskWindow, isDeskRequired, mergeAdjacentShifts,
+} from "./scheduleUtils";
 
 // Half-hour resolution, matching the editor's snapping.
 const SLOT = 0.5;
@@ -220,6 +222,38 @@ export function generateWeeklyTemplate({
       return n;
     };
 
+    // Is there any shift worth giving this person that covers `h` at all?
+    //
+    // Measured across the whole contiguous stretch of their availability
+    // containing `h`, not just forward from it, because the short-shift pass
+    // later grows a shift backwards as well — so somebody first considered near
+    // the end of a window can still end up with a full-length shift.
+    //
+    // What this rules out is the case that produces nonsense: a fragment of
+    // availability too small to hold a real shift no matter how it's extended.
+    // Filling a slot from one of those buys half an hour of coverage at the cost
+    // of asking somebody to come in for half an hour.
+    const couldFormShift = (s, from) => {
+      const windows = availabilityByStaff[s.id]?.[dow];
+      const budget = Math.min(
+        capOf(s) - weeklyHours.get(s.id),
+        maxDailyHours - (dayHours.get(s.id) ?? 0),
+        maxShiftHours,
+      );
+      if (budget < minShiftHours) return false;
+
+      let stretch = 0;
+      for (let t = from; t < HOURS_END; t += SLOT) {
+        if (getTarget(t, dow) === 0 || !isAvailable(windows, t)) break;
+        stretch += SLOT;
+      }
+      for (let t = from - SLOT; t >= HOURS_START; t -= SLOT) {
+        if (getTarget(t, dow) === 0 || !isAvailable(windows, t)) break;
+        stretch += SLOT;
+      }
+      return Math.min(stretch, budget) >= minShiftHours;
+    };
+
     // How many consecutive slots from `h` could this person cover? Avoids
     // starting someone who's about to become unavailable.
     const lookahead = (s, from) => {
@@ -260,15 +294,35 @@ export function generateWeeklyTemplate({
           )
           .map((s) => {
             const run = lookahead(s, h);
+            const continuing = at(h - SLOT).has(s.id) ? 1 : 0;
             return {
               s,
               // Already working the previous slot → extending, not starting.
-              continuing: at(h - SLOT).has(s.id) ? 1 : 0,
+              continuing,
+              // Starting them again after a break in the same day: they'd have
+              // to leave and come back.
+              callback: !continuing && (dayHours.get(s.id) ?? 0) > 0 ? 1 : 0,
               // Could they cover a shift worth giving them at all?
               viable: run * SLOT >= minShiftHours ? 1 : 0,
               run,
               load: loadOf(s),
             };
+          })
+          // Somebody already working the previous slot is being extended, and
+          // their shift is whatever length it has already reached — the length
+          // test only applies to starting somebody new. Leaving a slot uncovered
+          // and reporting it as a gap is more use to a manager than a 30-minute
+          // shift they'd have to notice and delete.
+          //
+          // A callback is held to a stricter test: not "could a decent shift
+          // exist in this stretch" but "will this one actually be long enough",
+          // measured forward from here. Asking somebody to travel back in for
+          // the last half hour of the day isn't worth the coverage it buys, and
+          // unlike a first shift there's no earlier slot to grow backwards into.
+          .filter((c) => {
+            if (c.continuing) return true;
+            if (c.callback) return c.viable === 1;
+            return couldFormShift(c.s, h);
           });
 
         if (candidates.length === 0) {
@@ -282,6 +336,7 @@ export function generateWeeklyTemplate({
         candidates.sort(
           (a, b) =>
             b.continuing - a.continuing || // keep existing shifts going
+            a.callback - b.callback || // rather ask someone not already done for the day
             b.viable - a.viable || // don't start someone for 30 minutes
             a.load - b.load || // then even out share-of-cap
             b.run - a.run || // tie-break toward longer coverage
@@ -464,7 +519,10 @@ export function generateWeeklyTemplate({
 
       dayStaff.push({
         ...person,
-        shifts: shifts.map((sh, i) => ({
+        // Merged first: slots collapse into shifts with gaps between them, but
+        // the short-shift extension above grows those shifts outward and can
+        // close a gap, leaving two blocks that are really one stretch.
+        shifts: mergeAdjacentShifts(shifts).map((sh, i) => ({
           id: `gen-${id}-${dow}-${i}`,
           start: sh.start,
           end: sh.end,

@@ -189,6 +189,54 @@ export function notCoveredBy(shifts, items) {
 }
 
 /**
+ * Collapse shifts that touch or overlap into single continuous blocks.
+ *
+ * Dragging and resizing bars readily leaves a shift split into abutting pieces —
+ * 7:30–12:30 followed by 12:30–1:30 followed by 1:30–2:30 is one stretch of work
+ * described three times. It renders as separate bars, reads as separate shifts to
+ * anyone looking at their schedule, and would offer somebody three things to pick
+ * from when they only ever worked one.
+ *
+ * Touching counts as adjacent, not just overlapping: 9–12 and 12–3 have no gap
+ * between them, so they're one 9–3 shift. Genuinely split days — a morning and an
+ * evening with time off in between — are left alone, which is the whole point.
+ *
+ * The surviving block keeps the earliest piece's id, so anything keyed to it
+ * (desk shifts, event coverage) still resolves. Returns the same array when
+ * nothing merged, so callers can cheaply detect a no-op.
+ */
+export function mergeAdjacentShifts(shifts) {
+  const list = shifts ?? [];
+  if (list.length < 2) return shifts;
+
+  const sorted = [...list].sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [];
+  for (const shift of sorted) {
+    const last = merged[merged.length - 1];
+    // `<=` rather than `<`: back-to-back shifts have no gap, so they're one.
+    if (last && shift.start <= last.end) {
+      if (shift.end > last.end) last.end = shift.end;
+    } else {
+      merged.push({ ...shift });
+    }
+  }
+  return merged.length === list.length ? shifts : merged;
+}
+
+/** Apply mergeAdjacentShifts to everyone's shifts and desk shifts on a day. */
+export function mergeStaffShifts(staffList) {
+  let changed = false;
+  const next = (staffList ?? []).map(person => {
+    const shifts = mergeAdjacentShifts(person.shifts);
+    const deskShifts = mergeAdjacentShifts(person.deskShifts);
+    if (shifts === person.shifts && deskShifts === person.deskShifts) return person;
+    changed = true;
+    return { ...person, shifts, deskShifts };
+  });
+  return changed ? next : staffList;
+}
+
+/**
  * Being assigned to an event means being scheduled to work it, so a shift is
  * stretched out to cover any event the person is assigned to that day. Both
  * editors already do this when you drag an event onto a row; this is the same
