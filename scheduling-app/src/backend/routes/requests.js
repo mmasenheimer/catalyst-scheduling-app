@@ -3,7 +3,7 @@ const router = require("express").Router();
 const Request = require("../models/Request");
 const { sendWriteError } = require("../utils/respond");
 const {
-  notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined,
+  notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined, notifyRequestWithdrawn,
 } = require("../utils/notify");
 
 // GET /api/requests
@@ -28,7 +28,10 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { type, staffId, staffName, targetStaffId, targetName, date, dayLabel, note } = req.body;
+    const {
+      type, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
+      requesterShifts, targetShifts,
+    } = req.body;
     // An employee may only file requests as themselves.
     if (req.user.role !== "manager" && staffId !== req.user.staffId) {
       return res.status(403).json({ error: "Cannot submit a request for another staff member" });
@@ -38,8 +41,21 @@ router.post("/", async (req, res) => {
     // while a drop-shift request goes straight to the manager.
     const status = targetStaffId != null ? "pending_peer" : "pending";
 
+    // Kept as sent: this is a record of what the two people saw and agreed to,
+    // not an authority claim. A requester who faked it would only break their own
+    // request, since approval compares it against the live schedule and refuses
+    // on any mismatch.
+    const snapshot = shifts =>
+      Array.isArray(shifts)
+        ? shifts
+            .filter(s => s && Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end)))
+            .map(s => ({ start: Number(s.start), end: Number(s.end) }))
+        : undefined;
+
     const request = await Request.create({
       type, status, staffId, staffName, targetStaffId, targetName, date, dayLabel, note,
+      requesterShifts: snapshot(requesterShifts),
+      targetShifts: snapshot(targetShifts),
     });
 
     // Announced from here rather than by the client: this notification is
@@ -54,33 +70,52 @@ router.post("/", async (req, res) => {
 });
 
 // PATCH /api/requests/:id
-// Two distinct transitions live here, each with its own authority:
+// Three distinct transitions live here, each with its own authority:
 //
-//   pending_peer → pending | declined   the named coworker accepts or declines
-//   pending      → approved | denied    the manager decides
+//   pending_peer → pending | declined       the named coworker accepts or declines
+//   pending      → approved | denied        the manager decides
+//   pending_peer
+//   or pending   → withdrawn                the person who asked takes it back
 //
-// Both are written as a precondition inside the update query rather than a
+// All are written as a precondition inside the update query rather than a
 // read-then-write, so they're atomic — two clients acting at the same moment
 // can't both succeed. That matters most for the manager leg, because approving
 // a 'cover' request appends the requester's shifts to the target and applying
 // it twice would double-book them.
+//
+// Withdrawal is allowed from either waiting state because nothing has touched the
+// schedule yet — the change only happens on manager approval. Once a request is
+// decided it's terminal, so there's nothing left to take back.
 
 const MANAGER_DECISIONS = ["approved", "denied"];
 const PEER_DECISIONS = ["pending", "declined"]; // 'pending' == the peer accepted
+const WITHDRAWN = "withdrawn";
+const WAITING_STATES = ["pending_peer", "pending"];
 
 router.patch("/:id", async (req, res) => {
   try {
     const { status } = req.body;
+    const isWithdrawal = status === WITHDRAWN;
     const isManagerDecision = MANAGER_DECISIONS.includes(status);
     const isPeerDecision = PEER_DECISIONS.includes(status);
 
-    if (!isManagerDecision && !isPeerDecision) {
-      const all = [...PEER_DECISIONS, ...MANAGER_DECISIONS].join(", ");
+    if (!isManagerDecision && !isPeerDecision && !isWithdrawal) {
+      const all = [...PEER_DECISIONS, ...MANAGER_DECISIONS, WITHDRAWN].join(", ");
       return res.status(400).json({ error: `status must be one of: ${all}` });
     }
 
     let filter;
-    if (isManagerDecision) {
+    if (isWithdrawal) {
+      // Matching on staffId authorizes and guards in one query: only the person
+      // who raised the request can withdraw it, and only while it's still
+      // waiting on somebody. A manager has no staffId, so this never matches for
+      // them — they deny rather than withdraw.
+      filter = {
+        _id: req.params.id,
+        status: { $in: WAITING_STATES },
+        staffId: req.user?.staffId ?? null,
+      };
+    } else if (isManagerDecision) {
       if (req.user?.role !== "manager") {
         return res.status(403).json({ error: "Manager access required" });
       }
@@ -95,6 +130,10 @@ router.patch("/:id", async (req, res) => {
         targetStaffId: req.user?.staffId ?? null,
       };
     }
+
+    // Captured before the update, because a withdrawal needs to know who was
+    // waiting on it in order to tell the right people it's off.
+    const before = isWithdrawal ? await Request.findById(req.params.id).lean() : null;
 
     const request = await Request.findOneAndUpdate(
       filter,
@@ -111,6 +150,9 @@ router.patch("/:id", async (req, res) => {
       if (isPeerDecision && existing.status === "pending_peer") {
         return res.status(403).json({ error: "This request wasn't sent to you" });
       }
+      if (isWithdrawal && WAITING_STATES.includes(existing.status)) {
+        return res.status(403).json({ error: "You can only withdraw your own request" });
+      }
       return res.status(409).json({
         error: `This request was already ${existing.status}.`,
         status: existing.status,
@@ -126,6 +168,10 @@ router.patch("/:id", async (req, res) => {
       if (status === "pending") await notifyPeerAccepted(request);
       else await notifyPeerDeclined(request);
     }
+
+    // Whoever was waiting on it needs to know it's off — the coworker staring at
+    // an Accept button, or the manager holding it for approval.
+    if (isWithdrawal) await notifyRequestWithdrawn(request, before?.status);
 
     res.json(request);
   } catch (err) {

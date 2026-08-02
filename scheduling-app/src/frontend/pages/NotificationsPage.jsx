@@ -24,11 +24,18 @@ function formatRelativeTime(date) {
   return `${diffDay}d ago`;
 }
 
-// The two decision points a card can present. A request waits on the coworker
-// it names first ('pending_peer'), then on the manager ('pending') — so which
-// buttons you see, if any, depends on the request's stage and who you are.
+// What a card lets you do, if anything. A request waits on the coworker it names
+// first ('pending_peer'), then on the manager ('pending'), and the person who
+// raised it can take it back from either — so this depends on both the request's
+// stage and who's looking at it.
 function actionModeFor(request, user) {
   if (!request) return null;
+  const waiting = request.status === 'pending_peer' || request.status === 'pending';
+
+  // Checked first: on a request you raised yourself, withdrawing is the only
+  // thing you could do, whichever stage it's reached.
+  if (waiting && request.staffId === user?.staffId) return 'requester';
+
   if (request.status === 'pending_peer') {
     return request.targetStaffId === user?.staffId ? 'peer' : null;
   }
@@ -38,7 +45,7 @@ function actionModeFor(request, user) {
   return null;
 }
 
-function NotificationCard({ notif, onDismiss, onApprove, onDeny, user, request }) {
+function NotificationCard({ notif, onDismiss, onApprove, onDeny, onWithdraw, user, request }) {
   const cfg = TYPE_CONFIG[notif.type];
   const requestStatus = request?.status ?? null;
   const mode = notif.requestId != null ? actionModeFor(request, user) : null;
@@ -88,6 +95,14 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, user, request }
                 ✕ Denied
               </span>
             )}
+            {requestStatus === 'withdrawn' && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
+              >
+                ↩ Withdrawn
+              </span>
+            )}
             {requestStatus === 'declined' && (
               <span
                 className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -123,7 +138,19 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, user, request }
           {notif.message}
         </p>
 
-        {mode && (
+        {mode === 'requester' && (
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => onWithdraw(notif.requestId)}
+              className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
+              style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
+            >
+              ↩ Withdraw request
+            </button>
+          </div>
+        )}
+
+        {mode && mode !== 'requester' && (
           <div className="flex gap-2 mb-2">
             <button
               onClick={() => onApprove(notif.requestId, mode)}
@@ -161,7 +188,7 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, user, request }
 
 export default function NotificationsPage() {
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
-  const { requests, acceptPeerRequest, declinePeerRequest, approveRequest, denyRequest } = useRequests();
+  const { requests, acceptPeerRequest, declinePeerRequest, withdrawRequest, approveRequest, denyRequest } = useRequests();
   const { user } = useAuth();
   const [actionError, setActionError] = useState('');
 
@@ -191,6 +218,15 @@ export default function NotificationsPage() {
       else await denyRequest(id);
     } catch {
       setActionError('Could not update that request. Please refresh and try again.');
+    }
+  }
+
+  async function handleWithdraw(id) {
+    setActionError('');
+    try {
+      await withdrawRequest(id);
+    } catch {
+      setActionError('Could not withdraw that request — it may have just been decided. Please refresh.');
     }
   }
 
@@ -256,6 +292,7 @@ export default function NotificationsPage() {
               onDismiss={dismiss}
               onApprove={handleApprove}
               onDeny={handleDeny}
+              onWithdraw={handleWithdraw}
               user={user}
               request={requestFor(n)}
             />

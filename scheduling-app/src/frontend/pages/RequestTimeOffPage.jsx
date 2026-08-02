@@ -115,6 +115,10 @@ export default function RequestTimeOffPage() {
         date: shiftDate,
         dayLabel: formatDisplay(shiftDate),
         note: notes,
+        // The shift being dropped, as it stands now. If the manager reschedules
+        // it before approving, the approval refuses rather than clearing hours
+        // that are no longer the ones asked about.
+        requesterShifts: personForDate(selected, savedByDate, staff, user.staffId)?.shifts ?? [],
       });
     } catch (err) {
       setSubmitError(err.message || 'Failed to submit request. Please try again.');

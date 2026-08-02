@@ -95,29 +95,78 @@ router.get("/:date", async (req, res) => {
 // PUT /api/schedules/:date
 // Runs when the manager clicks Finalize, and also whenever the day
 // auto-unfinalizes itself after an edit (finalized: false in that case).
+//
+// Concurrency: a save replaces the entire day, so two clients writing the same
+// date don't merge — the later one discards everything the earlier one did. The
+// client therefore sends `expectedVersion`, the version it loaded, and the write
+// only lands if that's still current. Otherwise it's a 409 carrying the current
+// version, and the client can tell the manager rather than losing their work.
+//
+// Omitting `expectedVersion` skips the check. That's for callers that genuinely
+// mean "overwrite whatever is there", and it keeps older clients working.
 
 router.put("/:date", requireManager, async (req, res) => {
   try {
-    const { staff, events, finalized, suppressNotify } = req.body;
+    const { staff, events, finalized, suppressNotify, expectedVersion } = req.body;
     const date = req.params.date;
     const isPublishing = finalized ?? true;
 
     // Read the previously published snapshot before we overwrite it.
     const previous = await Schedule.findOne({ date }).lean();
 
-    const update = { staff, events, finalized: isPublishing, finalizedAt: new Date() };
+    const update = {
+      $set: { staff, events, finalized: isPublishing, finalizedAt: new Date() },
+      $inc: { version: 1 },
+    };
     // Publishing sets the new baseline that future changes are measured against.
-    if (isPublishing) update.lastPublishedStaff = staff;
+    if (isPublishing) update.$set.lastPublishedStaff = staff;
 
-    const schedule = await Schedule.findOneAndUpdate(
-      // FindOneAndUpdate searches for:
-      // Document with that date
-      // If found, updates it with the new staff/events/timestamp
-      // If not found, makes it from scratch, which is the upsert: true
-      { date },
-      update,
-      { upsert: true, new: true, runValidators: true },
-    );
+    const checkVersion = Number.isInteger(expectedVersion);
+    const filter = { date };
+    if (checkVersion) {
+      // Rows written before `version` existed have no such field, and Mongo won't
+      // match a missing field against 0 — so spell both out or every save against
+      // existing data would report a phantom conflict.
+      filter.$and = [
+        expectedVersion === 0
+          ? { $or: [{ version: 0 }, { version: { $exists: false } }] }
+          : { version: expectedVersion },
+      ];
+    }
+
+    let schedule;
+    try {
+      schedule = await Schedule.findOneAndUpdate(filter, update, {
+        // Upsert stays on: a day being scheduled for the first time has no row
+        // yet. With the version guard, a concurrent create instead collides on
+        // the unique `date` index, which is caught below as the conflict it is.
+        upsert: true,
+        new: true,
+        runValidators: true,
+      });
+    } catch (err) {
+      // The filter didn't match, so the upsert tried to insert and collided with
+      // the unique `date` index. That means the row exists at a version we didn't
+      // expect — the same lost race as the null case below, reached by a
+      // different route, so it gets the same answer.
+      if (err?.code === 11000 && checkVersion) {
+        const now = await Schedule.findOne({ date }).lean();
+        return res.status(409).json({
+          error: "This day was changed by someone else while you were editing.",
+          currentVersion: now?.version ?? 0,
+        });
+      }
+      throw err;
+    }
+
+    if (!schedule) {
+      // The date exists but at a different version — somebody saved in between.
+      const now = await Schedule.findOne({ date }).lean();
+      return res.status(409).json({
+        error: "This day was changed by someone else while you were editing.",
+        currentVersion: now?.version ?? 0,
+      });
+    }
 
     // Tell affected employees what changed about *their* shifts. Only fires on
     // publish, and only when this day was published before — the first publish

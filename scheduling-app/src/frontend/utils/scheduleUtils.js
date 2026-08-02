@@ -303,28 +303,6 @@ export function checkDeskConflicts(person, events) {
   return conflicts;
 }
 
-/** Return staff members eligible to be assigned to an event */
-export function getEligibleStaff(evt, staff, events) {
-  return staff.filter(person => {
-    if (person.shiftStart > evt.start || person.shiftEnd < evt.end) return false;
-    if (evt.assignedStaff.includes(person.id)) return false;
-    if (
-      person.deskStart !== null &&
-      person.deskStart < evt.end &&
-      person.deskEnd > evt.start
-    ) return false;
-    for (const other of events) {
-      if (other.id === evt.id) continue;
-      if (
-        other.assignedStaff.includes(person.id) &&
-        other.start < evt.end &&
-        other.end > evt.start
-      ) return false;
-    }
-    return true;
-  });
-}
-
 /** Build the alerts list from current staff + events */
 export function buildAlerts(staff, events, dow = 1) {
   const alerts = [];

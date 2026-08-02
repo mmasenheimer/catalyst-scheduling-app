@@ -49,15 +49,35 @@ export function useSchedule() {
   // "outside availability". Everything reads this now; the mock file is only
   // seed data for the backend's seed:availability script.
   //
-  // Mock data is the offline fallback, matching how staff and events behave when
-  // the backend is unreachable.
-  const [availability, setAvailability] = useState(mockAvailability);
+  // Starts empty rather than seeded with mock data. An empty map is honest — it
+  // says "nothing loaded yet" — whereas pre-seeding means any view reading this
+  // before the fetch lands silently gets sample data and looks plausible while
+  // being wrong, which is the exact bug this whole source was consolidated to
+  // kill. Mock data is used only as an explicit offline fallback below.
+  const [availability, setAvailability] = useState({});
 
+  // Scoped to what the caller is allowed to see, mirroring the API: a manager
+  // reads the whole roster; an employee reads only their own record. Doing it
+  // per-role rather than manager-only matters — gating the fetch entirely would
+  // leave employees with a permanently empty (previously: permanently mock) map,
+  // so any employee-facing view added later would quietly render the wrong thing.
   const loadAvailability = useCallback(async () => {
+    const isManager = user?.role === 'manager';
+    const staffId = user?.staffId ?? null;
+    if (!isManager && staffId == null) return;
+
     try {
-      const rows = await availabilityApi.getAll();
-      const byStaff = {};
-      rows.forEach(row => { byStaff[row.staffId] = row.days ?? {}; });
+      let byStaff = {};
+      if (isManager) {
+        const rows = await availabilityApi.getAll();
+        rows.forEach(row => { byStaff[row.staffId] = row.days ?? {}; });
+      } else {
+        // Employees may read exactly one record — their own. Everyone else
+        // correctly resolves to no availability, matching what the server allows.
+        const row = await availabilityApi.getOne(staffId).catch(() => null);
+        byStaff = row ? { [staffId]: row.days ?? {} } : {};
+      }
+
       // Only swap the object when something actually changed. The identity of
       // this state is what memoized consumers compare, so replacing it on every
       // poll would re-render all seven weekly-view days every 45 seconds for
@@ -66,19 +86,16 @@ export function useSchedule() {
         JSON.stringify(prev) === JSON.stringify(byStaff) ? prev : byStaff,
       );
     } catch {
-      /* not a manager, logged out, or backend down — keep what we have */
+      // Backend unreachable. Sample data keeps the editors usable offline in dev,
+      // and only ever a manager sees it — an employee falling back to sample data
+      // would be showing them somebody else's hours as their own.
+      if (isManager) setAvailability(prev => (prev === mockAvailability ? prev : mockAvailability));
     }
-  }, []);
+  }, [user?.role, user?.staffId]);
 
   // Refetched on focus and a slow poll, so a manager building a schedule picks up
   // an availability submission without reloading the page.
-  //
-  // Manager-only: reading everyone's availability requires it (the endpoint is
-  // behind requireManager), and only the manager-side schedule editors draw those
-  // blue bars. Without this gate every signed-in employee would poll a 403 every
-  // 45 seconds. Employees see their own availability through their own page,
-  // which fetches just their record.
-  useLiveRefetch(loadAvailability, user?.role === 'manager');
+  useLiveRefetch(loadAvailability, Boolean(user));
 
   // Read through a ref so the getter's identity never changes. The weekly view's
   // DayEditor is React.memo'd with a hand-written comparator; an unstable

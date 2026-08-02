@@ -4,7 +4,8 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { useRequests } from '../context/RequestsContext';
 import { schedulesApi } from '../utils/api';
 import {
-  formatTime, toDateStr, buildSavedScheduleMap, hasShiftOn, staffForDateFromSaved, shiftsLabel,
+  formatTime, toDateStr, buildSavedScheduleMap, hasShiftOn, staffForDateFromSaved,
+  personForDate, shiftsLabel,
 } from '../utils/scheduleUtils';
 
 
@@ -357,6 +358,12 @@ export default function ShiftRequestPage() {
         date: toDateStr(day),
         dayLabel: formatDateLong(day),
         note,
+        // The hours both people are agreeing about, recorded as they stand right
+        // now. Approval can come days later, and it refuses if either side has
+        // been rescheduled since — otherwise it would quietly exchange whatever
+        // shifts exist by then, which is not what anyone said yes to.
+        requesterShifts: personForDate(day, savedByDate, staff, me.id)?.shifts ?? [],
+        targetShifts: personForDate(day, savedByDate, staff, pending.id)?.shifts ?? [],
       });
     } catch (err) {
       setSubmitError(err.message || 'Failed to submit request. Please try again.');

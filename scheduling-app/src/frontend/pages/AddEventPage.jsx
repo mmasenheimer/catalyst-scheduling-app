@@ -184,6 +184,7 @@ export default function AddEventPage() {
             staff: next,
             events: existing?.events ?? [],
             finalized: existing?.finalized ?? true,
+            expectedVersion: existing?.version ?? 0,
           });
         } catch { /* leave it to the manager's coverage warnings */ }
       }),

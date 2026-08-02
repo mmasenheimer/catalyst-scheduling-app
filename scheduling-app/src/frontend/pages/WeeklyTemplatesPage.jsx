@@ -5,6 +5,7 @@ import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
+import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
 import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
@@ -596,6 +597,10 @@ export default function WeeklyTemplatesPage() {
   const [activeDragType, setActiveDragType] = useState(null);
   const [hoverRow,      setHoverRow]      = useState(null);
   const [draggingBarInfo, setDraggingBarInfo] = useState(null);
+
+  // Same reach problem as the schedule editors, since a template can hold the
+  // whole roster.
+  useDragAutoScroll(Boolean(activeDragType || draggingBarInfo));
   const [contextMenu,   setContextMenu]   = useState(null);
   const [editModal,     setEditModal]     = useState(null);
   const [previewInfo,   setPreviewInfo]   = useState(null);
@@ -1046,7 +1051,7 @@ export default function WeeklyTemplatesPage() {
   // ── Bar drop ──────────────────────────────────────────────────────────────────
   function handleBarDrop(e, rowIndex) {
     if (!draggingBarInfo) return;
-    const { type, staffIndex, shiftIndex, deskIndex, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex } = draggingBarInfo;
     if (staffIndex === rowIndex) return;
     if (!previewInfo || previewInfo.staffIndex !== rowIndex || !previewInfo.valid || previewInfo.start === null) return;
 

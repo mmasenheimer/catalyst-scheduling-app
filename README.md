@@ -350,7 +350,7 @@ npm install
 #   MONGODB_URI=<your connection string>
 #   JWT_SECRET=<a long random string>
 #   SLACK_ENABLED=false
-npm run seed        # first run only — creates sample staff and accounts
+npm run seed -- --yes   # first run only — creates sample staff and accounts
 npm run dev         # http://localhost:3001
 ```
 
@@ -364,8 +364,10 @@ npm run dev         # http://localhost:5173
 ### Scripts
 | Command | Effect |
 |---|---|
-| `npm run seed` | **Resets** all staff and accounts from sample data |
+| `npm run seed` | Reports what a reset would destroy, then exits without changing anything |
+| `npm run seed -- --yes` | **Destructive.** Deletes every staff member and every account, then rebuilds both from sample data — replacing all passwords with shared, publicly-known ones. Refuses to run when `NODE_ENV=production` |
 | `npm run seed:users` | Creates login accounts for existing staff — safe to re-run, deletes nothing |
+| `npm run seed:availability` | Loads sample availability — upserts, deletes nothing |
 
 ---
 

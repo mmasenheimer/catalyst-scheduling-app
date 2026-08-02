@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
+import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
 import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { schedulesApi } from '../utils/api';
+import { schedulesApi, isConflict } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
@@ -473,6 +474,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const [draggingEvtId,  setDraggingEvtId]  = useState(null);
   const [hoverRow,       setHoverRow]       = useState(null);
   const [draggingBarInfo,setDraggingBarInfo]= useState(null);
+
+  // Seven day editors stacked means the page is very long; without this a drag
+  // can only reach whatever happens to be on screen when it starts.
+  useDragAutoScroll(Boolean(activeDragType || draggingBarInfo));
   const [contextMenu,    setContextMenu]    = useState(null);
   const [editModal,      setEditModal]      = useState(null);
   const [availWarning,   setAvailWarning]   = useState(null);
@@ -528,6 +533,20 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const baselineSigRef   = useRef('');
   const autoSaveTimerRef = useRef(null);
 
+  // The version of this day as loaded. Sent with every save so a second tab or
+  // manager editing the same date can't silently overwrite this one — a save
+  // replaces the whole day, so the loser of that race loses everything, not just
+  // one field. In a ref because the debounced auto-save must read the current
+  // value, not one captured when its timer was set.
+  const versionRef = useRef(0);
+  const [conflict, setConflict] = useState(false);
+
+  // Stale copy: retrying can't help, so report it once and stop.
+  const handleSaveError = useCallback((err) => {
+    if (isConflict(err)) setConflict(true);
+    else console.warn(`Schedule save failed (${dateStr}):`, err.message);
+  }, [dateStr]);
+
   // Fetch the saved schedule for this date from the backend — the in-memory/
   // template default set above is just the initial guess. Also exposed via the
   // imperative handle so an external change (e.g. a template applied to this
@@ -541,9 +560,16 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         // correctly. Older docs saved before the finalized field existed default to finalized.
         setOrderedStaff(sortByShift(mergeStaffOverrides(allStaff, saved.staff)));
         setFinalized(saved.finalized ?? true);
+        versionRef.current = saved.version ?? 0;
+        setConflict(false);
         justLoadedRef.current = true;
       })
-      .catch(() => { /* 404 or backend unreachable — keep the template/in-memory default */ })
+      .catch(() => {
+        // 404 or backend unreachable — keep the template/in-memory default.
+        // Version 0 means "expect no saved row", which is exactly the 404 case.
+        versionRef.current = 0;
+        setConflict(false);
+      })
       .finally(() => onLoadingChange(dateStr, false));
   }, [dateStr, allStaff, onLoadingChange]);
 
@@ -565,7 +591,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: dayEvents, finalized: false }).catch(() => {});
+      schedulesApi
+        .saveDay(dateStr, {
+          staff: staffForSave(), events: dayEvents, finalized: false,
+          expectedVersion: versionRef.current,
+        })
+        .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
+        .catch(handleSaveError);
     }, 600);
   }, [orderedStaff, dayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -584,8 +616,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     const staff = staffForSave();
     saveDaySchedule(dateStr, staff);
     saveDaySchedule(date.toDateString(), staff);
-    schedulesApi.saveDay(dateStr, { staff, events: dayEvents, finalized: true })
-      .catch(err => console.warn('Schedule save failed — finalized locally only:', err.message));
+    schedulesApi
+      .saveDay(dateStr, {
+        staff, events: dayEvents, finalized: true,
+        expectedVersion: versionRef.current,
+      })
+      .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
+      .catch(handleSaveError);
     // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
     justLoadedRef.current = true;
     setFinalized(true);
@@ -594,7 +631,11 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   async function handleUnfinalize() {
     setFinalized(false);
     try {
-      await schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: dayEvents, finalized: false });
+      const saved = await schedulesApi.saveDay(dateStr, {
+        staff: staffForSave(), events: dayEvents, finalized: false,
+        expectedVersion: versionRef.current,
+      });
+      versionRef.current = saved.version ?? versionRef.current + 1;
     } catch (err) {
       console.warn('Schedule save failed — unfinalized locally only:', err.message);
     }
@@ -872,7 +913,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (!draggingBarInfo) return;
     const rect = getRowRect(e, rowIdx);
     const raw  = HOURS_START + ((e.clientX-rect.left)/rect.width)*TOTAL_HOURS;
-    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, staffId, duration } = draggingBarInfo;
+    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, duration } = draggingBarInfo;
     const same = si === rowIdx;
     if (type === 'shift') {
       const ns = snapHalf(clamp(raw-duration/2, HOURS_START, HOURS_END-duration)); const ne = ns+duration;
@@ -1074,6 +1115,22 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       </div>
 
+      {/* This day is stale — something saved it elsewhere, so nothing further
+          from this editor will land. Shown per day, since the other six may be
+          perfectly fine. */}
+      {conflict && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'6px 10px', borderBottom:'1px solid var(--color-red)', background:'rgba(200,64,64,0.12)' }}>
+          <span style={{ fontSize:11, color:'#f07070' }}>
+            <strong>Changed elsewhere.</strong> Edits to this day aren&apos;t saving — reload to pick up the newer version.
+          </span>
+          <button
+            onClick={() => reloadFromBackend().then(() => setConflict(false))}
+            style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', background:'var(--color-red)', color:'white', border:'none', flexShrink:0 }}>
+            Reload
+          </button>
+        </div>
+      )}
+
       {/* Alerts strip */}
       {alerts.length > 0 && (
         <div style={{ padding:'4px 10px', borderBottom:'1px solid var(--color-border)', display:'flex', flexDirection:'column', gap:2 }}>
@@ -1240,7 +1297,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyViewPage() {
-  const { events, currentDate, goToDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
+  const { events, currentDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
   const { templates, addTemplate } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);

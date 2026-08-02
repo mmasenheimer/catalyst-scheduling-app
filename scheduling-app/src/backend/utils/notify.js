@@ -33,11 +33,11 @@ async function emit(fields) {
  * ever sees it.
  */
 async function notifyRequestSubmitted(request) {
-  const { type, staffName, targetName, targetStaffId, dayLabel, note } = request;
+  const { type, staffId, staffName, targetName, targetStaffId, dayLabel, note } = request;
   const quoted = note ? ` "${note}"` : "";
 
   if (type === "time_off") {
-    return emit({
+    await emit({
       requestId: String(request._id),
       type: "coverage",
       title: "Drop Shift Request",
@@ -45,19 +45,78 @@ async function notifyRequestSubmitted(request) {
       from: staffName,
       recipients: "manager",
     });
+  } else {
+    await emit({
+      requestId: String(request._id),
+      type: "shift_change",
+      title: type === "cover" ? "Cover Request" : "Swap Proposal",
+      message:
+        type === "cover"
+          ? `${staffName} asked you to cover their ${dayLabel} shift.${quoted} Accept to send it to the manager for approval.`
+          : `${staffName} proposed swapping shifts with you on ${dayLabel}.${quoted} Accept to send it to the manager for approval.`,
+      from: staffName,
+      recipients: [targetStaffId],
+    });
   }
 
+  // The requester's own copy. Partly a receipt — every other notification about
+  // this request goes to somebody else, so without it they have no evidence it
+  // sent — and partly the surface their Withdraw button lives on, since it
+  // carries the requestId the notification card keys off.
   return emit({
     requestId: String(request._id),
     type: "shift_change",
-    title: type === "cover" ? "Cover Request" : "Swap Proposal",
+    title: "Request Sent",
     message:
-      type === "cover"
-        ? `${staffName} asked you to cover their ${dayLabel} shift.${quoted} Accept to send it to the manager for approval.`
-        : `${staffName} proposed swapping shifts with you on ${dayLabel}.${quoted} Accept to send it to the manager for approval.`,
+      type === "time_off"
+        ? `Your drop-shift request for ${dayLabel} was sent to the manager.`
+        : `Your ${type} request for ${dayLabel} was sent to ${targetName}. You'll hear back once they respond.`,
     from: staffName,
-    recipients: [targetStaffId],
+    recipients: [staffId],
   });
+}
+
+/**
+ * The requester took it back. Told to whoever was actually waiting on it: the
+ * coworker if it never got past them, the manager once it had — plus the coworker
+ * in that case, since they'd already agreed to something that's now off.
+ */
+async function notifyRequestWithdrawn(request, previousStatus) {
+  const { type, staffName, targetName, targetStaffId, dayLabel } = request;
+  const label = TYPE_LABEL[type] ?? type;
+
+  if (previousStatus === "pending_peer") {
+    return emit({
+      requestId: String(request._id),
+      type: "shift_change",
+      title: "Request Withdrawn",
+      message: `${staffName} withdrew their ${label} request for ${dayLabel} — no action needed.`,
+      from: staffName,
+      recipients: [targetStaffId],
+    });
+  }
+
+  // It had already reached the manager's desk.
+  await emit({
+    requestId: String(request._id),
+    type: "shift_change",
+    title: "Request Withdrawn",
+    message: `${staffName} withdrew their ${label} request for ${dayLabel} before it was approved.`,
+    from: staffName,
+    recipients: "manager",
+  });
+
+  if (targetStaffId != null) {
+    return emit({
+      requestId: String(request._id),
+      type: "shift_change",
+      title: "Request Withdrawn",
+      message: `${staffName} withdrew the ${label} request for ${dayLabel} that you accepted — you're no longer covering it.`,
+      from: staffName,
+      recipients: [targetStaffId],
+    });
+  }
+  return null;
 }
 
 /**
@@ -107,4 +166,5 @@ module.exports = {
   notifyRequestSubmitted,
   notifyPeerAccepted,
   notifyPeerDeclined,
+  notifyRequestWithdrawn,
 };

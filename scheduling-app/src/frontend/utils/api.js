@@ -45,11 +45,22 @@ async function request(path, options = {}) {
   if (!res.ok) {
     // Prefer the server's message when it sent one.
     const detail = await res.json().catch(() => null);
-    throw new Error(
+    const err = new Error(
       detail?.error ?? `${options.method ?? "GET"} ${BASE}${path} → ${res.status}`,
     );
+    // Callers need to tell a lost race apart from a genuine failure: a 409 from a
+    // schedule save means somebody else changed that day, and the right response
+    // is to warn and offer a reload rather than to retry or report an error.
+    err.status = res.status;
+    if (detail?.currentVersion != null) err.currentVersion = detail.currentVersion;
+    throw err;
   }
   return res.json();
+}
+
+/** True when a write failed because the data moved underneath it. */
+export function isConflict(err) {
+  return err?.status === 409;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────

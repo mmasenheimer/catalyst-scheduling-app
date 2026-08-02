@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { loadTemplates } from '../../data/mockTemplates';
 import { templatesApi } from '../utils/api';
 
 const TemplatesContext = createContext(null);
@@ -28,15 +27,18 @@ export function uniqueTemplateName(desired, templates) {
 }
 
 export function TemplatesProvider({ children }) {
-  const [templates,  setTemplates]  = useState(loadTemplates);
+  const [templates,  setTemplates]  = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [triggerNew, setTriggerNew] = useState(0);
 
-  // Load templates from the API on mount; fall back to the local cache if the server is unreachable.
+  // Templates live in the database. This used to seed from a localStorage cache,
+  // but nothing had written that key since templates moved server-side — so the
+  // seed could only ever return an empty list, or worse, briefly resurrect stale
+  // templates left in a browser from an older build.
   useEffect(() => {
     templatesApi.getAll()
       .then(data => setTemplates(data))
-      .catch(() => { /* backend not running — local cache stays */ });
+      .catch(() => { /* backend not running — leave the list empty */ });
   }, []);
 
   // Live copy of the list so addTemplate can read it without depending on

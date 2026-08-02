@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates, studioHours, EVENT_TYPES } from '../../data/mockData';
+import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { useTemplates } from '../context/TemplatesContext';
-import { schedulesApi } from '../utils/api';
+import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
+import { schedulesApi, isConflict } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
@@ -15,8 +16,6 @@ import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
-const TEMPLATE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sunday'];
-const DAY_DOW       = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Sunday: 0 };
 const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
 function snapHalf(h)        { return Math.round(h * 2) / 2; }
@@ -716,157 +715,6 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   );
 }
 
-// ── Apply template modal (replaced by ApplyTemplateCalendarModal) ──────────────
-
-function ApplyTemplateModal({ currentDate, allStaff, templates, onApply, onClose }) {
-  const { getAvailability } = useScheduleContext();
-  const todayDayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
-  const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
-  const dailyTpls  = templates.filter(t => t.type === 'day' && t.day === todayDayName);
-
-  const firstId = weeklyTpls[0]?.id ?? dailyTpls[0]?.id ?? null;
-  const [selectedId,  setSelectedId]  = useState(firstId);
-  const [selectedDay, setSelectedDay] = useState(todayDayName);
-
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const template   = templates.find(t => t.id === selectedId) ?? null;
-  const isDaily    = template?.type === 'day';
-  const tplStaff   = isDaily
-    ? (template?.staff ?? [])
-    : (template?.days?.[selectedDay]?.staff ?? []);
-  const dow        = isDaily ? (DAY_DOW[template.day] ?? 1) : (DAY_DOW[selectedDay] ?? 1);
-
-  const conflicts = tplStaff.filter(p =>
-    (p.shifts ?? []).some(s => isShiftOutsideAvailability(s.start, s.end, getAvailability(p.id, dow)))
-  );
-
-  function handleApply() {
-    const map = new Map(tplStaff.map(s => [s.id, s]));
-    const next = allStaff.map(person => {
-      const tpl = map.get(person.id);
-      if (tpl) return normalizeStaff({ ...person, shifts: tpl.shifts ?? [], deskShifts: tpl.deskShifts ?? [] });
-      return normalizeStaff({ ...person, shifts: [], deskShifts: [], scheduled: false, shiftStart: null, shiftEnd: null, deskStart: null, deskEnd: null });
-    });
-    onApply(next);
-    onClose();
-  }
-
-  const hasAny = weeklyTpls.length > 0 || dailyTpls.length > 0;
-
-  function TemplateCard({ t }) {
-    const isSelected = t.id === selectedId;
-    const badge = t.type === 'day' ? t.day?.slice(0, 3) : 'Week';
-    return (
-      <div onClick={() => setSelectedId(t.id)}
-        className="px-3 py-2 rounded-lg border cursor-pointer"
-        style={{
-          borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
-          background: isSelected ? 'rgba(176,80,48,0.08)' : 'transparent',
-        }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t.name || 'Untitled'}</div>
-          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--color-muted)', color: 'var(--color-text-dim)', whiteSpace: 'nowrap' }}>{badge}</span>
-        </div>
-        {t.description && <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>{t.description}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="w-full max-w-md mx-4 rounded-xl border p-5"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
-        onClick={e => e.stopPropagation()}>
-
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Apply Template</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
-        </div>
-
-        {!hasAny ? (
-          <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-dim)' }}>
-            No templates saved yet. Create one from the Weekly View or Save as Template from this page.
-          </p>
-        ) : (
-          <>
-            {/* Template list */}
-            <div className="mb-4" style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {weeklyTpls.length > 0 && (
-                <>
-                  {(dailyTpls.length > 0) && (
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', paddingLeft: 4, marginBottom: 2 }}>Weekly</div>
-                  )}
-                  {weeklyTpls.map(t => <TemplateCard key={t.id} t={t} />)}
-                </>
-              )}
-              {dailyTpls.length > 0 && (
-                <>
-                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', paddingLeft: 4, marginTop: 4, marginBottom: 2 }}>
-                    Day Templates · {todayDayName}
-                  </div>
-                  {dailyTpls.map(t => <TemplateCard key={t.id} t={t} />)}
-                </>
-              )}
-            </div>
-
-            {/* Day picker — only for weekly templates */}
-            {!isDaily && (
-              <div className="flex gap-1.5 flex-wrap mb-4">
-                {TEMPLATE_DAYS.map(day => (
-                  <button key={day} onClick={() => setSelectedDay(day)}
-                    className="px-3 py-1 rounded-md text-xs font-medium cursor-pointer border"
-                    style={{
-                      background: selectedDay === day ? 'var(--color-accent)' : 'var(--color-muted)',
-                      color: selectedDay === day ? 'white' : 'var(--color-text-dim)',
-                      borderColor: selectedDay === day ? 'var(--color-accent)' : 'var(--color-border)',
-                    }}>
-                    {day.slice(0, 3)}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Summary */}
-            <div className="rounded-lg p-3 mb-4 text-sm" style={{ background: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
-              {tplStaff.length === 0 ? (
-                <span style={{ color: 'var(--color-text-dim)' }}>No staff in this template{isDaily ? '' : ' day'}.</span>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={{ color: 'var(--color-text)' }}>
-                    <strong>{tplStaff.length}</strong> staff · <strong>{tplStaff.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0)}</strong> desk shift{tplStaff.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0) !== 1 ? 's' : ''}
-                  </span>
-                  {conflicts.length > 0 && (
-                    <span style={{ color: 'var(--color-yellow)' }}>
-                      ⚠️ {conflicts.length} shift{conflicts.length !== 1 ? 's' : ''} outside availability
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 justify-end">
-              <button onClick={onClose}
-                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
-                Cancel
-              </button>
-              <button onClick={handleApply} disabled={tplStaff.length === 0}
-                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: tplStaff.length === 0 ? 'not-allowed' : 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none', opacity: tplStaff.length === 0 ? 0.5 : 1 }}>
-                Apply to Schedule
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Save as day template modal ─────────────────────────────────────────────────
 
 function SaveAsDayTemplateModal({ currentDate, staff, onSave, onClose }) {
@@ -1096,6 +944,10 @@ export default function DailySchedulePage() {
   const [draggingEventId, setDraggingEventId]  = useState(null);
   const [hoverRow,        setHoverRow]         = useState(null);
   const [draggingBarInfo, setDraggingBarInfo]  = useState(null);   // bar HTML5 drag
+
+  // Lets a drag reach rows below the fold — the toolbar chips sit at the top, so
+  // without this a full roster's lower half is unreachable while dragging.
+  useDragAutoScroll(Boolean(activeDragType || draggingBarInfo));
   const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
   const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
@@ -1143,6 +995,22 @@ export default function DailySchedulePage() {
   const baselineSigRef = useRef('');
   const autoSaveTimerRef = useRef(null);
 
+  // The version of the day this editor loaded. Every save sends it, and the
+  // server refuses the write if the day has moved on since — otherwise a second
+  // tab (or a second manager) editing the same date would silently overwrite
+  // everything done here, because a save replaces the whole day rather than
+  // merging. Held in a ref so the debounced auto-save always reads the current
+  // value rather than one captured when the timer was set.
+  const versionRef = useRef(0);
+  const [conflict, setConflict] = useState(false);
+
+  // A conflict isn't recoverable by retrying: this editor's copy of the day is
+  // stale, so every subsequent save would fail the same way. Say so once and stop.
+  function handleSaveError(err) {
+    if (isConflict(err)) setConflict(true);
+    else console.warn('Schedule save failed:', err.message);
+  }
+
   useEffect(() => {
     const dateStr = toDateStr(schedule.currentDate);
 
@@ -1159,6 +1027,8 @@ export default function DailySchedulePage() {
         // stay stranded mid-list instead of sinking to the unscheduled group.
         setOrderedStaff(sortByShift(mergeStaffOverrides(schedule.staff, saved.staff).map(normalizeStaff)));
         setFinalized(saved.finalized ?? true);
+        versionRef.current = saved.version ?? 0;
+        setConflict(false);
         justLoadedRef.current = true;
       })
       .catch(() => {
@@ -1171,6 +1041,9 @@ export default function DailySchedulePage() {
           const ids = getScheduledIds(schedule.currentDate);
           setOrderedStaff(sortByShift(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }))));
         }
+        // No saved row for this day yet — version 0 means "expect it absent".
+        versionRef.current = 0;
+        setConflict(false);
         setFinalized(true);
         justLoadedRef.current = true;
       });
@@ -1193,7 +1066,15 @@ export default function DailySchedulePage() {
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       const dateStr = toDateStr(schedule.currentDate);
-      schedulesApi.saveDay(dateStr, { staff: staffForSave(), events: todayEvents, finalized: false }).catch(() => {});
+      schedulesApi
+        .saveDay(dateStr, {
+          staff: staffForSave(),
+          events: todayEvents,
+          finalized: false,
+          expectedVersion: versionRef.current,
+        })
+        .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
+        .catch(handleSaveError);
     }, 600);
   }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1530,7 +1411,7 @@ export default function DailySchedulePage() {
     if (!draggingBarInfo) return;
     const rect = getRowRect(e, rowIndex);
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
-    const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, eventId, duration } = draggingBarInfo;
     const sameRow = staffIndex === rowIndex;
 
     if (type === 'shift') {
@@ -1607,7 +1488,7 @@ export default function DailySchedulePage() {
 
   function handleBarDrop(e, rowIndex) {
     if (!draggingBarInfo) return;
-    const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, eventId, staffId } = draggingBarInfo;
     if (staffIndex === rowIndex) return; // same-row position already settled via dragover
     if (!previewInfo || previewInfo.staffIndex !== rowIndex || !previewInfo.valid || previewInfo.start === null) return;
 
@@ -1825,8 +1706,14 @@ export default function DailySchedulePage() {
   async function doFinalize() {
     const date = toDateStr(schedule.currentDate);
     try {
-      await schedulesApi.saveDay(date, { staff: staffForSave(), events: todayEvents, finalized: true });
+      const saved = await schedulesApi.saveDay(date, {
+        staff: staffForSave(), events: todayEvents, finalized: true,
+        expectedVersion: versionRef.current,
+      });
+      versionRef.current = saved.version ?? versionRef.current + 1;
     } catch (err) {
+      handleSaveError(err);
+      if (isConflict(err)) return; // don't claim it's published when it isn't
       console.warn('Schedule save failed — finalized locally only:', err.message);
     }
     // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
@@ -1838,9 +1725,14 @@ export default function DailySchedulePage() {
     setFinalized(false);
     const date = toDateStr(schedule.currentDate);
     try {
-      await schedulesApi.saveDay(date, { staff: staffForSave(), events: todayEvents, finalized: false });
+      const saved = await schedulesApi.saveDay(date, {
+        staff: staffForSave(), events: todayEvents, finalized: false,
+        expectedVersion: versionRef.current,
+      });
+      versionRef.current = saved.version ?? versionRef.current + 1;
     } catch (err) {
-      console.warn('Schedule save failed — unfinalized locally only:', err.message);
+      handleSaveError(err);
+      if (!isConflict(err)) console.warn('Schedule save failed — unfinalized locally only:', err.message);
     }
     justLoadedRef.current = true;
   }
@@ -1857,6 +1749,33 @@ export default function DailySchedulePage() {
 
   return (
     <div>
+      {/* Editing this day elsewhere means this copy is stale and nothing further
+          will save. Deliberately loud and persistent rather than a toast: every
+          subsequent edit is also being discarded, so the manager needs to stop. */}
+      {conflict && (
+        <div
+          className="flex items-center justify-between gap-4 p-4 rounded-xl mb-4 border"
+          style={{ background: 'rgba(200,64,64,0.12)', borderColor: 'var(--color-red)' }}
+        >
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#f07070' }}>
+              This day was changed somewhere else
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
+              Your edits since then aren&apos;t being saved. Reload to pick up the newer version —
+              anything you changed here will be lost.
+            </p>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-sm px-4 py-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity shrink-0"
+            style={{ background: 'var(--color-red)', color: 'white', border: 'none' }}
+          >
+            Reload day
+          </button>
+        </div>
+      )}
+
       <StatsHeader
         staff={orderedStaff} events={todayEvents} currentDate={schedule.currentDate}
         onPrev={handlePrevDay} onNext={handleNextDay}
