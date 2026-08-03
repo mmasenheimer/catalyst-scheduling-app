@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -10,6 +10,10 @@ import { DeleteIcon } from '../components/DeleteIcon';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
+// The days this editor offers a tab for. Deliberately not the full week: the
+// studio is closed Saturday so there is nothing to schedule, but a template
+// still *stores* all seven (WEEK_DAY_NAMES) and the days without a tab are
+// carried through a save untouched rather than dropped.
 const TEMPLATE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sunday'];
 const DAY_DOW = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Sunday: 0 };
 const DAY_SHORT = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Sunday: 'Sun' };
@@ -69,13 +73,6 @@ function AlertsBar({ staff, day }) {
       ))}
     </div>
   );
-}
-
-function isShiftOutsideAvailability(start, end, blocks) {
-  if (blocks.length === 0) return true;
-  const availMin = Math.min(...blocks.map(b => b.start));
-  const availMax = Math.max(...blocks.map(b => b.end));
-  return start < availMin || end > availMax;
 }
 
 function AvailWarningModal({ staffName, onConfirm, onCancel }) {
@@ -580,7 +577,7 @@ function TemplateGrid({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyTemplatesPage() {
-  const { templates, selectedId, setSelectedId, triggerNew, addTemplate, updateTemplate, removeTemplate } = useTemplates();
+  const { templates, selectedId, setSelectedId, registerSelectGuard, updateTemplate, removeTemplate } = useTemplates();
   const { staff, getAvailability } = useScheduleContext();
   const [templateName,  setTemplateName]  = useState('');
   const [templateDesc,  setTemplateDesc]  = useState('');
@@ -590,7 +587,6 @@ export default function WeeklyTemplatesPage() {
   const [orderedStaff,  setOrderedStaff]  = useState([]);
   const templateDaysRef    = useRef({});
   const savedFlashRef      = useRef(null);
-  const lastTriggerRef     = useRef(triggerNew); // tracks the last-processed triggerNew to avoid firing on remount
 
   const [poolDragId,    setPoolDragId]    = useState(null);
   const [activeBar,     setActiveBar]     = useState(null);
@@ -614,19 +610,79 @@ export default function WeeklyTemplatesPage() {
 
   const currentDow = DAY_DOW[currentDay] ?? 1;
 
-  // When the panel selects a template, load it
+  // ── Unsaved work ──────────────────────────────────────────────────────────────
+  // Editing a template is entirely in-memory until Save is pressed, and nothing
+  // used to notice. Clicking another template in the sidebar reloaded the editor
+  // over the top of whatever had been dragged out, with no prompt and no undo.
+  //
+  // `loadedSigRef` is a snapshot of the template as it was loaded; comparing the
+  // working state against it is what "unsaved" means here.
+  const loadedIdRef  = useRef(null);
+  const loadedSigRef = useRef('');
+
+  const signatureOf = (name, desc, days) => JSON.stringify({ name, desc, days });
+
+  // Set when a selection has been refused pending an answer: { id }.
+  const [pendingSwitch, setPendingSwitch] = useState(null);
+
+  // Deliberately a function called from callbacks rather than a value computed
+  // during render: the days other than the one on screen live in a ref, and
+  // reading a ref while rendering makes the result something React can't track.
+  //
+  // The day being edited sits in `orderedStaff` until a day switch writes it
+  // back, so it has to be folded in to see the whole template.
+  function isDirtyNow() {
+    if (selectedId == null || loadedIdRef.current !== selectedId) return false;
+    const working = signatureOf(templateName, templateDesc, {
+      ...templateDaysRef.current,
+      [currentDay]: orderedStaff,
+    });
+    return working !== loadedSigRef.current;
+  }
+
+  // Refuse a selection change while there are unsaved edits and ask instead.
+  // Registered with the context so the sidebar's click is intercepted before the
+  // selection moves — reacting after the fact would leave the panel highlighting
+  // a template the editor hasn't opened.
+  useEffect(() => registerSelectGuard(id => {
+    if (id === loadedIdRef.current || !isDirtyNow()) return true;
+    setPendingSwitch({ id });
+    return false;
+  }));
+
+  // Closing the tab or refreshing. In-app navigation away from this page is not
+  // intercepted — noted on the dialog below.
   useEffect(() => {
-    if (!selectedId) return;
+    const warn = e => { if (isDirtyNow()) { e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  });
+
+  // Load whatever is selected, once the guard above has allowed it through.
+  useEffect(() => {
+    if (!selectedId || selectedId === loadedIdRef.current) return;
     const tpl = templates.find(t => t.id === selectedId);
     if (tpl) selectTemplate(tpl);
-  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, templates]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When the panel clicks "New Template" — only fire on actual increments, not on remount
-  useEffect(() => {
-    if (triggerNew === lastTriggerRef.current) return;
-    lastTriggerRef.current = triggerNew;
-    createTemplate();
-  }, [triggerNew]); // eslint-disable-line react-hooks/exhaustive-deps
+  // setSelectedId rather than requestSelect: the guard has already been asked
+  // and answered, and routing back through it would just ask again.
+  function resolveSwitch(id) {
+    setPendingSwitch(null);
+    setSelectedId(id);
+  }
+
+  function discardAndSwitch() { resolveSwitch(pendingSwitch.id); }
+
+  function cancelSwitch() { setPendingSwitch(null); }
+
+  async function saveAndSwitch() {
+    const { id } = pendingSwitch;
+    const ok = await handleSave({ silent: true });
+    // A refusal — a name clash, most likely. Stay put so the reason is visible
+    // and nothing is lost.
+    if (ok) resolveSwitch(id); else setPendingSwitch(null);
+  }
 
   function sortByShift(arr) {
     return [...arr].sort((a, b) => {
@@ -682,51 +738,68 @@ export default function WeeklyTemplatesPage() {
     } else {
       const day = 'Monday';
       setCurrentDay(day);
+      // Load every day the template holds, not just the six with tabs. Loading
+      // only TEMPLATE_DAYS meant Saturday was never read, and since the save
+      // writes back exactly what was loaded, opening a template and saving it
+      // silently stripped Saturday out — quietly reverting templates to the
+      // six-day shape and changing how they behave on apply.
       templateDaysRef.current = Object.fromEntries(
-        TEMPLATE_DAYS.map(d => [d, reconcileTemplateStaff(tpl.days?.[d]?.staff, staff)])
+        WEEK_DAY_NAMES
+          .filter(d => tpl.days?.[d])
+          .map(d => [d, reconcileTemplateStaff(tpl.days[d].staff, staff)]),
       );
+      // An older template may be missing one of the editable days; give it an
+      // empty one so its tab has something to show.
+      TEMPLATE_DAYS.forEach(d => {
+        if (!templateDaysRef.current[d]) templateDaysRef.current[d] = [];
+      });
       setOrderedStaff(templateDaysRef.current[day]);
     }
-  }
-
-  // ── Create new template ───────────────────────────────────────────────────────
-  async function createTemplate() {
-    const created = await addTemplate({
-      type: 'week',
-      name: '',
-      description: '',
-      days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: [] }])),
-    });
-    setSelectedId(created.id);
-    setTemplateName('');
-    setTemplateDesc('');
-    setNameError('');
-    setCurrentDay('Monday');
-    templateDaysRef.current = Object.fromEntries(TEMPLATE_DAYS.map(d => [d, []]));
-    setOrderedStaff([]);
+    // Baseline for the unsaved-changes check. Taken from the reconciled ref
+    // rather than the raw template, so normalisation on load doesn't read as an
+    // edit the manager never made.
+    loadedIdRef.current  = tpl.id;
+    loadedSigRef.current = signatureOf(tpl.name, tpl.description ?? '', templateDaysRef.current);
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────────
-  async function handleSave() {
+  // Returns whether it saved, so "save and switch" can tell a refusal from a
+  // success rather than switching away over the top of an unsaved template.
+  async function handleSave({ silent = false } = {}) {
     const trimmed = templateName.trim();
-    if (!trimmed) { setNameError('Template name is required.'); return; }
+    if (!trimmed) { setNameError('Template name is required.'); return false; }
     const duplicate = templates.some(t => t.id !== selectedId && t.name.toLowerCase() === trimmed.toLowerCase());
-    if (duplicate) { setNameError('A template with this name already exists.'); return; }
+    if (duplicate) { setNameError('A template with this name already exists.'); return false; }
     setNameError('');
     templateDaysRef.current[currentDay] = orderedStaff;
     const existingTpl = templates.find(t => t.id === selectedId);
     const changes = existingTpl?.type === 'day'
       ? { name: trimmed, description: templateDesc.trim(), staff: templateDaysRef.current[currentDay] ?? orderedStaff }
-      : { name: trimmed, description: templateDesc.trim(), days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d, { staff: templateDaysRef.current[d] ?? [] }])) };
+      // Write back every day held in the ref, which is every day the template
+      // arrived with — so Saturday survives a save even though nothing here
+      // edits it.
+      : {
+        name: trimmed,
+        description: templateDesc.trim(),
+        days: Object.fromEntries(
+          Object.keys(templateDaysRef.current).map(d => [d, { staff: templateDaysRef.current[d] ?? [] }]),
+        ),
+      };
     try {
       await updateTemplate(selectedId, changes);
     } catch (err) {
       setNameError(err.message || 'Failed to save template.');
-      return;
+      return false;
     }
-    clearTimeout(savedFlashRef.current);
-    setJustSaved(true);
-    savedFlashRef.current = setTimeout(() => setJustSaved(false), 1200);
+    // What was just written is the new baseline, so the editor stops reporting
+    // unsaved changes.
+    loadedSigRef.current = signatureOf(trimmed, templateDesc.trim(), templateDaysRef.current);
+    if (!silent) {
+      clearTimeout(savedFlashRef.current);
+      setJustSaved(true);
+      savedFlashRef.current = setTimeout(() => setJustSaved(false), 1200);
+    }
+    return true;
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
@@ -737,6 +810,8 @@ export default function WeeklyTemplatesPage() {
       setNameError(err.message || 'Failed to delete template.');
       return;
     }
+    loadedIdRef.current  = null;
+    loadedSigRef.current = '';
     setSelectedId(null);
     setTemplateName('');
     setTemplateDesc('');
@@ -1460,6 +1535,47 @@ export default function WeeklyTemplatesPage() {
       )}
 
       {/* ── Availability warning modal ────────────────────────────────────────── */}
+      {/* Switching templates with unsaved edits. The sidebar has already moved
+          the selection by the time this page hears about it, so cancelling puts
+          it back rather than trying to prevent the click. */}
+      {pendingSwitch && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+          onClick={e => { if (e.target === e.currentTarget) cancelSwitch(); }}
+        >
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 24, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>
+              Unsaved changes
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, lineHeight: 1.45, color: 'var(--color-text-dim)' }}>
+              Your edits to <strong style={{ color: 'var(--color-text)' }}>{templateName || 'this template'}</strong> haven&apos;t
+              been saved. Opening <strong style={{ color: 'var(--color-text)' }}>{templates.find(t => t.id === pendingSwitch.id)?.name || 'Untitled'}</strong> will
+              discard them.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                onClick={cancelSwitch}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Stay here
+              </button>
+              <button
+                onClick={discardAndSwitch}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-red)', background: 'transparent', color: 'var(--color-red)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Discard changes
+              </button>
+              <button
+                onClick={saveAndSwitch}
+                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Save and switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {availWarning && (
         <AvailWarningModal
           staffName={availWarning.staffName}

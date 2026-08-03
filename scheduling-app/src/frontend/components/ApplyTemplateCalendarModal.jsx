@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { schedulesApi } from '../utils/api';
+import { schedulesApi, isConflict } from '../utils/api';
 
 const ALL_DAY_NAMES  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEK_ORDER     = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -22,6 +22,9 @@ function getMondayOf(date) {
   return d;
 }
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
+function dayLabel(date) {
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
 function toDateStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -107,34 +110,58 @@ function DayPreview({ staff }) {
   );
 }
 
+// A week template used to render as one track per day with every person's shift
+// stacked on it, which at fifteen people is an unreadable green block. Instead the
+// manager picks a day and gets the same per-person view a day template shows. The
+// pills keep the at-a-glance week shape by carrying each day's headcount.
 function WeekPreview({ template }) {
+  const days = WEEK_ORDER.filter(d => template.days?.[d]);
+  const headcount = day =>
+    (template.days?.[day]?.staff ?? []).filter(p => getShifts(p).length > 0).length;
+
+  // Open on a day that actually has people, so the preview is never blank on
+  // arrival. Remounted per template (see the key in MiniPreview), so this
+  // re-runs whenever the selection changes.
+  const [day, setDay] = useState(() => days.find(d => headcount(d) > 0) ?? days[0] ?? null);
+
+  if (days.length === 0) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--color-text-dim)', textAlign: 'center', padding: '16px 0', fontStyle: 'italic' }}>
+        This template has no days
+      </div>
+    );
+  }
+
   return (
     <div>
-      {WEEK_ORDER.map(day => {
-        const dayStaff  = (template.days?.[day]?.staff ?? []);
-        const scheduled = dayStaff.filter(p => getShifts(p).length > 0);
-        return (
-          <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-            <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: 'var(--color-text-dim)', flexShrink: 0 }}>
-              {DAY_SHORT[day]}
-            </div>
-            <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--color-muted)', borderRadius: 3 }}>
-              {scheduled.map((p, pi) =>
-                getShifts(p).map((sh, si) => (
-                  <div key={`${pi}-${si}`} style={{
-                    position: 'absolute', top: 1, height: 'calc(100% - 2px)', borderRadius: 2,
-                    background: 'rgba(74,222,128,0.4)',
-                    left: pct(sh.start), width: wid(sh.start, sh.end),
-                  }} />
-                ))
-              )}
-            </div>
-            <div style={{ width: 20, fontSize: 10, color: 'var(--color-text-dim)', textAlign: 'right', flexShrink: 0 }}>
-              {scheduled.length > 0 ? scheduled.length : '–'}
-            </div>
-          </div>
-        );
-      })}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 10, justifyContent: 'center' }}>
+        {days.map(d => {
+          const n   = headcount(d);
+          const sel = d === day;
+          return (
+            <button
+              key={d}
+              onClick={() => setDay(d)}
+              title={`${d} — ${n === 0 ? 'nobody scheduled' : `${n} staff`}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 3,
+                padding: '3px 6px', borderRadius: 6, cursor: 'pointer',
+                border: `1px solid ${sel ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                background: sel ? 'var(--color-accent)' : 'transparent',
+                color: sel ? 'white' : n === 0 ? 'rgba(128,128,128,0.6)' : 'var(--color-text-dim)',
+                fontSize: 10, fontWeight: 600, lineHeight: 1,
+                transition: 'background 0.1s, border-color 0.1s',
+              }}
+            >
+              {DAY_SHORT[d]}
+              <span style={{ fontSize: 9, fontWeight: 500, opacity: sel ? 0.85 : 0.7 }}>
+                {n || '–'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <DayPreview staff={template.days?.[day]?.staff} />
     </div>
   );
 }
@@ -151,7 +178,7 @@ function MiniPreview({ template }) {
     <div>
       {template.type === 'day'
         ? <DayPreview staff={template.staff} />
-        : <WeekPreview template={template} />
+        : <WeekPreview key={template.id} template={template} />
       }
     </div>
   );
@@ -172,11 +199,24 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
     const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1);
   });
   const [applied, setApplied] = useState(false);
+  const [busy,    setBusy]    = useState(false);
+  const [error,   setError]   = useState('');
 
   const template = templates.find(t => t.id === selectedId) ?? null;
   const isDay    = template?.type === 'day';
 
-  useEffect(() => { setSelectedDate(null); setSelectedWeek(null); setApplied(false); }, [selectedId]);
+  // Choosing a different template drops whatever date was pending against the old
+  // one. This lives in the click handler rather than an effect on `selectedId`
+  // because that click is the only thing that changes it — an effect would just
+  // render once with a stale selection and then again to clear it.
+  function selectTemplate(id) {
+    setSelectedId(id);
+    setSelectedDate(null);
+    setSelectedWeek(null);
+    setApplied(false);
+    setError('');
+  }
+
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose(); }
     window.addEventListener('keydown', onKey);
@@ -206,7 +246,8 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
   const hoveredWeek = (!isDay && hoveredDate) ? getMondayOf(hoveredDate) : null;
 
   function handleClick(date) {
-    if (!isSelectable(date)) return;
+    if (!isSelectable(date) || busy) return;
+    setError('');
     if (isDay) { setSelectedDate(date); }
     else       { setSelectedWeek(getMondayOf(date)); setSelectedDate(null); }
   }
@@ -214,43 +255,110 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
   // Applying a template is a real edit — it persists to the backend as an
   // unfinalized draft (same as any other schedule change) rather than only
   // updating the local in-memory cache, which was lost on refresh.
-  function persistDay(dateStr, newStaff) {
+  // The server write goes first; the local cache and the parent are only told
+  // once it has been accepted. This used to run the other way round with the
+  // failure swallowed, so a rejected save — a conflict, a dead session, the
+  // backend being down — still flipped the button to "Applied!" and left every
+  // view showing a schedule that was never stored. The manager found out on the
+  // next refresh, by which point the edit was gone.
+  async function persistDay(date, newStaff) {
+    const dateStr = toDateStr(date);
+
+    // Read the day before overwriting it, for two reasons.
+    //
+    // `expectedVersion` makes the write conditional: if somebody edited this day
+    // between the read and the write, the server rejects it with a 409 rather
+    // than letting the template quietly bury their work. Applying a template is
+    // the bluntest write in the app — it replaces a whole day, or seven — and it
+    // was the one write still going in unconditionally, so a concurrent edit
+    // vanished with no error and no trace. A 404 here means the day has never
+    // been saved, which is exactly what version 0 asserts.
+    //
+    // Carrying `events` through also stops the apply from blanking the day's
+    // event snapshot, which it did by sending an empty array. A template holds
+    // no events, so it has nothing to say about them and shouldn't clear them.
+    const existing = await schedulesApi.getDay(dateStr).catch(() => null);
+    await schedulesApi.saveDay(dateStr, {
+      staff: newStaff,
+      events: existing?.events ?? [],
+      finalized: false,
+      expectedVersion: existing?.version ?? 0,
+    });
+
     saveDaySchedule(dateStr, newStaff);
-    schedulesApi.saveDay(dateStr, { staff: newStaff, events: [], finalized: false }).catch(() => {});
+    saveDaySchedule(date.toDateString(), newStaff);
+    onApplyStaff?.(newStaff, dateStr);
   }
 
-  function handleApply() {
-    if (!template || applied) return;
-    if (isDay) {
-      if (!selectedDate) return;
-      const dateStr  = toDateStr(selectedDate);
-      const newStaff = buildStaffForDate(allStaff, template.staff ?? []);
-      persistDay(dateStr, newStaff);
-      saveDaySchedule(selectedDate.toDateString(), newStaff);
-      onApplyStaff?.(newStaff, dateStr);
-    } else {
-      if (!selectedWeek) return;
-      for (let i = 0; i < 7; i++) {
-        const date     = addDays(selectedWeek, i);
-        const dayName  = ALL_DAY_NAMES[date.getDay()];
-        const newStaff = buildStaffForDate(allStaff, template.days?.[dayName]?.staff ?? []);
-        const dateStr  = toDateStr(date);
-        persistDay(dateStr, newStaff);
-        saveDaySchedule(date.toDateString(), newStaff);
-        onApplyStaff?.(newStaff, dateStr);
+  async function handleApply() {
+    if (!template || applied || busy) return;
+
+    const targets = isDay
+      ? (selectedDate ? [{ date: selectedDate, tpl: template.staff ?? [] }] : [])
+      : (selectedWeek
+        // Only the days this template actually defines. Templates cover the six
+        // days the studio opens, so a blind seven-day loop wrote Saturday as
+        // "nobody scheduled" — turning "the template doesn't model this day"
+        // into an instruction to clear it, and silently dropping anyone who had
+        // been put on a Saturday event.
+        //
+        // A day that exists with an empty staff list is still applied: that is a
+        // deliberate "nobody works this day". Only an absent day is left alone.
+        ? Array.from({ length: 7 }, (_, i) => addDays(selectedWeek, i))
+          .map(date => ({ date, day: template.days?.[ALL_DAY_NAMES[date.getDay()]] }))
+          .filter(t => t.day)
+          .map(({ date, day }) => ({ date, tpl: day.staff ?? [] }))
+        : []);
+    if (targets.length === 0) return;
+
+    setBusy(true);
+    setError('');
+    // allSettled rather than all: a week is several independent writes, and one
+    // failing shouldn't hide whether the others landed.
+    const results = await Promise.allSettled(
+      targets.map(t => persistDay(t.date, buildStaffForDate(allStaff, t.tpl))),
+    );
+    setBusy(false);
+
+    const failures = results
+      .map((r, i) => (r.status === 'rejected' ? { date: targets[i].date, err: r.reason } : null))
+      .filter(Boolean);
+
+    if (failures.length > 0) {
+      let reason = failures[0].err?.message || 'The server rejected the change.';
+      // A conflict isn't a failure to retry blindly — the day moved underneath
+      // the apply, so the manager needs to see the current state before deciding
+      // whether they still want the template over the top of it.
+      if (failures.some(f => isConflict(f.err))) {
+        reason += ' Close this and reopen the day to see the current schedule before applying again.';
       }
+      setError(
+        failures.length === targets.length
+          ? `Nothing was saved. ${reason}`
+          : `Saved ${targets.length - failures.length} of ${targets.length} days. `
+            + `${failures.map(f => dayLabel(f.date)).join(', ')} failed. ${reason}`,
+      );
+      return;
     }
+
     setApplied(true);
     setTimeout(() => onClose(), 900);
   }
 
   const canApply = !!template && (isDay ? !!selectedDate : !!selectedWeek);
 
+  // Days of the week this template has nothing to say about — left as they are
+  // rather than cleared. Named on the confirmation line so it is clear before
+  // committing that they won't be touched.
+  const untouchedDays = !isDay && template
+    ? WEEK_ORDER.filter(d => !template.days?.[d]).map(d => DAY_SHORT[d])
+    : [];
+
   function TemplateCard({ t }) {
     const sel = t.id === selectedId;
     return (
       <div
-        onClick={() => setSelectedId(t.id)}
+        onClick={() => selectTemplate(t.id)}
         style={{
           padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
           border: `1px solid ${sel ? 'var(--color-accent)' : 'var(--color-border)'}`,
@@ -399,9 +507,14 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
               {canApply && !applied && (
                 <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'center' }}>
                   {isDay
-                    ? `→ ${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`
+                    ? `→ ${dayLabel(selectedDate)}`
                     : `→ Week of ${selectedWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${addDays(selectedWeek, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                   }
+                  {untouchedDays.length > 0 && (
+                    <div style={{ marginTop: 3, fontSize: 11, opacity: 0.75 }}>
+                      {untouchedDays.join(', ')} left unchanged
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -410,7 +523,15 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
 
         {/* Footer */}
         {allTpls.length > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+            {error && (
+              <div style={{
+                flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.35,
+                color: 'var(--color-red)', textAlign: 'left',
+              }}>
+                {error}
+              </div>
+            )}
             <button
               onClick={onClose}
               style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}
@@ -419,16 +540,18 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
             </button>
             <button
               onClick={handleApply}
-              disabled={!canApply || applied}
+              disabled={!canApply || applied || busy}
               style={{
                 padding: '7px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
+                whiteSpace: 'nowrap', flexShrink: 0,
                 background: applied ? '#2a4a2a' : canApply ? 'var(--color-accent)' : 'var(--color-muted)',
                 color: canApply || applied ? 'white' : 'var(--color-text-dim)',
-                cursor: canApply && !applied ? 'pointer' : 'default',
+                cursor: canApply && !applied && !busy ? 'pointer' : 'default',
+                opacity: busy ? 0.7 : 1,
                 transition: 'background 0.2s',
               }}
             >
-              {applied ? '✓ Applied!' : 'Apply'}
+              {applied ? '✓ Applied!' : busy ? 'Applying…' : error ? 'Retry' : 'Apply'}
             </button>
           </div>
         )}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import {
@@ -8,7 +8,7 @@ import {
   mergeStaffShifts,
 } from '../utils/scheduleUtils';
 import { schedulesApi } from '../utils/api';
-import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
+import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 import { DateInput } from '../components/DateInput';
 import { RangeCalendar } from '../components/RangeCalendar';
 
@@ -32,19 +32,14 @@ const inputStyle = {
   color: 'var(--color-text)',
 };
 
-// Returns scheduled staff objects (with shiftStart/shiftEnd) for a given date.
-function getScheduledStaffForDate(dateStr, getDaySchedule, allStaff) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  const saved = getDaySchedule(date.toDateString());
-  if (saved) {
-    return saved.filter(s => s.scheduled);
-  }
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const tpl = weeklyTemplates[dayName];
-  if (!tpl) return [];
-  return tpl.staff.map(ts => allStaff.find(s => s.id === ts.id)).filter(Boolean);
+/** A person's shifts for a day, tolerating the legacy scalar pair. */
+function shiftsOf(person) {
+  if (person.shifts?.length) return person.shifts;
+  return person.shiftStart != null ? [{ start: person.shiftStart, end: person.shiftEnd }] : [];
 }
+
+const shiftLabel = shifts =>
+  shifts.map(sh => `${formatTime(sh.start)} – ${formatTime(sh.end)}`).join(', ');
 
 export default function AddEventPage() {
   const { addEvent, staff, getDaySchedule } = useScheduleContext();
@@ -121,18 +116,60 @@ export default function AddEventPage() {
     });
   }
 
-  // Scheduled staff objects (with shiftStart/shiftEnd) for the active date tab
-  const activeScheduledStaff = activeStaffDate
-    ? getScheduledStaffForDate(activeStaffDate, getDaySchedule, staff)
-    : [];
-  const activeScheduledMap = new Map(activeScheduledStaff.map(s => [s.id, s]));
+  // Who is on shift for the date being assigned. Fetched rather than read from
+  // the in-memory day cache: that cache is only written when a manager edits or
+  // navigates a day, so arriving here directly found it empty and offered a
+  // roster with nobody scheduled for any date. The submit handler below has
+  // always fetched — this makes the list agree with what actually gets saved.
+  // Stored with the date it belongs to, so "still loading" is derived by
+  // comparing rather than tracked as a second piece of state that has to be
+  // reset in step with this one.
+  const [loadedDay, setLoadedDay] = useState({ date: null, staff: [] });
+
+  useEffect(() => {
+    if (!activeStaffDate) return undefined;
+    let cancelled = false;
+    schedulesApi.getDay(activeStaffDate)
+      .then(saved => {
+        if (!cancelled) setLoadedDay({ date: activeStaffDate, staff: saved?.staff ?? [] });
+      })
+      .catch(() => {
+        // 404 (never saved) or the backend is unreachable. Anything the cache
+        // holds beats nothing, and empty is the honest answer otherwise.
+        if (cancelled) return;
+        const [y, m, d] = activeStaffDate.split('-').map(Number);
+        const cached = getDaySchedule(new Date(y, m - 1, d).toDateString()) ?? [];
+        setLoadedDay({ date: activeStaffDate, staff: cached });
+      });
+    // A quick series of date-tab clicks can land out of order, so a superseded
+    // response must not overwrite the current one.
+    return () => { cancelled = true; };
+  }, [activeStaffDate, getDaySchedule]);
+
+  const scheduledForDate = loadedDay.date === activeStaffDate ? loadedDay.staff : null;
+  const loadingStaff     = activeStaffDate != null && scheduledForDate === null;
+
+  // id -> that person's shifts for the day. Keyed on shifts rather than the
+  // legacy scalar pair so somebody working a split day is represented by both
+  // blocks instead of only the first.
+  const activeScheduledMap = useMemo(() => {
+    const map = new Map();
+    (scheduledForDate ?? []).forEach(p => {
+      const shifts = shiftsOf(p);
+      if (shifts.length) map.set(p.id, shifts);
+    });
+    return map;
+  }, [scheduledForDate]);
 
   // Availability tiers relative to the current event time window
   function availTier(s) {
-    const scheduled = activeScheduledMap.get(s.id);
-    if (!scheduled) return 0;                                          // not scheduled
-    if (scheduled.shiftStart < form.end && scheduled.shiftEnd > form.start) return 2; // available during event
-    return 1;                                                          // scheduled but shift doesn't overlap
+    const shifts = activeScheduledMap.get(s.id);
+    if (!shifts?.length) return 0;                                     // not scheduled
+    // Any one shift covering the event is enough: somebody working 8–11 and
+    // 2–6 can staff a 3pm event even though their first block can't.
+    return shifts.some(sh => sh.start < form.end && sh.end > form.start)
+      ? 2                                                              // available during event
+      : 1;                                                             // working, but not then
   }
 
   const activeAssigned = activeStaffDate ? (form.assignedByDate[activeStaffDate] ?? []) : [];
@@ -425,12 +462,23 @@ export default function AddEventPage() {
             </div>
 
             {/* Staff list for active date */}
-            {activeStaffDate && (
+            {/* An in-flight fetch must not render as a roster where nobody is
+                scheduled — that reads as a real answer rather than a pending one. */}
+            {loadingStaff && (
+              <div
+                className="rounded-lg border px-3 py-4 text-sm"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}
+              >
+                Checking who&apos;s working…
+              </div>
+            )}
+
+            {activeStaffDate && !loadingStaff && (
               <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
                 {sortedStaff.map((s, i) => {
-                  const assigned  = activeAssigned.includes(s.id);
-                  const tier      = availTier(s);
-                  const scheduled = activeScheduledMap.get(s.id);
+                  const assigned = activeAssigned.includes(s.id);
+                  const tier     = availTier(s);
+                  const shifts   = activeScheduledMap.get(s.id);
                   return (
                     <label
                       key={s.id}
@@ -450,14 +498,14 @@ export default function AddEventPage() {
                       <span className="flex-1 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
                         {s.name}
                       </span>
-                      {tier === 2 && scheduled && (
+                      {tier === 2 && shifts && (
                         <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ background: 'rgba(74,124,94,0.15)', color: '#6ab888' }}>
-                          {formatTime(scheduled.shiftStart)} – {formatTime(scheduled.shiftEnd)}
+                          {shiftLabel(shifts)}
                         </span>
                       )}
-                      {tier === 1 && scheduled && (
+                      {tier === 1 && shifts && (
                         <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ background: 'rgba(180,120,40,0.15)', color: '#c8943a' }}>
-                          Shift {formatTime(scheduled.shiftStart)} – {formatTime(scheduled.shiftEnd)}
+                          Shift {shiftLabel(shifts)}
                         </span>
                       )}
                       {tier === 0 && (

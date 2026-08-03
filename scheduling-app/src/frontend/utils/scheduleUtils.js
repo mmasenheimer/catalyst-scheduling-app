@@ -1,6 +1,4 @@
-import { staffingTargetsByDay, deskHoursByDay, weeklyTemplates, HOURS_START, HOURS_END } from '../../data/mockData';
-
-const DOW_TO_TPL = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
+import { staffingTargetsByDay, deskHoursByDay, HOURS_START, HOURS_END } from '../../data/mockData';
 
 /** Format a Date as a local YYYY-MM-DD string (matches the key daySchedules is stored under) */
 export function toDateStr(date) {
@@ -31,11 +29,19 @@ export function mergeStaffOverrides(liveStaff, overrides) {
   });
 }
 
-/** Build the full staff list for a date — saved override if one exists, else the day's template, with everyone else blank */
+/**
+ * Build the full staff list for a date: the saved schedule if there is one,
+ * otherwise nobody scheduled — with the whole roster present either way.
+ *
+ * This used to fall back to the hardcoded `weeklyTemplates` seed whenever a date
+ * had no saved schedule, so an unsaved day rendered invented shifts. The seed's
+ * ids match the live roster (the roster was created from that file), so those
+ * shifts were attributed to real people. A date with no saved row has no
+ * schedule — that is what gets shown now.
+ */
 export function getStaffForDate(date, getDaySchedule, allStaff) {
   const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
-  const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
-  return mergeStaffOverrides(allStaff, saved ?? tplStaff);
+  return mergeStaffOverrides(allStaff, saved ?? []);
 }
 
 /**
@@ -50,16 +56,18 @@ export function buildSavedScheduleMap(schedules) {
 }
 
 /**
- * Staff list for a date, resolved exactly the way the manager's views resolve
- * it: the saved schedule for that date if one exists, otherwise the day's
- * template — always merged onto the live roster. This is what lets the
- * employee-facing pages reflect real schedule changes instead of only the
- * hardcoded weekly template. `savedByDate` comes from buildSavedScheduleMap.
+ * Staff list for a date, resolved the way the manager's views resolve it: the
+ * saved schedule for that date if one exists, otherwise nobody scheduled —
+ * always merged onto the live roster. `savedByDate` comes from
+ * buildSavedScheduleMap.
+ *
+ * Same correction as getStaffForDate above, and it mattered more here: this
+ * backs personForDate, which is what My Schedule renders. An employee looking
+ * at a week with no saved rows was being shown seed shifts as their own hours.
  */
 export function staffForDateFromSaved(date, savedByDate, allStaff) {
   const saved = savedByDate?.[toDateStr(date)];
-  const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
-  return mergeStaffOverrides(allStaff, saved ?? tplStaff);
+  return mergeStaffOverrides(allStaff, saved ?? []);
 }
 
 /** One person's entry for a date (with shifts[]), or null if not on the roster. */
@@ -325,6 +333,56 @@ export function getDeskWindow(dow = 1) {
 export function isDeskRequired(hour, dow = 1, slot = 0.5) {
   const w = getDeskWindow(dow);
   return w != null && hour < w.end && hour + slot > w.start;
+}
+
+/**
+ * The days a weekly template records, Monday first.
+ *
+ * Every template stores all seven, including Saturday, even though the studio is
+ * closed then and no editor offers a Saturday tab. The distinction matters on
+ * apply: a day a template defines is written (clearing it), while a day it omits
+ * is left alone. Recording all seven keeps that behaviour the same no matter
+ * which of the three creation paths produced the template.
+ *
+ * Canonical here because a private copy of this list in the template editor —
+ * six days, missing Saturday — is what silently stripped Saturday from any
+ * template that was opened and saved.
+ */
+export const WEEK_DAY_NAMES = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+];
+
+/**
+ * True when any part of a shift falls outside what someone said they can work.
+ *
+ * Availability arrives as a list of blocks, and a student's day is usually
+ * several of them with classes in between. The three editors each carried a
+ * copy of this that compared the shift against the earliest start and the
+ * latest end — the outer envelope — and so never noticed a shift sitting
+ * entirely inside a gap. Somebody free 8–11 and 2–6:30 could be scheduled
+ * 11:30–1:30, straight through the class that made the gap, with no warning at
+ * all. Since fragmented availability is the normal case here, the check was
+ * silently useless exactly when it was needed.
+ *
+ * Blocks are merged before testing, so availability given as 8–11 and 11–2
+ * counts as one continuous 8–2 and a shift spanning the join is fine — there is
+ * no real gap there. Touching blocks merge; only a genuine hole is a hole.
+ */
+export function isShiftOutsideAvailability(start, end, blocks) {
+  if (!blocks?.length) return true;
+
+  const merged = [...blocks]
+    .sort((a, b) => a.start - b.start)
+    .reduce((acc, b) => {
+      const last = acc[acc.length - 1];
+      if (last && b.start <= last.end) last.end = Math.max(last.end, b.end);
+      else acc.push({ start: b.start, end: b.end });
+      return acc;
+    }, []);
+
+  // The whole shift has to sit inside a single merged window. Straddling two
+  // windows means crossing the gap between them.
+  return !merged.some(w => w.start <= start && w.end >= end);
 }
 
 /** Count how many staff are on shift at a given hour (handles shifts array or legacy shiftStart/shiftEnd) */

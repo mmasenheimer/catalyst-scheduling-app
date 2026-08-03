@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { availabilityApi } from '../utils/api';
 import { generateWeeklyTemplate, summarizeGaps, TEMPLATE_DAYS } from '../utils/generateTemplate';
-import { formatTime } from '../utils/scheduleUtils';
+import { formatTime, WEEK_DAY_NAMES } from '../utils/scheduleUtils';
 import mockAvailability from '../../data/mockAvailability';
 
 /**
@@ -53,7 +53,9 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
     try {
       await onCreate({
         name: name.trim() || 'Generated from Availability',
-        days: Object.fromEntries(TEMPLATE_DAYS.map(d => [d.name, { staff: result.days[d.name] ?? [] }])),
+        // Every weekday, not just the ones the generator schedules — see
+        // WEEK_DAY_NAMES for why Saturday is recorded despite being closed.
+        days: Object.fromEntries(WEEK_DAY_NAMES.map(name => [name, { staff: result.days[name] ?? [] }])),
       });
     } catch (err) {
       setError(err.message || 'Could not create the template.');

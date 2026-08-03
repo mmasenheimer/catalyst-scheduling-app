@@ -29,7 +29,25 @@ export function uniqueTemplateName(desired, templates) {
 export function TemplatesProvider({ children }) {
   const [templates,  setTemplates]  = useState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [triggerNew, setTriggerNew] = useState(0);
+
+  // The template editor holds its edits in memory until Save, so switching the
+  // selection out from under it destroys work. It registers a guard here; the
+  // guard returns false to refuse a selection change and take responsibility for
+  // it (by asking the manager what to do).
+  //
+  // Guarding the selection itself, rather than reacting after it has already
+  // moved, is what keeps the sidebar from briefly highlighting a template the
+  // editor hasn't opened.
+  const selectGuardRef = useRef(null);
+  const registerSelectGuard = useCallback(fn => {
+    selectGuardRef.current = fn;
+    return () => { if (selectGuardRef.current === fn) selectGuardRef.current = null; };
+  }, []);
+
+  const requestSelect = useCallback(id => {
+    if (selectGuardRef.current && selectGuardRef.current(id) === false) return;
+    setSelectedId(id);
+  }, []);
 
   // Templates live in the database. This used to seed from a localStorage cache,
   // but nothing had written that key since templates moved server-side — so the
@@ -79,7 +97,7 @@ export function TemplatesProvider({ children }) {
 
   return (
     <TemplatesContext.Provider value={{
-      templates, selectedId, setSelectedId, triggerNew, setTriggerNew,
+      templates, selectedId, setSelectedId, requestSelect, registerSelectGuard,
       addTemplate, updateTemplate, removeTemplate, removeAllTemplates,
     }}>
       {children}

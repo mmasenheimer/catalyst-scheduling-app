@@ -302,13 +302,8 @@ export const initialEvents = [
   },
 ];
 
-// ── Weekly templates ──────────────────────────────────────────────────────────
-export const weeklyTemplates = {
-  Monday:    { staff: initialStaff, events: [] },
-  Tuesday:   { staff: initialStaff, events: [] },
-  Wednesday: { staff: initialStaff, events: initialEvents.filter(e => e.days.includes('2026-01-07')) },
-  Thursday:  { staff: initialStaff, events: [] },
-  Friday:    { staff: initialStaff, events: initialEvents.filter(e => e.days.includes('2026-06-13')) },
-  Saturday:  { staff: [],           events: [] },
-  Sunday:    { staff: initialStaff, events: [] },
-};
+// Weekly templates used to live here, standing in for any date that had no
+// saved schedule. Schedules come from the database now, so a date with no row
+// simply has nobody on it — substituting this seed meant real staff were shown
+// invented shifts on days they were never scheduled. Removed rather than left
+// unused, so nothing reaches for it again.

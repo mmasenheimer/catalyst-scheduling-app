@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
+import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability } from '../utils/scheduleUtils';
+import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { useTemplates } from '../context/TemplatesContext';
@@ -20,12 +20,6 @@ const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 
 
 function snapHalf(h)        { return Math.round(h * 2) / 2; }
 function clamp(v, lo, hi)   { return Math.max(lo, Math.min(hi, v)); }
-
-function getScheduledIds(date) {
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const tpl = weeklyTemplates[dayName];
-  return tpl ? new Set(tpl.staff.map(s => s.id)) : new Set();
-}
 
 function normalizeStaff(s) {
   const shifts = s.shifts ?? (s.scheduled && s.shiftStart != null
@@ -54,13 +48,6 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
     start = snapHalf(start + 0.5);
   }
   return null;
-}
-
-function isShiftOutsideAvailability(start, end, blocks) {
-  if (blocks.length === 0) return true;
-  const availMin = Math.min(...blocks.map(b => b.start));
-  const availMax = Math.max(...blocks.map(b => b.end));
-  return start < availMin || end > availMax;
 }
 
 // ── Stats header ───────────────────────────────────────────────────────────────
@@ -927,16 +914,17 @@ export default function DailySchedulePage() {
   const trashRef = useRef(null);
 
   const currentDow = schedule.currentDate.getDay();
+  const dateStr    = toDateStr(schedule.currentDate);
 
   // Always derived live — events are global and shouldn't freeze just because
   // the day's staff schedule was finalized (unlike shifts, there's no reason
   // a finalized day should show a stale/different event list than reality).
   const todayEvents = getEventsForDate(schedule.currentDate, schedule.events);
 
-  const [orderedStaff,    setOrderedStaff]    = useState(() => {
-    const ids = getScheduledIds(schedule.currentDate);
-    return schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }));
-  });
+  // Nobody is scheduled until the day's saved schedule arrives from the backend.
+  const [orderedStaff,    setOrderedStaff]    = useState(() =>
+    schedule.staff.map(s => normalizeStaff({ ...s, scheduled: false })),
+  );
   const [activeBar,       setActiveBar]        = useState(null);   // resize-only mouse drag
   const [finalized,       setFinalized]        = useState(true);   // days default to finalized until edited
   const [trashHtmlOver,   setTrashHtmlOver]    = useState(false);
@@ -1004,11 +992,44 @@ export default function DailySchedulePage() {
   const versionRef = useRef(0);
   const [conflict, setConflict] = useState(false);
 
+  // The date currently on screen. Unlike the effect closures this is always
+  // up to date, which is what lets a save that resolves after the manager has
+  // navigated tell whether its result still applies to what they're looking at.
+  const currentDateStrRef = useRef(dateStr);
+  useEffect(() => { currentDateStrRef.current = dateStr; }, [dateStr]);
+
+  // What the debounced save is going to write, kept alongside the timer so the
+  // same payload can be flushed early if the day changes first.
+  const pendingSaveRef = useRef(null);
+
   // A conflict isn't recoverable by retrying: this editor's copy of the day is
   // stale, so every subsequent save would fail the same way. Say so once and stop.
   function handleSaveError(err) {
     if (isConflict(err)) setConflict(true);
     else console.warn('Schedule save failed:', err.message);
+  }
+
+  // One place every auto-save goes through. The version is passed in rather than
+  // read here, because the two callers disagree about which one is right: the
+  // debounce wants the newest (a save may have completed since it was queued),
+  // while the flush-on-leave wants the one belonging to the day being left.
+  //
+  // Both guards below exist because this can resolve after the manager has moved
+  // to another day. Adopting the version then would stamp the old day's number
+  // onto the new day's editor, and raising the conflict banner would blame the
+  // day on screen for a failure that belongs to one they've already left.
+  function writeDay({ dateStr: forDate, staff, events }, expectedVersion) {
+    return schedulesApi
+      .saveDay(forDate, { staff, events, finalized: false, expectedVersion })
+      .then(saved => {
+        if (currentDateStrRef.current === forDate) {
+          versionRef.current = saved.version ?? expectedVersion + 1;
+        }
+      })
+      .catch(err => {
+        if (currentDateStrRef.current === forDate) handleSaveError(err);
+        else console.warn(`Auto-save for ${forDate} failed after navigating away:`, err.message);
+      });
   }
 
   useEffect(() => {
@@ -1032,14 +1053,15 @@ export default function DailySchedulePage() {
         justLoadedRef.current = true;
       })
       .catch(() => {
-        // 404 or backend unreachable — fall back to in-memory / weekly template.
-        // A never-touched day is the standard template, so it starts finalized.
+        // 404 or backend unreachable — fall back to whatever is in memory. With
+        // neither, the day is genuinely unscheduled; it used to fall back to the
+        // hardcoded weeklyTemplates seed, which showed invented shifts for real
+        // people on a day nobody had ever been scheduled.
         const inMemory = schedule.getDaySchedule(schedule.currentDate.toDateString());
         if (inMemory) {
           setOrderedStaff(sortByShift(mergeStaffOverrides(schedule.staff, inMemory).map(normalizeStaff)));
         } else {
-          const ids = getScheduledIds(schedule.currentDate);
-          setOrderedStaff(sortByShift(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: ids.has(s.id) }))));
+          setOrderedStaff(sortByShift(schedule.staff.map(s => normalizeStaff({ ...s, scheduled: false }))));
         }
         // No saved row for this day yet — version 0 means "expect it absent".
         versionRef.current = 0;
@@ -1063,20 +1085,40 @@ export default function DailySchedulePage() {
 
     if (finalized) setFinalized(false);
 
+    // Recorded before the timer so that leaving the day can write exactly what
+    // this edit would have written, rather than losing it.
+    pendingSaveRef.current = { dateStr, staff: staffForSave(), events: todayEvents };
+
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      const dateStr = toDateStr(schedule.currentDate);
-      schedulesApi
-        .saveDay(dateStr, {
-          staff: staffForSave(),
-          events: todayEvents,
-          finalized: false,
-          expectedVersion: versionRef.current,
-        })
-        .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
-        .catch(handleSaveError);
+      autoSaveTimerRef.current = null;
+      const pending = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      // Read the version now, not when the timer was set: a save that completed
+      // in the meantime has already advanced it.
+      if (pending) writeDay(pending, versionRef.current);
     }, 600);
   }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Leaving the day with an edit still inside the debounce window.
+  //
+  // The timer used to simply survive: it fired after the next day had loaded and
+  // read `versionRef` then, so it wrote the old day's staff carrying the new
+  // day's version. The server rejected that, the edit was gone, and the conflict
+  // banner appeared over a day that was never the problem. Whichever way it
+  // landed, the last thing the manager did before clicking the arrow was lost.
+  //
+  // The edit was real, so it gets written now instead. `versionRef` still holds
+  // the departing day's version here — the incoming day's fetch is in flight and
+  // only overwrites it on resolve, long after this cleanup has run.
+  useEffect(() => () => {
+    if (!autoSaveTimerRef.current) return;
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = null;
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) writeDay(pending, versionRef.current);
+  }, [dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Being assigned to an event means being scheduled to work it, so shifts are
   // widened to cover assigned events on the way out. Dragging an event onto a

@@ -7,6 +7,7 @@ import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 import { GenerateTemplateModal } from "../GenerateTemplateModal";
+import { WEEK_DAY_NAMES } from "../../utils/scheduleUtils";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
 import { SunMediumIcon } from "../SunMediumIcon";
 import { MoonIcon } from "../MoonIcon";
@@ -85,7 +86,7 @@ function AppLayoutInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unreadCount }   = useNotifications();
   const [isLight, toggleTheme] = useTheme();
-  const { templates, selectedId, setSelectedId, setTriggerNew, addTemplate, removeAllTemplates } = useTemplates();
+  const { templates, selectedId, setSelectedId, requestSelect, addTemplate, removeAllTemplates } = useTemplates();
   const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading, teamScheduleLoading, setTeamScheduleLoading } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
   const [applyTplOpen, setApplyTplOpen] = useState(false);
@@ -105,26 +106,36 @@ function AppLayoutInner() {
     navigate('/templates');
   }
 
-  // New-template modal state
-  const [newTplStep,    setNewTplStep]    = useState(null); // null | 'pick' | 'day-form'
-  const [dayTplName,    setDayTplName]    = useState('');
-  const [dayTplDesc,    setDayTplDesc]    = useState('');
-  const [dayTplError,   setDayTplError]   = useState('');
+  // New-template modal state. Both kinds go through the same named form: a
+  // weekly template used to be created straight from the picker with no name at
+  // all, which the server rejected outright (`name` is required), so the button
+  // silently did nothing. Asking for the name first is what the day branch
+  // already did, and it also stops an abandoned click leaving an empty row.
+  const [newTplStep, setNewTplStep] = useState(null);   // null | 'pick' | 'form'
+  const [newTplKind, setNewTplKind] = useState('day');  // 'day' | 'week'
+  const [tplName,    setTplName]    = useState('');
+  const [tplDesc,    setTplDesc]    = useState('');
+  const [tplError,   setTplError]   = useState('');
 
-  function openNewTpl() { setDayTplName(''); setDayTplDesc(''); setDayTplError(''); setNewTplStep('pick'); }
+  function openNewTpl() { setTplName(''); setTplDesc(''); setTplError(''); setNewTplStep('pick'); }
   function closeNewTpl() { setNewTplStep(null); }
+  function pickKind(kind) { setNewTplKind(kind); setTplError(''); setNewTplStep('form'); }
 
-  async function createDayTemplate() {
-    const trimmed = dayTplName.trim();
-    if (!trimmed) { setDayTplError('Name is required.'); return; }
+  async function createTemplate() {
+    const trimmed = tplName.trim();
+    if (!trimmed) { setTplError('Name is required.'); return; }
     // A duplicate name isn't rejected — addTemplate numbers the copy.
+    const shape = newTplKind === 'day'
+      ? { type: 'day', staff: [] }
+      // All seven days, matching the other creation paths — see WEEK_DAY_NAMES.
+      : { type: 'week', days: Object.fromEntries(WEEK_DAY_NAMES.map(d => [d, { staff: [] }])) };
     try {
-      const created = await addTemplate({ type: 'day', name: trimmed, description: dayTplDesc.trim(), staff: [] });
+      const created = await addTemplate({ ...shape, name: trimmed, description: tplDesc.trim() });
       setSelectedId(created.id);
       closeNewTpl();
       navigate('/templates');
     } catch (err) {
-      setDayTplError(err.message || 'Failed to create template.');
+      setTplError(err.message || 'Failed to create template.');
     }
   }
 
@@ -352,7 +363,7 @@ function AppLayoutInner() {
               return (
                 <div
                   key={tpl.id}
-                  onClick={() => setSelectedId(tpl.id)}
+                  onClick={() => requestSelect(tpl.id)}
                   style={{
                     padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                     borderLeft: `3px solid ${isSelected ? 'var(--color-accent)' : '#2a6b65'}`,
@@ -513,7 +524,7 @@ function AppLayoutInner() {
                 <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--color-text-dim)' }}>What kind of template do you want to create?</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <button
-                    onClick={() => { setTriggerNew(n => n + 1); closeNewTpl(); }}
+                    onClick={() => pickKind('week')}
                     style={{
                       padding: '14px 16px', borderRadius: 10, border: '1px solid var(--color-border)',
                       background: 'var(--color-muted)', cursor: 'pointer', textAlign: 'left',
@@ -525,7 +536,7 @@ function AppLayoutInner() {
                     <div style={{ fontSize: 12, color: 'var(--color-text-dim)' }}>A full week of schedules — one staff layout per day (Mon–Sun)</div>
                   </button>
                   <button
-                    onClick={() => setNewTplStep('day-form')}
+                    onClick={() => pickKind('day')}
                     style={{
                       padding: '14px 16px', borderRadius: 10, border: '1px solid var(--color-border)',
                       background: 'var(--color-muted)', cursor: 'pointer', textAlign: 'left',
@@ -545,35 +556,35 @@ function AppLayoutInner() {
               </>
             )}
 
-            {newTplStep === 'day-form' && (
+            {newTplStep === 'form' && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                   <button onClick={() => setNewTplStep('pick')} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>New Day Template</h3>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>{newTplKind === 'week' ? 'New Weekly Template' : 'New Day Template'}</h3>
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Template Name *</label>
                   <input
                     autoFocus
-                    value={dayTplName}
-                    onChange={e => { setDayTplName(e.target.value); setDayTplError(''); }}
-                    onKeyDown={e => e.key === 'Enter' && createDayTemplate()}
+                    value={tplName}
+                    onChange={e => { setTplName(e.target.value); setTplError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && createTemplate()}
                     placeholder="e.g. Busy Day"
                     style={{
                       width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13, boxSizing: 'border-box',
-                      background: 'var(--color-muted)', border: `1px solid ${dayTplError ? 'var(--color-red)' : 'var(--color-border)'}`,
+                      background: 'var(--color-muted)', border: `1px solid ${tplError ? 'var(--color-red)' : 'var(--color-border)'}`,
                       color: 'var(--color-text)', outline: 'none',
                     }}
                   />
-                  {dayTplError && <div style={{ fontSize: 11, color: 'var(--color-red)', marginTop: 4 }}>{dayTplError}</div>}
+                  {tplError && <div style={{ fontSize: 11, color: 'var(--color-red)', marginTop: 4 }}>{tplError}</div>}
                 </div>
 
                 <div style={{ marginBottom: 20 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Description (optional)</label>
                   <input
-                    value={dayTplDesc}
-                    onChange={e => setDayTplDesc(e.target.value)}
+                    value={tplDesc}
+                    onChange={e => setTplDesc(e.target.value)}
                     placeholder="Optional notes"
                     style={{
                       width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13, boxSizing: 'border-box',
@@ -587,7 +598,7 @@ function AppLayoutInner() {
                   <button onClick={closeNewTpl} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}>
                     Cancel
                   </button>
-                  <button onClick={createDayTemplate} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  <button onClick={createTemplate} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     Create Day Template
                   </button>
                 </div>

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts } from '../utils/scheduleUtils';
-import { HOURS_START, HOURS_END, weeklyTemplates, EVENT_TYPES } from '../../data/mockData';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability } from '../utils/scheduleUtils';
+import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { schedulesApi, isConflict } from '../utils/api';
@@ -17,7 +17,6 @@ const TOTAL_HOURS = HOURS_END - HOURS_START;
 const NAME_COL    = 140;
 const ROW_H       = 46;
 const ALL_DAYS    = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DOW_TO_TPL  = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' };
 const TIME_STEPS  = Array.from({ length: (HOURS_END - HOURS_START) * 2 + 1 }, (_, i) => HOURS_START + i * 0.5);
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -65,10 +64,12 @@ function mergeStaffOverrides(liveStaff, overrides) {
   });
 }
 
+// A date with no saved schedule has nobody on it. This used to fall back to the
+// hardcoded weeklyTemplates seed, so an unsaved day briefly rendered invented
+// shifts against real names before the fetch landed and replaced them.
 function getStaffForDate(date, getDaySchedule, allStaff) {
   const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
-  const tplStaff = weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? [];
-  return sortByShift(mergeStaffOverrides(allStaff, saved ?? tplStaff));
+  return sortByShift(mergeStaffOverrides(allStaff, saved ?? []));
 }
 
 
@@ -87,11 +88,6 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
     start = snapHalf(start + 0.5);
   }
   return null;
-}
-
-function isShiftOutsideAvailability(start, end, blocks) {
-  if (blocks.length === 0) return true;
-  return start < Math.min(...blocks.map(b => b.start)) || end > Math.max(...blocks.map(b => b.end));
 }
 
 function pct(h) { return `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`; }
@@ -563,15 +559,29 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         versionRef.current = saved.version ?? 0;
         setConflict(false);
         justLoadedRef.current = true;
+
+        // Publish into the shared day cache. Until this, the cache was written
+        // only by edits, so anything reading it on a freshly loaded week — the
+        // over-hours banner, AddEventPage's staff list — saw nothing and fell
+        // back to invented data. Both key formats, matching the save path
+        // below, because readers disagree on which one they use.
+        //
+        // Safe to do here: daySchedules isn't a prop to this component, and the
+        // memo comparator above only tracks reference-stable props, so writing
+        // it re-renders the page without re-running this fetch.
+        saveDaySchedule(dateStr, saved.staff);
+        saveDaySchedule(new Date(dateStr + 'T00:00:00').toDateString(), saved.staff);
       })
       .catch(() => {
-        // 404 or backend unreachable — keep the template/in-memory default.
+        // 404 or backend unreachable — keep the in-memory default, and leave the
+        // cache alone so an absent day stays absent rather than being recorded
+        // as empty.
         // Version 0 means "expect no saved row", which is exactly the 404 case.
         versionRef.current = 0;
         setConflict(false);
       })
       .finally(() => onLoadingChange(dateStr, false));
-  }, [dateStr, allStaff, onLoadingChange]);
+  }, [dateStr, allStaff, onLoadingChange, saveDaySchedule]);
 
   useEffect(() => { reloadFromBackend(); }, [reloadFromBackend]);
 
@@ -1409,8 +1419,10 @@ export default function WeeklyViewPage() {
   const overHoursAlerts = useMemo(() => {
     const totals = new Map();
     weekDays.forEach(date => {
-      const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
-      const src   = saved ?? (weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? []);
+      // Real hours only. The cache is populated by each day's fetch as well as
+      // by edits (see reloadFromBackend), so this reflects the week as saved
+      // rather than, as it once did, the hardcoded seed roster.
+      const src = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString()) ?? [];
       src.map(normalizeStaff).forEach(person => {
         const hrs = (person.shifts??[]).reduce((s,sh)=>s+(sh.end-sh.start),0);
         if (hrs>0) { const prev=totals.get(person.id)??{name:person.name,total:0}; totals.set(person.id,{name:person.name,total:prev.total+hrs}); }
@@ -1420,6 +1432,11 @@ export default function WeeklyViewPage() {
       .filter(([id,{total}])=>{ const mx=maxHoursById.get(id); return mx!=null&&total>mx; })
       .map(([id,{name,total}])=>({name,total,max:maxHoursById.get(id)}))
       .sort((a,b)=>(b.total-b.max)-(a.total-a.max));
+    // `daySchedules` looks redundant here — the body reads through
+    // getDaySchedule, which is reference-stable — and eslint says so. Keep it:
+    // it is the only thing that recomputes these totals when a day's fetch or
+    // edit lands in the cache. Dropping it leaves the banner frozen at whatever
+    // the cache held on first render, which is nothing.
   }, [weekDays, daySchedules, getDaySchedule, maxHoursById]);
 
   function prevWeek() { setWeekStart(d => addDays(d,-7)); }
@@ -1428,12 +1445,36 @@ export default function WeeklyViewPage() {
   async function handleSaveTemplate() {
     const trimmed = tplName.trim();
     if (!trimmed) { setNameError('Template name is required.'); return; }
-    // A duplicate name isn't rejected — addTemplate numbers the copy.
+
+    // Read the week from the backend rather than trusting getDaySchedule. That
+    // cache is only ever written by an edit — the per-day fetch in DayEditor
+    // keeps its result in local state — so on a freshly loaded week every lookup
+    // missed and fell through to the hardcoded `weeklyTemplates` seed data. This
+    // silently captured mock shifts as the manager's template instead of the
+    // schedule they were looking at.
+    //
+    // The cache stays as a second choice: it holds an edit that hasn't been
+    // flushed by the debounced save yet, which the backend wouldn't have. A day
+    // with neither captures as empty, which is what "never saved" means.
+    let savedByDate;
+    try {
+      savedByDate = buildSavedScheduleMap(
+        await schedulesApi.getRange(toDateStr(weekDays[0]), toDateStr(weekDays[6])),
+      );
+    } catch {
+      setNameError('Could not read this week from the server. Try again.');
+      return;
+    }
+
     const days = Object.fromEntries(weekDays.map((date,i) => {
-      const saved = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString());
-      const src   = saved ?? (weeklyTemplates[DOW_TO_TPL[date.getDay()]]?.staff ?? []);
+      const src = savedByDate[toDateStr(date)]
+        ?? getDaySchedule(toDateStr(date))
+        ?? getDaySchedule(date.toDateString())
+        ?? [];
       return [ALL_DAYS[i], { staff: src.map(normalizeStaff).filter(s=>s.shifts?.length>0) }];
     }));
+
+    // A duplicate name isn't rejected — addTemplate numbers the copy.
     try {
       await addTemplate({ type:'week', name:trimmed, description:tplDesc.trim(), days });
     } catch (err) {
