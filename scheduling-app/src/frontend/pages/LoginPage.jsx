@@ -121,12 +121,17 @@ export default function LoginPage() {
         {/* Dev seed credentials — these come from seed.js, not from any bypass
             in the auth code.
 
-            Gated on import.meta.env.DEV rather than deleted, so it stays useful
-            while developing but cannot reach a deployment: Vite resolves DEV to
-            false during `npm run build` and drops the whole block from the
-            bundle. Printing working credentials on a public login page would
-            otherwise hand the studio's schedule to anyone who found the URL. */}
-        {import.meta.env.DEV && (
+            Shown automatically in local development, and on a deployment only
+            when VITE_SHOW_DEMO_CREDENTIALS is explicitly set at build time.
+            That flag exists for the managers' sandbox, where the whole point is
+            that anyone can sign in and poke around against throwaway data.
+
+            It has to be opt-in rather than opt-out: printing working
+            credentials on a login page hands the studio's schedule to anyone
+            who finds the URL, so the real deployment must not be able to grow
+            this block by accident. Leave the variable unset there and Vite
+            drops the entire block from the bundle. */}
+        {(import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_CREDENTIALS === 'true') && (
           <div
             className="mt-6 p-3 rounded-lg text-xs leading-relaxed"
             style={{ background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
