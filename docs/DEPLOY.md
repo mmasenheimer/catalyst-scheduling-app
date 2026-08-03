@@ -42,8 +42,21 @@ exactly like a broken nginx config, and you will lose an hour to it.
 Connect:
 
 ```bash
-ssh ubuntu@YOUR_HOST
+ssh exouser@YOUR_HOST
 ```
+
+Exosphere instances use `exouser`, not `ubuntu` — the Credentials card in the
+web console lists it beneath the hostname. If the key you picked at creation
+isn't your default, point at it: `ssh -i ~/.ssh/your_key exouser@YOUR_HOST`.
+
+Check you have administrator rights before going any further:
+
+```bash
+sudo -v      # silence means yes; a password prompt or an error means no
+```
+
+Nearly every step below needs it. If SSH itself won't connect, the **Web Shell**
+button in the console is a way in that doesn't depend on your local key setup.
 
 ---
 
@@ -65,7 +78,7 @@ node -v    # expect v20.x
 ## 3. Get the code
 
 ```bash
-sudo mkdir -p /srv && sudo chown ubuntu:ubuntu /srv
+sudo mkdir -p /srv && sudo chown exouser:exouser /srv
 cd /srv
 git clone https://github.com/mmasenheimer/catalyst-scheduling-app.git catalyst
 cd catalyst/scheduling-app
@@ -144,7 +157,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
+User=exouser
 WorkingDirectory=/srv/catalyst/scheduling-app/src/backend
 ExecStart=/usr/bin/node server.js
 Restart=always
