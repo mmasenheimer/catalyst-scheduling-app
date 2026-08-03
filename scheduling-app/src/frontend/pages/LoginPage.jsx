@@ -119,22 +119,30 @@ export default function LoginPage() {
         </form>
 
         {/* Dev seed credentials — these come from seed.js, not from any bypass
-            in the auth code. Remove this block once real accounts exist. */}
-        <div
-          className="mt-6 p-3 rounded-lg text-xs leading-relaxed"
-          style={{ background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
-        >
-          <div className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Dev accounts</div>
-          <div>
-            Manager: <strong style={{ color: 'var(--color-text)' }}>manager</strong>
-            {' / '}<strong style={{ color: 'var(--color-text)' }}>catalyst123</strong>
+            in the auth code.
+
+            Gated on import.meta.env.DEV rather than deleted, so it stays useful
+            while developing but cannot reach a deployment: Vite resolves DEV to
+            false during `npm run build` and drops the whole block from the
+            bundle. Printing working credentials on a public login page would
+            otherwise hand the studio's schedule to anyone who found the URL. */}
+        {import.meta.env.DEV && (
+          <div
+            className="mt-6 p-3 rounded-lg text-xs leading-relaxed"
+            style={{ background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
+          >
+            <div className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Dev accounts</div>
+            <div>
+              Manager: <strong style={{ color: 'var(--color-text)' }}>manager</strong>
+              {' / '}<strong style={{ color: 'var(--color-text)' }}>catalyst123</strong>
+            </div>
+            <div className="mt-0.5">
+              Staff: <strong style={{ color: 'var(--color-text)' }}>firstname.l</strong>
+              {' / '}<strong style={{ color: 'var(--color-text)' }}>staff123</strong>
+            </div>
+            <div className="mt-0.5 opacity-80">e.g. alex.c, michael.m</div>
           </div>
-          <div className="mt-0.5">
-            Staff: <strong style={{ color: 'var(--color-text)' }}>firstname.l</strong>
-            {' / '}<strong style={{ color: 'var(--color-text)' }}>staff123</strong>
-          </div>
-          <div className="mt-0.5 opacity-80">e.g. alex.c, michael.m</div>
-        </div>
+        )}
 
         <div className="mt-5 text-center text-xs">
           <Link

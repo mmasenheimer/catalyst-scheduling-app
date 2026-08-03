@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Secrets. `.env` holds the database URI and the JWT signing key; committing it
+# would put both in the repo's history permanently, where rotating them is the
+# only remedy. Only the .example files, which carry placeholders, belong in git.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

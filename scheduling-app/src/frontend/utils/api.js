@@ -1,4 +1,10 @@
-const BASE = "http://localhost:3001/api";
+// Where the API lives. Set VITE_API_URL at build time to point the built
+// frontend at a deployed backend; without it this stays on the local dev
+// server, so nothing about running the app locally changes.
+//
+// Vite substitutes this during `npm run build` — it is not read at runtime. If
+// the API's hostname changes, the frontend has to be rebuilt.
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 const TOKEN_KEY = "catalyst.token";
 
 // Session token helpers. Stored in localStorage so a refresh keeps you logged

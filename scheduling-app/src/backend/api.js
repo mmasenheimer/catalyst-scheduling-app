@@ -14,8 +14,27 @@ const app = express();
 // is served from a different origin than the API; helmet's same-origin default
 // would block those responses outright.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-app.use(cors({ origin: "http://localhost:5173" })); // Vite dev server
+
+// Who may call this API. Defaults to the Vite dev server, so local development
+// is unchanged; set CORS_ORIGIN to the deployed frontend's origin (scheme and
+// host, no trailing slash — e.g. https://catalyst.example.org) in production.
+// Comma-separate if more than one origin ever needs access.
+const CORS_ORIGIN = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: CORS_ORIGIN }));
+
 app.use(express.json());
+
+// Behind nginx every request arrives from the proxy, so without this the rate
+// limiters below key every login attempt in the studio to one address — and one
+// person fat-fingering their password would throttle everybody. Trusting one
+// hop is right for a single reverse proxy in front of this process; it is only
+// safe because nothing but that proxy can reach the port.
+if (process.env.TRUST_PROXY === "1") {
+  app.set("trust proxy", 1);
+}
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 const { requireAuth } = require("./middleware/auth");
