@@ -385,19 +385,44 @@ export function isShiftOutsideAvailability(start, end, blocks) {
   return !merged.some(w => w.start <= start && w.end >= end);
 }
 
-/** Count how many staff are on shift at a given hour (handles shifts array or legacy shiftStart/shiftEnd) */
+/**
+ * A person's shifts, and their desk turns, for whichever day the record
+ * describes. Every reader should go through these rather than touching
+ * `shiftStart`/`shiftEnd`/`deskStart`/`deskEnd` itself.
+ *
+ * Those scalars are a fossil of the pre-array model and they are not maintained:
+ * removing somebody's shift empties `shifts` but leaves the old numbers behind,
+ * and editing one updates the array without touching them. Across the stored
+ * data roughly half of them now contradict the array they sit beside.
+ *
+ * The distinction that matters, and that the old copies of this logic got
+ * wrong: an *empty* array means the person explicitly is not working, while a
+ * *missing* array means a record old enough to predate the array. Only the
+ * second may fall back — and then only when `scheduled` agrees, so a stale
+ * scalar can't resurrect a shift that was deleted.
+ */
+export function shiftsOf(person) {
+  if (Array.isArray(person?.shifts)) return person.shifts;
+  return person?.scheduled && person?.shiftStart != null
+    ? [{ start: person.shiftStart, end: person.shiftEnd }]
+    : [];
+}
+
+export function deskShiftsOf(person) {
+  if (Array.isArray(person?.deskShifts)) return person.deskShifts;
+  return person?.scheduled && person?.deskStart != null
+    ? [{ start: person.deskStart, end: person.deskEnd }]
+    : [];
+}
+
+/** Count how many staff are on shift at a given hour. */
 export function getStaffCount(staff, hour) {
-  return staff.filter(s => {
-    if (s.shifts?.length) return s.shifts.some(sh => sh.start <= hour && sh.end > hour);
-    return s.shiftStart <= hour && s.shiftEnd > hour;
-  }).length;
+  return staff.filter(s => shiftsOf(s).some(sh => sh.start <= hour && sh.end > hour)).length;
 }
 
 /** Return list of conflicts for a person's desk assignments vs events */
 export function checkDeskConflicts(person, events) {
-  const desks = person.deskShifts?.length
-    ? person.deskShifts
-    : (person.deskStart != null ? [{ start: person.deskStart, end: person.deskEnd }] : []);
+  const desks = deskShiftsOf(person);
   const conflicts = [];
   for (const desk of desks) {
     for (const evt of events) {
@@ -527,22 +552,6 @@ export function buildAlerts(staff, events, dow = 1) {
   return alerts;
 }
 
-/** Auto-assign desk shifts to staff who don't have one */
-export function autoAssignDesks(staff, events) {
-  return staff.map(person => {
-    if (person.deskStart !== null) return person;
-    for (let h = Math.ceil(person.shiftStart); h < person.shiftEnd - 1; h++) {
-      const hasEventConflict = events.some(
-        evt => evt.assignedStaff.includes(person.id) && h < evt.end && h + 1 > evt.start
-      );
-      const othersAtTime = staff.filter(s => s.id !== person.id && s.deskStart === h).length;
-      if (!hasEventConflict && othersAtTime === 0) {
-        return { ...person, deskStart: h, deskEnd: h + 1 };
-      }
-    }
-    return person;
-  });
-}
 
 /**
  * Build alerts for templates — desk gaps + concurrent desk only (no staffing

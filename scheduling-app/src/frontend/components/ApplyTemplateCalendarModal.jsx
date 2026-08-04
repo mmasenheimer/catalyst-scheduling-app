@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { schedulesApi, isConflict } from '../utils/api';
+import { shiftsOf, deskShiftsOf } from '../utils/scheduleUtils';
 
 const ALL_DAY_NAMES  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEK_ORDER     = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -12,8 +13,11 @@ const H_TOTAL = H_END - H_START;
 
 function pct(h)          { return `${((h - H_START) / H_TOTAL) * 100}%`; }
 function wid(s, e)       { return `${((e - s)       / H_TOTAL) * 100}%`; }
-function getShifts(p)    { return p.shifts?.length ? p.shifts : (p.shiftStart != null ? [{ start: p.shiftStart, end: p.shiftEnd }] : []); }
-function getDeskShifts(p){ return p.deskShifts?.length ? p.deskShifts : (p.deskStart != null ? [{ start: p.deskStart, end: p.deskEnd }] : []); }
+// Shared accessors rather than a local pair: the version that used to live here
+// treated an empty shifts array as "fall back to the legacy scalars", which
+// drew shifts for people who had none.
+const getShifts     = shiftsOf;
+const getDeskShifts = deskShiftsOf;
 
 function getMondayOf(date) {
   const d = new Date(date);

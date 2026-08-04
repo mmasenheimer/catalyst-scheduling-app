@@ -6,6 +6,7 @@ import {
   staffForDateFromSaved,
   stretchShiftsToCoverEvents,
   mergeStaffShifts,
+  shiftsOf,
 } from '../utils/scheduleUtils';
 import { schedulesApi } from '../utils/api';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
@@ -31,12 +32,6 @@ const inputStyle = {
   borderColor: 'var(--color-border)',
   color: 'var(--color-text)',
 };
-
-/** A person's shifts for a day, tolerating the legacy scalar pair. */
-function shiftsOf(person) {
-  if (person.shifts?.length) return person.shifts;
-  return person.shiftStart != null ? [{ start: person.shiftStart, end: person.shiftEnd }] : [];
-}
 
 const shiftLabel = shifts =>
   shifts.map(sh => `${formatTime(sh.start)} – ${formatTime(sh.end)}`).join(', ');

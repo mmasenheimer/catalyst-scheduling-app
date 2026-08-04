@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialStaff, initialEvents } from '../../data/mockData';
 import mockAvailability from '../../data/mockAvailability';
-import { autoAssignDesks } from '../utils/scheduleUtils';
 import { staffApi, eventsApi, availabilityApi } from '../utils/api';
 import { useLiveRefetch } from './useLiveRefetch';
 import { useAuth } from '../context/AuthContext';
@@ -191,9 +190,6 @@ export function useSchedule() {
     setStaff(prev => prev.filter(s => s.id !== staffId));
   }, []);
 
-  const runAutoAssignDesks = useCallback(() => {
-    setStaff(prev => autoAssignDesks(prev, events));
-  }, [events]);
 
   const goToNextDay = useCallback(() => {
     setCurrentDate(prev => {
@@ -242,7 +238,6 @@ export function useSchedule() {
     updateStaffMaxHours,
     addStaff,
     removeStaff,
-    runAutoAssignDesks,
     goToNextDay,
     goToPrevDay,
     goToDate,
