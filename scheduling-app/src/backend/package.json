@@ -11,7 +11,9 @@
     "seed:users": "node seedUsers.js",
     "seed:availability": "node seedAvailability.js",
     "reset:manager": "node resetManager.js",
-    "migrate:notif-ttl": "node migrateNotificationTtl.js"
+    "migrate:notif-ttl": "node migrateNotificationTtl.js",
+    "backup": "node backup.js",
+    "backup:verify": "node verifyBackup.js"
   },
   "dependencies": {
     "@slack/bolt": "^4.0.0",
