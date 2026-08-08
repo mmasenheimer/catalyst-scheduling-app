@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability, deskBoundsFor } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -1271,9 +1271,9 @@ export default function DailySchedulePage() {
     const initialEnd   = desk0.end;
     const otherDesks   = orderedStaff[staffIndex].deskShifts.filter((_, j) => j !== deskIndex);
     const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(orderedStaff[staffIndex].id));
-    const host         = orderedStaff[staffIndex].shifts.find(sh => sh.start <= desk0.start && sh.end >= desk0.end);
-    const shiftLo      = host?.start ?? HOURS_START;
-    const shiftHi      = host?.end   ?? HOURS_END;
+    // Bounds come from the shift this turn belongs to. Falling back to the whole
+    // studio day when none contains it let an already-stranded turn roam further.
+    const { lo: shiftLo, hi: shiftHi } = deskBoundsFor(orderedStaff[staffIndex], desk0);
 
     setActiveBar({ type: 'desk', staffIndex, deskIndex, mode });
     document.body.style.cursor     = 'ew-resize';

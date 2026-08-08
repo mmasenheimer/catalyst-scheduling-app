@@ -14,6 +14,15 @@ const templateSchema = new Schema(
     day: { type: String }, // day templates only — which weekday this was captured from
     days: { type: Schema.Types.Mixed }, // week templates only
     staff: { type: Schema.Types.Mixed }, // day templates only
+    // Bumped on every write. An update may carry the version it was based on,
+    // and then only applies if that is still current — so two managers (or two
+    // tabs) cannot silently overwrite each other. Enforced only when the client
+    // sends `expectedVersion`, matching Schedule: a client that does not send one
+    // keeps the previous last-write-wins behaviour rather than breaking.
+    //
+    // Documents written before this field existed have no `version`, which the
+    // routes treat as 0 so they keep working without a migration.
+    version: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now },
   },
   {

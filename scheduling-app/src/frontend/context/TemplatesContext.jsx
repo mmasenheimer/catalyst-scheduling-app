@@ -79,8 +79,21 @@ export function TemplatesProvider({ children }) {
     return created;
   }, []);
 
+  // Carries the version this edit was based on, so a save cannot land on top of
+  // somebody else's. A template save replaces the whole record — the editor
+  // sends the entire `days` map — so a lost update costs a week's layout, not a
+  // field.
+  //
+  // Safe to send here because this call is awaited and the result replaces the
+  // local copy, so the version we hold is always the one the server last
+  // confirmed. A fire-and-forget caller must not do this: it would send a stale
+  // version after its own in-flight write and conflict with itself.
   const updateTemplate = useCallback(async (id, changes) => {
-    const updated = await templatesApi.update(id, changes);
+    const known = templatesRef.current.find(t => t.id === id);
+    const updated = await templatesApi.update(id, {
+      ...changes,
+      expectedVersion: known?.version ?? 0,
+    });
     setTemplates(prev => prev.map(t => t.id === id ? updated : t));
     return updated;
   }, []);

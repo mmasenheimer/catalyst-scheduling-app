@@ -2,6 +2,7 @@
 const router = require("express").Router();
 const Request = require("../models/Request");
 const { sendWriteError } = require("../utils/respond");
+const { unknownStaffIds } = require("../utils/roster");
 const {
   notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined, notifyRequestWithdrawn,
 } = require("../utils/notify");
@@ -35,6 +36,43 @@ router.post("/", async (req, res) => {
     // An employee may only file requests as themselves.
     if (req.user.role !== "manager" && staffId !== req.user.staffId) {
       return res.status(403).json({ error: "Cannot submit a request for another staff member" });
+    }
+
+    // Nobody can cover for themselves or swap with themselves — there is no
+    // meaningful result, and the approval path assumes the two are different
+    // people. Both its branches strip the shift from the requester and then add
+    // it to the target; when those are the same person, the first assignment
+    // wins and the second never runs. A self-targeted cover therefore *deletes*
+    // the shift, and a self-targeted swap naming two of your own shifts leaves
+    // one duplicated and the other gone.
+    //
+    // Refused here rather than resolved downstream because there is no correct
+    // answer to compute: the request is meaningless, not ambiguous. The UI never
+    // offers it (the candidate list excludes anyone already working that day),
+    // so this closes a hand-crafted request rather than an ordinary mistake.
+    if (targetStaffId != null && targetStaffId === staffId) {
+      return res.status(400).json({
+        error: "You can't ask yourself to cover or swap a shift.",
+      });
+    }
+
+    // Both people have to actually be on the roster.
+    //
+    // A `pending_peer` request can only be advanced or declined by the named
+    // target — the transition carries `targetStaffId: req.user.staffId` inside
+    // its update filter. Name somebody who does not exist and nobody can ever
+    // satisfy that, so the request waits forever: invisible to the manager
+    // because it never reaches their queue, and inexplicable to the requester.
+    // Withdrawal still works, so it is recoverable, but only if they notice.
+    //
+    // `staffId` is checked too. An employee's own id comes from their verified
+    // session, but a manager may file on somebody's behalf, and that id is
+    // taken from the body.
+    const missing = await unknownStaffIds([staffId, targetStaffId]);
+    if (missing.length) {
+      return res.status(400).json({
+        error: `No staff member with id ${missing.join(", ")}`,
+      });
     }
     // The starting state is derived from the request, never taken from the
     // client: a request that names a coworker has to clear that coworker first,

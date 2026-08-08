@@ -5,6 +5,9 @@ const Notification = require("../models/Notification");
 const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
 const {
+  validateScheduleStaff, validateScheduleEvents, validateDateString,
+} = require("../utils/validate");
+const {
   formatDayLabel, diffStaffShifts, describeChange, messageFromDetails,
 } = require("../utils/scheduleDiff");
 
@@ -142,6 +145,20 @@ router.put("/:date", requireManager, async (req, res) => {
   try {
     const { staff, events, finalized, suppressNotify, expectedVersion } = req.body;
     const date = req.params.date;
+
+    // Validate before anything else touches the database. `staff` is Mixed, so
+    // whatever arrives is what gets stored, and every reader assumes an array of
+    // rows with numeric intervals — a bad write here doesn't fail loudly, it
+    // makes the day throw on render for everyone with no way back.
+    const dateError = validateDateString(date);
+    if (dateError) return res.status(400).json({ error: dateError });
+
+    const staffError = validateScheduleStaff(staff);
+    if (staffError) return res.status(400).json({ error: staffError });
+
+    const eventsError = validateScheduleEvents(events);
+    if (eventsError) return res.status(400).json({ error: eventsError });
+
     const isPublishing = finalized ?? true;
 
     // Read the previously published snapshot before we overwrite it.

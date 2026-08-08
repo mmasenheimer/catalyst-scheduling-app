@@ -101,9 +101,15 @@ export function shiftsLabel(person) {
  * others as "never".
  */
 export function eventOccursOn(evt, date) {
-  // No dates at all — treat as an every-day event (matches the calendar,
-  // daily and my-schedule views, which is the behaviour users have seen).
-  if (!evt?.days?.length) return true;
+  // No dates means the event happens on no day — not on every day.
+  //
+  // This used to return true, so a single event with an empty `days` array
+  // appeared on every date in every calendar and schedule, for every user,
+  // indefinitely, and raised a permanent "Unfilled event" warning on each one.
+  // Nothing about an unscheduled event should read as "always". The API now
+  // refuses to store that shape (validateEventDays), and this is the second
+  // line of defence for anything already in the database.
+  if (!evt?.days?.length) return false;
 
   const dateStr = toDateStr(date);
   const dow = date.getDay();
@@ -420,6 +426,66 @@ export function getStaffCount(staff, hour) {
   return staff.filter(s => shiftsOf(s).some(sh => sh.start <= hour && sh.end > hour)).length;
 }
 
+/**
+ * Desk turns that no shift of this person's covers.
+ *
+ * Desk duty is time at the front desk *during a shift*, so a turn outside every
+ * shift means somebody is rostered to cover the desk while not in the building
+ * — the exact failure the desk-coverage feature exists to prevent, and one the
+ * grid renders as though the desk were staffed.
+ *
+ * Creating and resizing a desk turn are both already constrained to a host
+ * shift, and deleting a shift sweeps up the turns sitting on it
+ * (orphanedByShiftRemoval). The gap is *editing* a shift: dragging its edge
+ * leaves the desk turns where they are, so shrinking 9–5 to 9–12 strands a 3–4
+ * desk turn with nothing to notice it.
+ *
+ * Reported rather than auto-repaired on purpose. Deleting the turn would be
+ * surprising for a 30-minute nudge, and moving it into the shortened shift means
+ * guessing where the manager wanted it.
+ */
+export function orphanedDeskTurns(person) {
+  const shifts = shiftsOf(person);
+  return deskShiftsOf(person).filter(
+    d => !shifts.some(sh => sh.start <= d.start && sh.end >= d.end),
+  );
+}
+
+/**
+ * The range a desk turn may be dragged or resized within.
+ *
+ * Prefers the shift containing it, then one it merely overlaps, then the span of
+ * everything the person works that day. The editors previously fell straight
+ * back to the whole studio day when no shift contained the turn — which is
+ * precisely the already-orphaned case, so the one control that keeps desk time
+ * inside a shift stopped doing so exactly when it was needed, letting a stranded
+ * turn wander further.
+ */
+export function deskBoundsFor(person, desk) {
+  const shifts = shiftsOf(person);
+  const host = shifts.find(sh => sh.start <= desk.start && sh.end >= desk.end)
+    ?? shifts.find(sh => desk.start < sh.end && desk.end > sh.start);
+  if (host) return { lo: host.start, hi: host.end };
+  if (shifts.length) {
+    return {
+      lo: Math.min(...shifts.map(s => s.start)),
+      hi: Math.max(...shifts.map(s => s.end)),
+    };
+  }
+  return { lo: HOURS_START, hi: HOURS_END };
+}
+
+/** Alert lines for any desk turn stranded outside its shift. */
+function orphanedDeskAlerts(person) {
+  const working = shiftsOf(person).length > 0;
+  return orphanedDeskTurns(person).map(d => ({
+    type: 'yellow',
+    text: working
+      ? `${person.name}: desk ${formatTime(d.start)}–${formatTime(d.end)} is outside their shift.`
+      : `${person.name} is on desk ${formatTime(d.start)}–${formatTime(d.end)} but isn't scheduled to work.`,
+  }));
+}
+
 /** Return list of conflicts for a person's desk assignments vs events */
 export function checkDeskConflicts(person, events) {
   const desks = deskShiftsOf(person);
@@ -504,6 +570,7 @@ export function buildAlerts(staff, events, dow = 1) {
     conflicts.forEach(msg => {
       alerts.push({ type: 'yellow', text: `${person.name}: ${msg}` });
     });
+    alerts.push(...orphanedDeskAlerts(person));
   });
 
   events.forEach(evt => {
@@ -585,6 +652,10 @@ export function buildTemplateAlerts(staff, dow = null) {
     }
     closeGap(deskWindow.end);
   }
+
+  // Desk turns stranded outside their shift — same check the daily/weekly
+  // editors run; a template can strand one the same way, by resizing a shift.
+  staff.forEach(person => alerts.push(...orphanedDeskAlerts(person)));
 
   // Concurrent desk
   const withDesks = staff.filter(s => s.deskShifts?.length > 0);

@@ -7,9 +7,21 @@ const Availability = require("../models/Availability");
 const Request = require("../models/Request");
 const Notification = require("../models/Notification");
 const Schedule = require("../models/Schedule");
+const Template = require("../models/Template");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
+
+// Every key a week template's `days` map can use. See the delete cascade below.
+const DAY_KEYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 // GET /api/staff
 // This fetches every staff member at once
@@ -139,6 +151,44 @@ router.delete("/:id", requireManager, async (req, res) => {
       { $pull: { staff: { id: staffId }, lastPublishedStaff: { id: staffId } } },
     );
 
+    // Templates embed the same staff snapshot as a Schedule, in two shapes:
+    // a day template holds `staff`, a week template holds `days.{Day}.staff`.
+    // Applying a template rebuilds the day from the live roster and ignores ids
+    // that aren't on it, so a leftover here can't put a departed employee back on
+    // a real schedule — but the preview reads the snapshot directly, so the
+    // manager would see them with shifts and the day headcount would count them.
+    //
+    // `days` is Mixed, so `$pull` can't reach into it with a wildcard and the day
+    // keys have to be named. This list is every weekday rather than the six the
+    // studio opens: a template written before the Saturday change, or by any
+    // future code, must still be cleaned. Naming a key that isn't there is a
+    // no-op, so covering all seven costs nothing.
+    //
+    // Duplicated from the frontend's WEEK_DAY_NAMES because the backend is
+    // CommonJS and can't import that ESM module — the same split as the hour
+    // constants in utils/validate.js.
+    const templates = await Template.updateMany(
+      {
+        $or: [
+          { "staff.id": staffId },
+          ...DAY_KEYS.map((d) => ({ [`days.${d}.staff.id`]: staffId })),
+        ],
+      },
+      {
+        $pull: {
+          staff: { id: staffId },
+          ...Object.fromEntries(
+            DAY_KEYS.map((d) => [`days.${d}.staff`, { id: staffId }]),
+          ),
+        },
+        // Bump the version so a manager who already had this template open can't
+        // save it back with the deleted person still in it — their write carries
+        // the version they loaded and now conflicts instead of silently undoing
+        // this cleanup.
+        $inc: { version: 1 },
+      },
+    );
+
     const result = {
       ok: !!person,
       accountRemoved: account.deletedCount > 0,
@@ -148,6 +198,7 @@ router.delete("/:id", requireManager, async (req, res) => {
       notificationsUpdated: notifPulled.modifiedCount,
       notificationsRemoved: notifDropped.deletedCount,
       schedulesCleaned: schedules.modifiedCount,
+      templatesCleaned: templates.modifiedCount,
     };
 
     // Cleanup still ran, so a repeat call can finish an interrupted delete — but

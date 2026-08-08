@@ -9,7 +9,9 @@
     "dev": "node --watch server.js",
     "seed": "node seed.js",
     "seed:users": "node seedUsers.js",
-    "seed:availability": "node seedAvailability.js"
+    "seed:availability": "node seedAvailability.js",
+    "reset:manager": "node resetManager.js",
+    "migrate:notif-ttl": "node migrateNotificationTtl.js"
   },
   "dependencies": {
     "@slack/bolt": "^4.0.0",

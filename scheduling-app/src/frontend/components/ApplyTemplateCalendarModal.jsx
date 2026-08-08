@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { schedulesApi, isConflict } from '../utils/api';
 import { shiftsOf, deskShiftsOf } from '../utils/scheduleUtils';
 
@@ -95,8 +95,21 @@ function StaffRow({ person }) {
   );
 }
 
-function DayPreview({ staff }) {
-  const scheduled = (staff ?? []).filter(p => getShifts(p).length > 0);
+// A template stores a snapshot of the people who were on the roster when it was
+// saved, so it can name someone who has since been deleted. `buildStaffForDate`
+// walks the live roster and never reads an entry that isn't on it, so applying
+// the template is already correct — but the preview reads the snapshot directly,
+// and without this filter it would show a departed employee with shifts and
+// count them in the day headcount. The manager would be previewing one thing and
+// applying another.
+//
+// `liveIds` rather than the roster array because both call sites only need
+// membership, and the headcount runs once per day chip on every render.
+const onRoster = (staff, liveIds) =>
+  (staff ?? []).filter(p => liveIds.has(p.id));
+
+function DayPreview({ staff, liveIds }) {
+  const scheduled = onRoster(staff, liveIds).filter(p => getShifts(p).length > 0);
   if (scheduled.length === 0) {
     return (
       <div style={{ fontSize: 11, color: 'var(--color-text-dim)', textAlign: 'center', padding: '16px 0', fontStyle: 'italic' }}>
@@ -118,10 +131,11 @@ function DayPreview({ staff }) {
 // stacked on it, which at fifteen people is an unreadable green block. Instead the
 // manager picks a day and gets the same per-person view a day template shows. The
 // pills keep the at-a-glance week shape by carrying each day's headcount.
-function WeekPreview({ template }) {
+function WeekPreview({ template, liveIds }) {
   const days = WEEK_ORDER.filter(d => template.days?.[d]);
   const headcount = day =>
-    (template.days?.[day]?.staff ?? []).filter(p => getShifts(p).length > 0).length;
+    onRoster(template.days?.[day]?.staff, liveIds)
+      .filter(p => getShifts(p).length > 0).length;
 
   // Open on a day that actually has people, so the preview is never blank on
   // arrival. Remounted per template (see the key in MiniPreview), so this
@@ -165,12 +179,12 @@ function WeekPreview({ template }) {
           );
         })}
       </div>
-      <DayPreview staff={template.days?.[day]?.staff} />
+      <DayPreview staff={template.days?.[day]?.staff} liveIds={liveIds} />
     </div>
   );
 }
 
-function MiniPreview({ template }) {
+function MiniPreview({ template, liveIds }) {
   if (!template) {
     return (
       <div style={{ fontSize: 12, color: 'var(--color-text-dim)', textAlign: 'center', padding: '40px 0', fontStyle: 'italic' }}>
@@ -181,8 +195,8 @@ function MiniPreview({ template }) {
   return (
     <div>
       {template.type === 'day'
-        ? <DayPreview staff={template.staff} />
-        : <WeekPreview key={template.id} template={template} />
+        ? <DayPreview staff={template.staff} liveIds={liveIds} />
+        : <WeekPreview key={template.id} template={template} liveIds={liveIds} />
       }
     </div>
   );
@@ -194,6 +208,10 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
   const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
   const dayTpls    = templates.filter(t => t.type === 'day');
   const allTpls    = [...weeklyTpls, ...dayTpls];
+
+  // The roster the preview is allowed to show — the same set `buildStaffForDate`
+  // applies, so what's previewed is what gets saved.
+  const liveIds = useMemo(() => new Set(allStaff.map(p => p.id)), [allStaff]);
 
   const [selectedId,   setSelectedId]   = useState(allTpls[0]?.id ?? null);
   const [hoveredDate,  setHoveredDate]  = useState(null);
@@ -432,7 +450,7 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
             {/* Col 2 — mini preview */}
             <div style={{ width: 260, flexShrink: 0, padding: '0 16px', overflowY: 'auto' }}>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)', marginBottom: 10, textAlign: 'center' }}>Preview</div>
-              <MiniPreview template={template} />
+              <MiniPreview template={template} liveIds={liveIds} />
             </div>
 
             {/* Divider */}

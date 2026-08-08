@@ -113,6 +113,41 @@ Serves two purposes:
 The system doesn't collect email addresses, so resets are handled by the manager from **Manage
 Staff**. This page explains that flow.
 
+### Recovering a locked-out manager
+Manage Staff resets employees, but managers never appear on that list — they have no roster row,
+because they aren't schedulable. So a manager who forgets their password needs one of two routes.
+
+**If another manager can still sign in**, they reset by username through the API:
+
+```bash
+curl -X POST https://<host>/api/auth/reset \
+  -H "Authorization: Bearer <their token>" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"the-locked-out-one"}'
+```
+
+The response carries a one-time temporary password to hand over. Nobody can reset **themselves** —
+a reset ends the session making the request, so the app points you at Change Password instead,
+which you can use because you already know the current password.
+
+**If no manager can sign in**, run this on the server:
+
+```bash
+cd src/backend
+npm run reset:manager -- --list                          # who exists
+npm run reset:manager -- --username manager --yes        # reset one
+```
+
+It prints a temporary password once. Signing in with it forces a new password before the app will
+do anything else.
+
+That break-glass path is a script rather than an endpoint on purpose: it needs shell access **and**
+the database credentials, which is the right bar for something that hands out a working credential
+for the highest-privilege account in the system. It is safe to run in production — unlike `seed`,
+which refuses.
+
+The one situation with no recovery is losing the manager password *and* access to the server.
+
 ---
 
 ## Manager pages
@@ -368,6 +403,8 @@ npm run dev         # http://localhost:5173
 | `npm run seed -- --yes` | **Destructive.** Deletes every staff member and every account, then rebuilds both from sample data — replacing all passwords with shared, publicly-known ones. Refuses to run when `NODE_ENV=production` |
 | `npm run seed:users` | Creates login accounts for existing staff — safe to re-run, deletes nothing |
 | `npm run seed:availability` | Loads sample availability — upserts, deletes nothing |
+| `npm run reset:manager -- --list` | Lists the manager accounts and their state |
+| `npm run reset:manager -- --username <name> --yes` | Resets that manager's password, printing a one-time temporary one. Safe to run in production — see below |
 
 ---
 

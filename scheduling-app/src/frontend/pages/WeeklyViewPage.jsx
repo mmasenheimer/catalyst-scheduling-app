@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability, deskBoundsFor } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -782,8 +782,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     const i0  = dk0.start; const e0 = dk0.end;
     const others  = orderedStaff[si].deskShifts.filter((_,j) => j !== di);
     const pEvts   = dayEvents.filter(ev => ev.assignedStaff.includes(orderedStaff[si].id));
-    const host    = orderedStaff[si].shifts.find(sh => sh.start <= dk0.start && sh.end >= dk0.end);
-    const lo = host?.start ?? HOURS_START; const hi = host?.end ?? HOURS_END;
+    // See deskBoundsFor — the old fallback widened to the whole studio day
+    // precisely when no shift contained the turn.
+    const { lo, hi } = deskBoundsFor(orderedStaff[si], dk0);
     setActiveBar({ type:'desk', staffIndex:si, deskIndex:di, mode });
     document.body.style.cursor = 'ew-resize'; document.body.style.userSelect = 'none';
     function onMove(me) {

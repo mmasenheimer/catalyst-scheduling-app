@@ -22,9 +22,17 @@ router.post("/login", async (req, res) => {
 
     const user = await User.findOne({ username: normUsername(username) });
 
-    // Identical response for "no such user" and "wrong password" so this can't
-    // be used to probe which usernames exist.
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    // Identical response for "no such user" and "wrong password", and the same
+    // amount of work either way, so neither the body nor the timing reveals
+    // which usernames exist.
+    //
+    // The comparison is deliberately not short-circuited behind `!user`: doing
+    // that skipped bcrypt entirely for an unknown account, which made the reply
+    // arrive fast enough to distinguish the two cases. verifyPassword now
+    // compares against a dummy hash when there is nothing real to check, so this
+    // has to actually call it.
+    const passwordOk = await verifyPassword(password, user?.passwordHash);
+    if (!user || !passwordOk) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
@@ -98,11 +106,38 @@ router.post("/provision", requireAuth, requireManager, async (req, res) => {
 //   body: { staffId }
 router.post("/reset", requireAuth, requireManager, async (req, res) => {
   try {
-    const { staffId } = req.body;
-    if (staffId == null) return res.status(400).json({ error: "staffId is required" });
+    // Either identifier. `staffId` is the natural key for an employee and is
+    // what Manage Staff sends; `username` exists because managers have no
+    // staffId at all, so keying on it alone left manager accounts with no way
+    // back once their owner had set a password — reset refused them for want of
+    // a staffId, and re-provisioning refused them as an active username.
+    const { staffId, username } = req.body;
+    if (staffId == null && !username) {
+      return res.status(400).json({ error: "staffId or username is required" });
+    }
 
-    const user = await User.findOne({ staffId });
-    if (!user) return res.status(404).json({ error: "No account exists for that staff member yet" });
+    const user = staffId != null
+      ? await User.findOne({ staffId })
+      : await User.findOne({ username: normUsername(username) });
+    if (!user) {
+      return res.status(404).json({
+        error: staffId != null
+          ? "No account exists for that staff member yet"
+          : "No account with that username",
+      });
+    }
+
+    // Resetting yourself is a trap rather than a feature. It bumps
+    // tokenVersion, so the session making the request dies on its very next
+    // call — if anything goes wrong between the response and reading the
+    // temporary password out of it, the account is locked harder than before.
+    // Anyone able to make this request is already signed in and therefore knows
+    // their password, so the change-password flow is both safer and correct.
+    if (String(user._id) === req.user.id) {
+      return res.status(400).json({
+        error: "Use Change Password to change your own — a reset would sign you out first.",
+      });
+    }
 
     const tempPassword = generateTempPassword();
     user.passwordHash = await hashPassword(tempPassword);

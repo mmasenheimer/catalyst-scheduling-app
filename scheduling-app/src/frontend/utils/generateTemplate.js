@@ -485,7 +485,7 @@ export function generateWeeklyTemplate({
       // where the cap allows. Coverage is already satisfied at this point, so
       // this only ever adds hours.
       const windows = availabilityByStaff[id]?.[dow];
-      for (const sh of shifts) {
+      const grow = (sh) => {
         let guard = 0;
         while (sh.end - sh.start < minShiftHours && guard++ < 40) {
           const canGrowEnd =
@@ -510,12 +510,53 @@ export function generateWeeklyTemplate({
           weeklyHours.set(id, weeklyHours.get(id) + SLOT);
           dayHours.set(id, (dayHours.get(id) ?? 0) + SLOT);
         }
-        if (sh.end - sh.start < minShiftHours) {
-          warnings.push(
-            `${person.name}: ${name} ${formatTime(sh.start)}–${formatTime(sh.end)} is shorter than ${minShiftHours}h — availability didn't allow extending it.`,
-          );
+      };
+
+      // `minShiftHours` is a post-condition, not a preference. Growing above can
+      // fail, and what it leaves behind is unworkable — half an hour on campus.
+      //
+      // In practice the blocker is always the weekly cap, never availability:
+      // `couldFormShift` confirmed a full shift's worth of budget when this
+      // person was picked, but slots assigned later the same day spend it before
+      // we get here. The gate is honest at the time and stale by the end.
+      //
+      // So a shift that can't reach the minimum is dropped and its slots are
+      // reported as gaps. That trades coverage for honesty deliberately: an
+      // unfilled half hour is a staffing problem the manager can see and solve,
+      // whereas a half-hour shift hides the same problem behind something nobody
+      // will actually work.
+      //
+      // Shortest first, because dropping the most hopeless fragment releases cap
+      // hours that may let a longer one reach the minimum.
+      for (const sh of [...shifts].sort(
+        (a, b) => a.end - a.start - (b.end - b.start),
+      )) {
+        grow(sh);
+        if (sh.end - sh.start >= minShiftHours) continue;
+
+        shifts.splice(shifts.indexOf(sh), 1);
+        const released = sh.end - sh.start;
+        weeklyHours.set(id, weeklyHours.get(id) - released);
+        dayHours.set(id, (dayHours.get(id) ?? 0) - released);
+
+        // Report only the slots that actually fall short once this person is
+        // removed — they may have been the padding pass's cushion rather than
+        // part of the day's true minimum.
+        for (let t = sh.start; t < sh.end; t += SLOT) {
+          const covering = assignedAt.get(t);
+          covering?.delete(id);
+          const need = getTarget(t, dow);
+          const have = covering?.size ?? 0;
+          if (have < need) gaps.push({ day: name, hour: t, need, have });
         }
+
+        warnings.push(
+          `${person.name}: ${name} ${formatTime(sh.start)}–${formatTime(sh.end)} was dropped — it couldn't reach ${minShiftHours}h within their weekly cap.`,
+        );
       }
+
+      // Every block they had was too short to keep, so they aren't working.
+      if (shifts.length === 0) continue;
 
       dayStaff.push({
         ...person,

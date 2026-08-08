@@ -5,6 +5,11 @@ const Schedule = require("../models/Schedule");
 const { createWithNextId } = require("../utils/sequentialId");
 const { requireManager } = require("../middleware/auth");
 const { sendWriteError } = require("../utils/respond");
+const { updateWithVersion } = require("../utils/optimisticUpdate");
+const { unknownStaffIds } = require("../utils/roster");
+const {
+  validateEventDays, validateEventFields, validateAssignedStaff,
+} = require("../utils/validate");
 const { notifyEventAssigned, notifyEventUnassigned } = require("../utils/notify");
 
 // A repeating event recurs on the weekday of each date in `days`, so listing
@@ -33,9 +38,24 @@ router.get("/", async (req, res) => {
 router.post("/", requireManager, async (req, res) => {
   try {
     const { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating, repeatFrom, repeatUntil } = req.body;
+    const daysError = validateEventDays(days);
+    if (daysError) return res.status(400).json({ error: daysError });
+
+    const fieldError = validateEventFields({ start, end, staffNeeded, repeatFrom, repeatUntil });
+    if (fieldError) return res.status(400).json({ error: fieldError });
+
+    const shapeError = validateAssignedStaff(assignedStaff);
+    if (shapeError) return res.status(400).json({ error: shapeError });
+
     if (repeatConflict(repeating, days)) {
       return res.status(400).json({ error: REPEAT_NEEDS_ONE_DATE });
     }
+
+    const missing = await unknownStaffIds(assignedStaff);
+    if (missing.length) {
+      return res.status(400).json({ error: `No staff member with id ${missing.join(", ")}` });
+    }
+
     const event = await createWithNextId(Event, { name, type, start, end, staffNeeded, assignedStaff, notes, days, repeating, repeatFrom, repeatUntil });
 
     // Anyone picked while creating it is being assigned right now, same as if
@@ -64,15 +84,46 @@ router.patch("/:id", requireManager, async (req, res) => {
       repeating,
       repeatFrom,
       repeatUntil,
+      expectedVersion,
     } = req.body;
 
-    // Loaded once when anything needs to know the event's present state. Skipped
-    // entirely otherwise, because a resize drag sends a debounced PATCH of just
-    // start/end and shouldn't pay for a read it has no use for.
+    // Loaded once when anything needs to know the event's present state.
+    //
+    // Times and recurrence bounds are validated as *pairs*, and a resize drag
+    // sends a single edge — so `{ start: 20 }` can only be judged against the
+    // `end` already stored. That read used to be skipped for exactly this case;
+    // skipping it is why `start: 14, end: 9` was storable. The drag is debounced
+    // to one request per gesture, so the cost is a single extra find.
     const needsCurrent =
-      repeating !== undefined || days !== undefined || assignedStaff !== undefined;
+      repeating !== undefined || days !== undefined || assignedStaff !== undefined ||
+      start !== undefined || end !== undefined || staffNeeded !== undefined ||
+      repeatFrom !== undefined || repeatUntil !== undefined;
     const current = needsCurrent ? await Event.findById(req.params.id).lean() : null;
     if (needsCurrent && !current) return res.status(404).json({ error: "Not found" });
+
+    // Again the state the event ends up in, not the payload: a PATCH can drag
+    // `start` past an `end` it never mentions.
+    if (start !== undefined || end !== undefined || staffNeeded !== undefined ||
+        repeatFrom !== undefined || repeatUntil !== undefined) {
+      const pick = (sent, stored) => (sent !== undefined ? sent : stored);
+      const fieldError = validateEventFields({
+        start:       pick(start, current.start),
+        end:         pick(end, current.end),
+        staffNeeded: pick(staffNeeded, current.staffNeeded),
+        repeatFrom:  pick(repeatFrom, current.repeatFrom),
+        repeatUntil: pick(repeatUntil, current.repeatUntil),
+      });
+      if (fieldError) return res.status(400).json({ error: fieldError });
+    }
+
+    if (assignedStaff !== undefined) {
+      const shapeError = validateAssignedStaff(assignedStaff);
+      if (shapeError) return res.status(400).json({ error: shapeError });
+      const missing = await unknownStaffIds(assignedStaff);
+      if (missing.length) {
+        return res.status(400).json({ error: `No staff member with id ${missing.join(", ")}` });
+      }
+    }
 
     // Check the state the event would end up in, not just what was sent — a
     // PATCH can flip `repeating` on without touching `days`, or add a date
@@ -80,6 +131,13 @@ router.patch("/:id", requireManager, async (req, res) => {
     if (repeating !== undefined || days !== undefined) {
       const nextRepeating = repeating !== undefined ? repeating : current.repeating;
       const nextDays = days !== undefined ? days : current.days;
+      // Same reasoning applies to emptying the list: a PATCH that removes the
+      // last date would leave an event that matches nothing, which the calendar
+      // previously rendered on every day instead.
+      if (days !== undefined) {
+        const daysError = validateEventDays(nextDays);
+        if (daysError) return res.status(400).json({ error: daysError });
+      }
       if (repeatConflict(nextRepeating, nextDays)) {
         return res.status(400).json({ error: REPEAT_NEEDS_ONE_DATE });
       }
@@ -93,23 +151,23 @@ router.patch("/:id", requireManager, async (req, res) => {
     const newlyAssigned = assignedStaff === undefined ? [] : now.filter(id => !was.includes(id));
     const newlyUnassigned = assignedStaff === undefined ? [] : was.filter(id => !now.includes(id));
 
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
-      {
-        name,
-        type,
-        start,
-        end,
-        staffNeeded,
-        assignedStaff,
-        notes,
-        days,
-        repeating,
-        repeatFrom,
-        repeatUntil,
-      },
-      { new: true, runValidators: true },
+    const changes = {};
+    for (const [k, v] of Object.entries({
+      name, type, start, end, staffNeeded, assignedStaff, notes,
+      days, repeating, repeatFrom, repeatUntil,
+    })) {
+      if (v !== undefined) changes[k] = v;
+    }
+
+    const { doc: event, conflict, currentVersion } = await updateWithVersion(
+      Event, { _id: req.params.id }, changes, expectedVersion,
     );
+    if (conflict) {
+      return res.status(409).json({
+        error: "This event was changed by someone else while you were editing.",
+        currentVersion,
+      });
+    }
 
     if (!event) return res.status(404).json({ error: "Not found " });
 

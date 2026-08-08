@@ -270,6 +270,39 @@ outright when `NODE_ENV=production` — which is one reason that variable is set
 
 ---
 
+## Recovering a locked-out manager
+
+Employees are reset from **Manage Staff** in the app. Managers are not on that
+list — they have no roster row — so they need one of these.
+
+**If another manager can still sign in**, they reset by username:
+
+```bash
+curl -X POST https://YOUR_HOST/api/auth/reset   -H "Authorization: Bearer <their token>"   -H "Content-Type: application/json"   -d '{"username":"the-locked-out-one"}'
+```
+
+The response carries a one-time temporary password. Nobody can reset
+themselves — a reset ends the session making the request, so the app points you
+at Change Password instead.
+
+**If no manager can sign in**, from the server:
+
+```bash
+cd /srv/catalyst/scheduling-app/src/backend
+npm run reset:manager -- --list
+npm run reset:manager -- --username manager --yes
+```
+
+It prints a temporary password once. Sign in with it and the app forces a new
+one before anything else works.
+
+That script is deliberately not an endpoint: it needs shell access and the
+database credentials, which is the right bar for something that hands out a
+working credential for your highest-privilege account. It is safe to run in
+production — unlike `seed`, which refuses.
+
+---
+
 ## 10. Check it works
 
 - [ ] `https://YOUR_HOST` loads with a padlock

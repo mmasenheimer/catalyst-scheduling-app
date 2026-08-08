@@ -19,6 +19,15 @@ const eventSchema = new Schema(
     // these existed.
     repeatFrom: { type: String, default: null },
     repeatUntil: { type: String, default: null },
+    // Bumped on every write. An update may carry the version it was based on,
+    // and then only applies if that is still current — so two managers (or two
+    // tabs) cannot silently overwrite each other. Enforced only when the client
+    // sends `expectedVersion`, matching Schedule: a client that does not send
+    // one keeps the previous last-write-wins behaviour rather than breaking.
+    //
+    // Documents written before this field existed have no `version`, which the
+    // routes treat as 0 so they keep working without a migration.
+    version: { type: Number, default: 0 },
   },
   {
     toJSON: {

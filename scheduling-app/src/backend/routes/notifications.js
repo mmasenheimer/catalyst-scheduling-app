@@ -2,38 +2,32 @@
 const router = require("express").Router();
 const Notification = require("../models/Notification");
 const { sendWriteError } = require("../utils/respond");
+const { addressedToFilter, isAddressedTo } = require("../utils/notificationAccess");
 
-// Visibility follows who a notification is addressed to:
-//   'all'      → everyone
-//   'manager'  → the manager (request submissions, availability submissions)
-//   [staffId]  → only those employees
-//
-// The manager deliberately does NOT receive employee-addressed notifications.
-// They used to get everything except type 'approval', which meant every
-// per-employee notice — including schedule changes the manager made themselves —
-// landed back in their own inbox.
-function addressedToFilter({ role, staffId }) {
-  return role === "manager"
-    ? { $or: [{ recipients: "all" }, { recipients: "manager" }] }
-    : { $or: [{ recipients: "all" }, { recipients: staffId }] };
-}
-
-// Same rule, applied to a document already in hand. Used to decide whether the
-// caller is allowed to mark one read or delete it.
-function isAddressedTo(notif, { role, staffId }) {
-  const { recipients } = notif;
-  if (recipients === "all") return true;
-  if (recipients === "manager") return role === "manager";
-  if (Array.isArray(recipients)) return recipients.includes(staffId);
-  return false;
-}
 
 // GET /api/notifications
 // Filtered by the *verified* identity on the session token, so a client only
 // ever receives what it may see (not filtered client-side in the UI).
+// Most recent first, capped. The client polls this every 45 seconds and renders
+// the whole thing, so an uncapped read means the payload grows forever while the
+// request rate stays flat — measured at ~1 MB per poll after three months at this
+// database's own rate.
+//
+// 200 is roughly a week of the manager's traffic, who receives the most by far.
+// Nobody scrolls a notification list back further than that; anything older is
+// history, and the TTL on `createdAt` removes it at 90 days regardless.
+//
+// The unread badge counts what this returns, so a viewer with more than 200
+// unread would see the count plateau. That needs a genuinely abandoned account —
+// the realistic worst case is the badge under-reporting on a list nobody has
+// opened in a month.
+const LIST_LIMIT = 200;
+
 router.get("/", async (req, res) => {
   try {
-    const list = await Notification.find(addressedToFilter(req.user)).sort({ createdAt: -1 });
+    const list = await Notification.find(addressedToFilter(req.user))
+      .sort({ createdAt: -1 })
+      .limit(LIST_LIMIT);
     res.json(list);
   } catch (err) {
     sendWriteError(res, err);

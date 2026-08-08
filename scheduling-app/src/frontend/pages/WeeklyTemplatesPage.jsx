@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES, deskBoundsFor } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -979,9 +979,9 @@ export default function WeeklyTemplatesPage() {
     const initialStart = desk0.start;
     const initialEnd   = desk0.end;
     const otherDesks   = orderedStaff[staffIndex].deskShifts.filter((_, j) => j !== deskIndex);
-    const host         = orderedStaff[staffIndex].shifts.find(sh => sh.start <= desk0.start && sh.end >= desk0.end);
-    const shiftLo      = host?.start ?? HOURS_START;
-    const shiftHi      = host?.end   ?? HOURS_END;
+    // See deskBoundsFor: the old fallback widened to the studio day exactly when
+    // the turn was already outside every shift.
+    const { lo: shiftLo, hi: shiftHi } = deskBoundsFor(orderedStaff[staffIndex], desk0);
 
     setActiveBar({ type: 'desk', staffIndex, deskIndex, mode });
     document.body.style.cursor     = 'ew-resize';

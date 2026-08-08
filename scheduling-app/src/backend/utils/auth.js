@@ -22,9 +22,34 @@ function hashPassword(plain) {
   return bcrypt.hash(plain, SALT_ROUNDS);
 }
 
+// Something valid to compare against when there is no real hash, so the "no
+// such account" path costs the same as the "wrong password" one.
+//
+// Generated at startup rather than hardcoded, so it always uses the current
+// SALT_ROUNDS — a pasted-in constant would silently stop matching the real cost
+// the day that value changed, quietly reopening the gap this exists to close.
+// Random content, so no password can ever match it. Costs one bcrypt hash at
+// boot, once.
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), SALT_ROUNDS);
+
+/**
+ * Verify a password, taking the same time whether or not the account exists.
+ *
+ * Returning early on a missing hash — which this used to do — makes an unknown
+ * username measurably faster than a known one, because bcrypt never runs. That
+ * turns login into an oracle for which usernames are real: measured at 50ms
+ * versus 132ms before this change. The response bodies were already identical;
+ * it was the work that gave it away.
+ *
+ * The comparison therefore always runs, and the result is discarded when there
+ * was nothing genuine to compare against. The `&&` afterwards is a plain
+ * boolean operation, so it adds no measurable time of its own.
+ */
 function verifyPassword(plain, hash) {
-  if (!hash) return Promise.resolve(false);
-  return bcrypt.compare(plain, hash);
+  const present = typeof hash === "string" && hash.length > 0;
+  return bcrypt
+    .compare(String(plain ?? ""), present ? hash : DUMMY_HASH)
+    .then(matches => present && matches);
 }
 
 function signToken(user) {

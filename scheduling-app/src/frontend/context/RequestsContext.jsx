@@ -55,6 +55,30 @@ const describeShift = shift =>
  * the whole day instead, and are checked against that. Requests carrying neither
  * predate both and are let through rather than made permanently un-approvable.
  */
+/**
+ * A cover or swap needs two different people.
+ *
+ * Both branches of the mutation below strip the shift from the requester and
+ * then add it to the target, as sequential `if`s over one pass. When the two
+ * ids match, the first assignment wins and the second never runs — a
+ * self-targeted cover deletes the shift outright, and a self-targeted swap
+ * naming two of the person's own shifts leaves one duplicated and the other
+ * gone. Both were verified.
+ *
+ * Refused rather than repaired: there is no correct schedule to produce from
+ * "swap with yourself", so guessing one would just pick a different wrong
+ * answer. The API rejects this shape at submission; this is the second line of
+ * defence, covering rows stored before that guard existed.
+ */
+function assertNotSelfTargeted(req) {
+  if (req.targetStaffId != null && req.targetStaffId === req.staffId) {
+    throw new Error(
+      `This ${TYPE_LABEL[req.type]} request names ${req.staffName} as both sides, `
+      + `so there is nothing to exchange. Deny it and ask them to send a new one.`,
+    );
+  }
+}
+
 function assertStillMatchesAgreement(req, currentStaff) {
   const shiftsOf = id => currentStaff.find(p => p.id === id)?.shifts ?? [];
   const gone = (who, shift, current) => new Error(
@@ -266,6 +290,7 @@ export function RequestsProvider({ children }) {
       //    nothing while telling everyone it went through. Deliberately ahead of
       //    the status write so a refusal leaves the request untouched and still
       //    decidable.
+      assertNotSelfTargeted(req);
       const { current } = await resolveDay(req.date);
       assertStillMatchesAgreement(req, current);
 
