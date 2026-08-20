@@ -1,4 +1,4 @@
-import { staffingTargetsByDay, deskHoursByDay, HOURS_START, HOURS_END } from '../../data/mockData';
+import { staffingTargetsByDay, deskHoursByDay, vrHoursByDay, HOURS_START, HOURS_END } from '../../data/mockData';
 
 /** Format a Date as a local YYYY-MM-DD string (matches the key daySchedules is stored under) */
 export function toDateStr(date) {
@@ -8,13 +8,14 @@ export function toDateStr(date) {
 function normalizeStaffShifts(s) {
   const shifts = s.shifts ?? (s.shiftStart != null ? [{ id: `s${s.id}-0`, start: s.shiftStart, end: s.shiftEnd }] : []);
   const deskShifts = s.deskShifts ?? (s.deskStart != null ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }] : []);
-  return { ...s, shifts, deskShifts };
+  const vrShifts = s.vrShifts ?? (s.vrStart != null ? [{ id: `v${s.id}-0`, start: s.vrStart, end: s.vrEnd }] : []);
+  return { ...s, shifts, deskShifts, vrShifts };
 }
 
 /**
  * Merge the live staff roster with a saved/cached/template shift override
  * list. Identity and metadata (name, maxHoursPerWeek, etc.) always come from
- * the live roster — only shifts/deskShifts come from the override — so
+ * the live roster — only shifts and duty turns come from the override — so
  * staff added or removed since the override was captured, or edited via
  * Manage Staff afterward, are always reflected correctly. Staff no longer
  * on the live roster are dropped entirely.
@@ -23,9 +24,9 @@ export function mergeStaffOverrides(liveStaff, overrides) {
   const overrideMap = new Map((overrides ?? []).map(s => [s.id, s]));
   return liveStaff.map(person => {
     const override = overrideMap.get(person.id);
-    if (!override) return normalizeStaffShifts({ ...person, shifts: [], deskShifts: [] });
-    const { shifts, deskShifts } = normalizeStaffShifts(override);
-    return { ...person, shifts, deskShifts };
+    if (!override) return normalizeStaffShifts({ ...person, shifts: [], deskShifts: [], vrShifts: [] });
+    const { shifts, deskShifts, vrShifts } = normalizeStaffShifts(override);
+    return { ...person, shifts, deskShifts, vrShifts };
   });
 }
 
@@ -153,12 +154,21 @@ export function getEventsForDate(date, events) {
  * covered by a shift the person still has. A second shift elsewhere in the day
  * therefore keeps its own desk time and events.
  */
-export function orphanedByShiftRemoval(removedShift, remainingShifts = [], deskShifts = [], assignedEvents = []) {
+export function orphanedByShiftRemoval(
+  removedShift,
+  remainingShifts = [],
+  deskShifts = [],
+  assignedEvents = [],
+  vrShifts = [],
+) {
   const overlaps = (a, b) => a.start < b.end && a.end > b.start;
   const stillCovered = item => remainingShifts.some(sh => overlaps(item, sh));
   const orphaned = item => overlaps(item, removedShift) && !stillCovered(item);
   return {
     deskShifts: deskShifts.filter(orphaned),
+    // Appended after `assignedEvents` rather than beside deskShifts so the
+    // existing positional callers keep working unchanged while they are updated.
+    vrShifts: vrShifts.filter(orphaned),
     events: assignedEvents.filter(orphaned),
   };
 }
@@ -324,21 +334,76 @@ export function getTarget(hour, dow = 1) {
   return 0;
 }
 
-/** The hours the front desk needs manning on this weekday, or null if none. */
-export function getDeskWindow(dow = 1) {
-  return deskHoursByDay[dow] ?? null;
+/**
+ * The two duty types: front desk, and the VR studio.
+ *
+ * A duty is time inside a shift spent somewhere specific instead of the main
+ * studio floor. Both behave identically — one person at a time, inside a host
+ * shift, capped run length, auto-assigned by the generator — so the logic below
+ * is written once against this table rather than twice. `DUTIES` is the single
+ * place to add a third.
+ *
+ * `field` is the array on a person's day record; `legacyStart`/`legacyEnd` are
+ * the pre-array scalars still present on old rows (see dutyShiftsOf).
+ */
+export const DUTIES = {
+  desk: {
+    field: 'deskShifts',
+    legacyStart: 'deskStart',
+    legacyEnd: 'deskEnd',
+    hoursByDay: deskHoursByDay,
+    label: 'desk',
+    // Alert dot colour. Desk keeps the generic warning yellow; VR gets its own
+    // so a VR problem is identifiable in a mixed list at a glance.
+    alertType: 'yellow',
+  },
+  vr: {
+    field: 'vrShifts',
+    legacyStart: 'vrStart',
+    legacyEnd: 'vrEnd',
+    hoursByDay: vrHoursByDay,
+    label: 'VR',
+    alertType: 'vr',
+  },
+};
+
+export const DUTY_KINDS = Object.keys(DUTIES);
+
+/** The hours a duty needs manning on this weekday, or null if none. */
+export function getDutyWindow(kind, dow = 1) {
+  return DUTIES[kind]?.hoursByDay[dow] ?? null;
 }
 
 /**
- * Does the half-hour slot starting at `hour` need someone on the desk?
+ * Does the half-hour slot starting at `hour` need someone on this duty?
  *
  * Overlap, not containment: Friday's desk closes at 5:45 PM, which isn't on the
  * 30-minute grid, so the 5:30–6:00 slot still counts as needing cover. Rounding
  * down instead would leave the desk unmanned for the last 15 minutes.
  */
-export function isDeskRequired(hour, dow = 1, slot = 0.5) {
-  const w = getDeskWindow(dow);
+export function isDutyRequired(kind, hour, dow = 1, slot = 0.5) {
+  const w = getDutyWindow(kind, dow);
   return w != null && hour < w.end && hour + slot > w.start;
+}
+
+/** The hours the front desk needs manning on this weekday, or null if none. */
+export function getDeskWindow(dow = 1) {
+  return getDutyWindow('desk', dow);
+}
+
+/** Does the half-hour slot starting at `hour` need someone on the desk? */
+export function isDeskRequired(hour, dow = 1, slot = 0.5) {
+  return isDutyRequired('desk', hour, dow, slot);
+}
+
+/** The hours the VR studio needs manning on this weekday, or null if none. */
+export function getVrWindow(dow = 1) {
+  return getDutyWindow('vr', dow);
+}
+
+/** Does the half-hour slot starting at `hour` need someone in the VR studio? */
+export function isVrRequired(hour, dow = 1, slot = 0.5) {
+  return isDutyRequired('vr', hour, dow, slot);
 }
 
 /**
@@ -414,11 +479,30 @@ export function shiftsOf(person) {
     : [];
 }
 
-export function deskShiftsOf(person) {
-  if (Array.isArray(person?.deskShifts)) return person.deskShifts;
-  return person?.scheduled && person?.deskStart != null
-    ? [{ start: person.deskStart, end: person.deskEnd }]
+/**
+ * A person's turns on one duty, from the array if present and the legacy
+ * scalars otherwise.
+ *
+ * The `Array.isArray` check has to come first and has to win even for an empty
+ * array: a person whose turns were all deleted has `[]`, and falling through to
+ * the scalars there would resurrect a turn the manager just removed. That was a
+ * real bug on the shift side, and it is the same trap here.
+ */
+export function dutyShiftsOf(person, kind) {
+  const duty = DUTIES[kind];
+  if (!duty) return [];
+  if (Array.isArray(person?.[duty.field])) return person[duty.field];
+  return person?.scheduled && person?.[duty.legacyStart] != null
+    ? [{ start: person[duty.legacyStart], end: person[duty.legacyEnd] }]
     : [];
+}
+
+export function deskShiftsOf(person) {
+  return dutyShiftsOf(person, 'desk');
+}
+
+export function vrShiftsOf(person) {
+  return dutyShiftsOf(person, 'vr');
 }
 
 /** Count how many staff are on shift at a given hour. */
@@ -444,11 +528,19 @@ export function getStaffCount(staff, hour) {
  * surprising for a 30-minute nudge, and moving it into the shortened shift means
  * guessing where the manager wanted it.
  */
-export function orphanedDeskTurns(person) {
+export function orphanedDutyTurns(person, kind) {
   const shifts = shiftsOf(person);
-  return deskShiftsOf(person).filter(
+  return dutyShiftsOf(person, kind).filter(
     d => !shifts.some(sh => sh.start <= d.start && sh.end >= d.end),
   );
+}
+
+export function orphanedDeskTurns(person) {
+  return orphanedDutyTurns(person, 'desk');
+}
+
+export function orphanedVrTurns(person) {
+  return orphanedDutyTurns(person, 'vr');
 }
 
 /**
@@ -461,10 +553,10 @@ export function orphanedDeskTurns(person) {
  * inside a shift stopped doing so exactly when it was needed, letting a stranded
  * turn wander further.
  */
-export function deskBoundsFor(person, desk) {
+export function dutyBoundsFor(person, turn) {
   const shifts = shiftsOf(person);
-  const host = shifts.find(sh => sh.start <= desk.start && sh.end >= desk.end)
-    ?? shifts.find(sh => desk.start < sh.end && desk.end > sh.start);
+  const host = shifts.find(sh => sh.start <= turn.start && sh.end >= turn.end)
+    ?? shifts.find(sh => turn.start < sh.end && turn.end > sh.start);
   if (host) return { lo: host.start, hi: host.end };
   if (shifts.length) {
     return {
@@ -475,29 +567,166 @@ export function deskBoundsFor(person, desk) {
   return { lo: HOURS_START, hi: HOURS_END };
 }
 
-/** Alert lines for any desk turn stranded outside its shift. */
-function orphanedDeskAlerts(person) {
+export function deskBoundsFor(person, desk) {
+  return dutyBoundsFor(person, desk);
+}
+
+export function vrBoundsFor(person, vr) {
+  return dutyBoundsFor(person, vr);
+}
+
+/** Alert lines for any duty turn stranded outside its shift. */
+function orphanedDutyAlerts(person, kind) {
+  const { label, alertType } = DUTIES[kind];
   const working = shiftsOf(person).length > 0;
-  return orphanedDeskTurns(person).map(d => ({
-    type: 'yellow',
+  return orphanedDutyTurns(person, kind).map(d => ({
+    type: alertType,
     text: working
-      ? `${person.name}: desk ${formatTime(d.start)}–${formatTime(d.end)} is outside their shift.`
-      : `${person.name} is on desk ${formatTime(d.start)}–${formatTime(d.end)} but isn't scheduled to work.`,
+      ? `${person.name}: ${label} ${formatTime(d.start)}–${formatTime(d.end)} is outside their shift.`
+      : `${person.name} is on ${label} ${formatTime(d.start)}–${formatTime(d.end)} but isn't scheduled to work.`,
   }));
 }
 
-/** Return list of conflicts for a person's desk assignments vs events */
-export function checkDeskConflicts(person, events) {
-  const desks = deskShiftsOf(person);
+/** Return list of conflicts for a person's duty assignments vs events */
+export function checkDutyConflicts(person, events, kind) {
+  const { label } = DUTIES[kind];
+  const turns = dutyShiftsOf(person, kind);
   const conflicts = [];
-  for (const desk of desks) {
+  for (const turn of turns) {
     for (const evt of events) {
-      if (evt.assignedStaff.includes(person.id) && desk.start < evt.end && desk.end > evt.start) {
-        conflicts.push(`Desk overlaps with "${evt.name}"`);
+      if (evt.assignedStaff.includes(person.id) && turn.start < evt.end && turn.end > evt.start) {
+        conflicts.push(`${label[0].toUpperCase()}${label.slice(1)} overlaps with "${evt.name}"`);
       }
     }
   }
   return conflicts;
+}
+
+export function checkDeskConflicts(person, events) {
+  return checkDutyConflicts(person, events, 'desk');
+}
+
+export function checkVrConflicts(person, events) {
+  return checkDutyConflicts(person, events, 'vr');
+}
+
+/**
+ * Desk and VR turns that overlap each other.
+ *
+ * The front desk and the VR studio are different rooms, so one person cannot
+ * hold both at the same time. Every other duty rule is about a turn versus its
+ * own shift; this is the only rule that compares the two duties against each
+ * other, which is why it has no desk-only equivalent above.
+ *
+ * Reported rather than auto-repaired, matching how orphaned turns are handled:
+ * the manager put both there, and choosing which one to drop is their call.
+ */
+export function checkDutyOverlap(person) {
+  const desks = dutyShiftsOf(person, 'desk');
+  const vrs = dutyShiftsOf(person, 'vr');
+  const conflicts = [];
+  for (const d of desks) {
+    for (const v of vrs) {
+      if (d.start < v.end && d.end > v.start) {
+        conflicts.push(
+          `Desk ${formatTime(d.start)}–${formatTime(d.end)} overlaps VR ` +
+            `${formatTime(v.start)}–${formatTime(v.end)}`,
+        );
+      }
+    }
+  }
+  return conflicts;
+}
+
+/**
+ * Gap alerts for one duty — half-hours inside its coverage window with nobody
+ * on it. Shifts outside the window need no cover, so an early opener or a late
+ * closer is not flagged.
+ *
+ * Reads the array field directly rather than through dutyShiftsOf, matching the
+ * behaviour this replaced: legacy scalar-only rows have never counted toward
+ * coverage here, and quietly starting to count them would change which days
+ * report gaps.
+ */
+function dutyGapAlerts(staff, kind, dow) {
+  const { field, label, alertType } = DUTIES[kind];
+  const window = getDutyWindow(kind, dow);
+  const anyoneScheduled = staff.some(s => (s.shifts ?? []).length > 0);
+  if (!window || !anyoneScheduled) return [];
+
+  const alerts = [];
+  let gapStart = null;
+  const closeGap = (end) => {
+    if (gapStart === null) return;
+    alerts.push({
+      type: alertType,
+      text: `No one on ${label} ${formatTime(gapStart)}–${formatTime(end)}.`,
+    });
+    gapStart = null;
+  };
+  for (let h = window.start; h < window.end; h += 0.5) {
+    const covered = staff.some(s => (s[field] ?? []).some(d => d.start <= h && d.end > h));
+    if (!covered) {
+      if (gapStart === null) gapStart = h;
+    } else {
+      closeGap(h);
+    }
+  }
+  closeGap(window.end);
+  return alerts;
+}
+
+/**
+ * One alert per window where more than one person holds the same duty. A duty is
+ * a single post — two people on it means one of them should be somewhere else.
+ */
+function dutyConcurrencyAlerts(staff, kind) {
+  const { field, label, alertType } = DUTIES[kind];
+  const withTurns = staff.filter(s => s[field]?.length > 0);
+  if (withTurns.length <= 1) return [];
+
+  const alerts = [];
+  const times = [...new Set(
+    withTurns.flatMap(s => s[field].flatMap(d => [d.start, d.end]))
+  )].sort((a, b) => a - b);
+
+  const seenKey = new Set();
+  for (let i = 0; i < times.length - 1; i++) {
+    const t = times[i];
+    const on = withTurns.filter(s => s[field].some(d => d.start <= t && d.end > t));
+    if (on.length > 1) {
+      const key = on.map(s => s.id).sort().join(',');
+      if (!seenKey.has(key)) {
+        seenKey.add(key);
+        const names = on.map(s => s.name);
+        const last = names.pop();
+        const nameStr = names.length ? `${names.join(', ')} and ${last}` : last;
+        alerts.push({
+          type: alertType,
+          text: `${nameStr} are all on ${label} at ${formatTime(t)}.`,
+        });
+      }
+    }
+  }
+  return alerts;
+}
+
+/** Per-person duty alerts: event clashes, stranded turns, and desk/VR overlap. */
+function perPersonDutyAlerts(person, events) {
+  const alerts = [];
+  for (const kind of DUTY_KINDS) {
+    for (const msg of checkDutyConflicts(person, events, kind)) {
+      alerts.push({ type: DUTIES[kind].alertType, text: `${person.name}: ${msg}` });
+    }
+    alerts.push(...orphanedDutyAlerts(person, kind));
+  }
+  // Cross-duty: the only rule comparing the two duties to each other. Coloured
+  // as a VR alert because VR is the half a reader needs to look at — desk on its
+  // own was fine until VR landed on top of it.
+  for (const msg of checkDutyOverlap(person)) {
+    alerts.push({ type: DUTIES.vr.alertType, text: `${person.name}: ${msg}` });
+  }
+  return alerts;
 }
 
 /** Build the alerts list from current staff + events */
@@ -515,62 +744,14 @@ export function buildAlerts(staff, events, dow = 1) {
     }
   }
 
-  // Desk coverage gaps — only inside the hours the desk actually needs manning
-  // (see deskHoursByDay). Shifts outside that window need no desk cover, so an
-  // early opener or a late closer is no longer flagged for it.
-  const deskWindow = getDeskWindow(dow);
-  const anyoneScheduled = staff.some(s => (s.shifts ?? []).length > 0);
-  if (deskWindow && anyoneScheduled) {
-    let gapStart = null;
-    const closeGap = (end) => {
-      if (gapStart === null) return;
-      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(end)}.` });
-      gapStart = null;
-    };
-    for (let h = deskWindow.start; h < deskWindow.end; h += 0.5) {
-      const onDesk = staff.some(s => (s.deskShifts ?? []).some(d => d.start <= h && d.end > h));
-      if (!onDesk) {
-        if (gapStart === null) gapStart = h;
-      } else {
-        closeGap(h);
-      }
-    }
-    closeGap(deskWindow.end);
-  }
-
-  // Concurrent desk: one alert per conflict window listing everyone on desk at that time
-  const withDesks = staff.filter(s => s.deskShifts?.length > 0);
-  if (withDesks.length > 1) {
-    const times = [...new Set(
-      withDesks.flatMap(s => s.deskShifts.flatMap(d => [d.start, d.end]))
-    )].sort((a, b) => a - b);
-
-    const seenKey = new Set();
-    for (let i = 0; i < times.length - 1; i++) {
-      const t = times[i];
-      const onDesk = withDesks.filter(s => s.deskShifts.some(d => d.start <= t && d.end > t));
-      if (onDesk.length > 1) {
-        const key = onDesk.map(s => s.id).sort().join(',');
-        if (!seenKey.has(key)) {
-          seenKey.add(key);
-          const names = onDesk.map(s => s.name);
-          const last  = names.pop();
-          const nameStr = names.length ? `${names.join(', ')} and ${last}` : last;
-          alerts.push({
-            type: 'yellow',
-            text: `${nameStr} are all on desk at ${formatTime(t)}.`,
-          });
-        }
-      }
-    }
+  // Coverage gaps and double-staffing, for every duty (desk and VR).
+  for (const kind of DUTY_KINDS) {
+    alerts.push(...dutyGapAlerts(staff, kind, dow));
+    alerts.push(...dutyConcurrencyAlerts(staff, kind));
   }
 
   staff.forEach(person => {
-    const conflicts = checkDeskConflicts(person, events);
-    conflicts.forEach(msg => {
-      alerts.push({ type: 'yellow', text: `${person.name}: ${msg}` });
-    });
-    alerts.push(...orphanedDeskAlerts(person));
+    alerts.push(...perPersonDutyAlerts(person, events));
   });
 
   events.forEach(evt => {
@@ -632,56 +813,21 @@ export function buildAlerts(staff, events, dow = 1) {
 export function buildTemplateAlerts(staff, dow = null) {
   const alerts = [];
 
-  // Desk coverage gaps, within this weekday's desk hours only.
-  const deskWindow = dow == null ? null : getDeskWindow(dow);
-  const anyoneScheduled = staff.some(s => (s.shifts ?? []).length > 0);
-  if (deskWindow && anyoneScheduled) {
-    let gapStart = null;
-    const closeGap = (end) => {
-      if (gapStart === null) return;
-      alerts.push({ type: 'yellow', text: `No one on desk ${formatTime(gapStart)}–${formatTime(end)}.` });
-      gapStart = null;
-    };
-    for (let h = deskWindow.start; h < deskWindow.end; h += 0.5) {
-      const onDesk = staff.some(s => (s.deskShifts ?? []).some(d => d.start <= h && d.end > h));
-      if (!onDesk) {
-        if (gapStart === null) gapStart = h;
-      } else {
-        closeGap(h);
-      }
-    }
-    closeGap(deskWindow.end);
+  // Coverage gaps within this weekday's window, and double-staffing, per duty.
+  // `dow == null` means the caller has no weekday in hand (a day template not
+  // yet placed), so there is no window to check against.
+  for (const kind of DUTY_KINDS) {
+    if (dow != null) alerts.push(...dutyGapAlerts(staff, kind, dow));
+    alerts.push(...dutyConcurrencyAlerts(staff, kind));
   }
 
-  // Desk turns stranded outside their shift — same check the daily/weekly
-  // editors run; a template can strand one the same way, by resizing a shift.
-  staff.forEach(person => alerts.push(...orphanedDeskAlerts(person)));
-
-  // Concurrent desk
-  const withDesks = staff.filter(s => s.deskShifts?.length > 0);
-  if (withDesks.length > 1) {
-    const times = [...new Set(
-      withDesks.flatMap(s => s.deskShifts.flatMap(d => [d.start, d.end]))
-    )].sort((a, b) => a - b);
-    const seenKey = new Set();
-    for (let i = 0; i < times.length - 1; i++) {
-      const t = times[i];
-      const onDesk = withDesks.filter(s => s.deskShifts.some(d => d.start <= t && d.end > t));
-      if (onDesk.length > 1) {
-        const key = onDesk.map(s => s.id).sort().join(',');
-        if (!seenKey.has(key)) {
-          seenKey.add(key);
-          const names = onDesk.map(s => s.name);
-          const last  = names.pop();
-          const nameStr = names.length ? `${names.join(', ')} and ${last}` : last;
-          alerts.push({ type: 'yellow', text: `${nameStr} are all on desk at ${formatTime(t)}.` });
-        }
-      }
-    }
-  }
+  // Turns stranded outside their shift, and desk/VR overlap — the same checks
+  // the daily and weekly editors run. A template can strand one the same way,
+  // by resizing a shift. No events exist in a template, hence the empty list.
+  staff.forEach(person => alerts.push(...perPersonDutyAlerts(person, [])));
 
   if (alerts.length === 0) {
-    alerts.push({ type: 'blue', text: 'No desk conflicts. Looks good!' });
+    alerts.push({ type: 'blue', text: 'No desk or VR conflicts. Looks good!' });
   }
   return alerts;
 }

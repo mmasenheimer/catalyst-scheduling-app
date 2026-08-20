@@ -24,6 +24,24 @@ export const deskHoursByDay = {
   6: null,                      // Saturday — studio closed
 };
 
+// ── VR studio coverage hours ──────────────────────────────────────────────────
+// The VR studio is staffed the same hours as the front desk. Kept as its own
+// object rather than an alias so the two can diverge without touching any of the
+// code that reads them — every VR helper goes through this, exactly as the desk
+// helpers go through deskHoursByDay.
+//
+// Friday's off-grid 5:45 PM close is handled the same way (see above): coverage
+// is treated as overlapping rather than contained, so the last slot is staffed.
+export const vrHoursByDay = {
+  0: { start: 13, end: 18 },    // Sunday     1:00–6:00 PM
+  1: { start: 9,  end: 18 },    // Monday     9:00 AM–6:00 PM
+  2: { start: 9,  end: 18 },    // Tuesday
+  3: { start: 9,  end: 18 },    // Wednesday
+  4: { start: 9,  end: 18 },    // Thursday
+  5: { start: 9,  end: 17.75 }, // Friday     9:00 AM–5:45 PM
+  6: null,                      // Saturday — studio closed
+};
+
 // ── Event types ───────────────────────────────────────────────────────────────
 // Single source of truth — this list was previously copy-pasted into four pages
 // and had drifted, so an event could be created with a type the edit dialogs

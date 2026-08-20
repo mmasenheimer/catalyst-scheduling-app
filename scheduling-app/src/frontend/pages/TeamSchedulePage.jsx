@@ -99,6 +99,15 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
                 </div>
               ))}
 
+              {(person.vrShifts??[]).map(v => (
+                <div key={v.id}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(v.start,v.end),background:'var(--color-vr)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',zIndex:3}}
+                  title={`${person.name}: VR ${formatTime(v.start)} – ${formatTime(v.end)}`}
+                >
+                  <span style={{fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>VR</span>
+                </div>
+              ))}
+
               {events.filter(ev=>ev.assignedStaff.includes(person.id)).map(evt => (
                 <div key={evt.id}
                   style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
@@ -115,7 +124,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 
       {/* Legend */}
       <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
-        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-yellow)',opacity:0.75,label:'Desk'},{color:'#3b2a6e',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
+        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-yellow)',opacity:0.75,label:'Desk'},{color:'var(--color-vr)',opacity:0.75,label:'VR'},{color:'#3b2a6e',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
           <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'var(--color-text-dim)' }}>
             <div style={{ width:18, height:7, borderRadius:2, background:color, opacity }}/>
             {label}

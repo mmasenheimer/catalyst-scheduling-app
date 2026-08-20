@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES, deskBoundsFor } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -28,15 +28,21 @@ function normalizeStaff(s) {
   const deskShifts = s.deskShifts ?? (s.scheduled && s.deskStart != null
     ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }]
     : []);
+  const vrShifts = s.vrShifts ?? (s.scheduled && s.vrStart != null
+    ? [{ id: `v${s.id}-0`, start: s.vrStart, end: s.vrEnd }]
+    : []);
   return {
     ...s,
     shifts,
     deskShifts,
+    vrShifts,
     scheduled: shifts.length > 0,
     shiftStart: s.shiftStart ?? shifts[0]?.start,
     shiftEnd:   s.shiftEnd   ?? shifts[0]?.end,
     deskStart:  s.deskStart  ?? deskShifts[0]?.start ?? null,
     deskEnd:    s.deskEnd    ?? deskShifts[0]?.end   ?? null,
+    vrStart:    s.vrStart    ?? vrShifts[0]?.start   ?? null,
+    vrEnd:      s.vrEnd      ?? vrShifts[0]?.end     ?? null,
   };
 }
 
@@ -60,7 +66,9 @@ const DAY_NAME_TO_DOW = {
 
 function AlertsBar({ staff, day }) {
   const alerts   = buildTemplateAlerts(staff, DAY_NAME_TO_DOW[day] ?? null);
-  const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', blue: 'var(--color-accent-bright)' };
+  // A lookup, not a chain: a type missing here renders a dot with no colour at
+  // all rather than falling back to yellow.
+  const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', vr: 'var(--color-vr)', blue: 'var(--color-accent-bright)' };
   return (
     <div className="p-3 rounded-xl mb-5 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', minHeight: 72 }}>
@@ -282,6 +290,18 @@ function EditModal({ target, orderedStaff, onSave, onClose }) {
               </div>
             </>
           )}
+          {target.type === 'vr' && (
+            <>
+              <div>
+                <label style={fieldLabel}>VR Start</label>
+                <TimeSelect value={form.vrStart} onChange={v => setForm(f => ({ ...f, vrStart: Math.min(v, f.vrEnd - 0.5) }))} max={form.vrEnd - 0.5} />
+              </div>
+              <div>
+                <label style={fieldLabel}>VR End</label>
+                <TimeSelect value={form.vrEnd} onChange={v => setForm(f => ({ ...f, vrEnd: Math.max(v, f.vrStart + 0.5) }))} min={form.vrStart + 0.5} />
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex gap-2 mt-5 justify-end">
@@ -307,9 +327,9 @@ function EditModal({ target, orderedStaff, onSave, onClose }) {
 
 function TemplateGrid({
   staff, currentDow, poolDragId, onPoolDrop,
-  onBarMouseDown, onDeskBarMouseDown, activeBar,
+  onBarMouseDown, onDeskBarMouseDown, onVrBarMouseDown, activeBar,
   activeDragType, hoverRow, onTimelineDragOver, onTimelineDrop,
-  draggingBarInfo, onShiftBarDragStart, onDeskBarDragStart, onBarDragEnd,
+  draggingBarInfo, onShiftBarDragStart, onDeskBarDragStart, onVrBarDragStart, onBarDragEnd,
   onBarDragOver, onBarDrop, onBarContextMenu,
   getPersonAvailability, previewInfo, onRemoveFromDay,
 }) {
@@ -550,6 +570,46 @@ function TemplateGrid({
                   </div>
                 );
               })}
+
+              {/* VR bars — same behaviour as desk, different post. Higher z-index
+                  so that on the overlap the alerts flag, this stays clickable. */}
+              {person.vrShifts.map((vr, vi) => {
+                const isVrActive   = activeBar?.type === 'vr' && activeBar?.staffIndex === i && activeBar?.vrIndex === vi;
+                const isVrDragging = draggingBarInfo?.type === 'vr' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.vrIndex === vi;
+                return (
+                  <div
+                    key={vr.id}
+                    draggable
+                    className="absolute h-6 rounded overflow-hidden select-none"
+                    style={{
+                      ...posStyle(vr.start, vr.end),
+                      top: '50%', transform: 'translateY(-50%)',
+                      background: 'var(--color-vr)',
+                      opacity: isVrDragging ? 0.3 : (isVrActive ? 1 : 0.75),
+                      cursor: 'grab',
+                      boxShadow: isVrActive ? '0 0 0 2px #e05a62' : 'none',
+                      transition: isVrActive || isVrDragging ? 'none' : 'box-shadow 0.1s',
+                      zIndex: isVrActive ? 10 : 3,
+                    }}
+                    onDragStart={e => { e.stopPropagation(); onVrBarDragStart(e, i, vi); }}
+                    onDragEnd={onBarDragEnd}
+                    onContextMenu={e => { e.preventDefault(); onBarContextMenu(e, { type: 'vr', staffIndex: i, vrIndex: vi }); }}
+                  >
+                    <div
+                      style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                      onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onVrBarMouseDown(e, i, vi, 'left'); }}
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      style={{ fontSize: 9, color: 'white', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', paddingLeft: 10, paddingRight: 10 }}>
+                      VR
+                    </span>
+                    <div
+                      style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                      onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onVrBarMouseDown(e, i, vi, 'right'); }}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))
@@ -562,6 +622,7 @@ function TemplateGrid({
       {[
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-vr)', opacity: 0.75 }} />, label: 'VR' },
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'rgba(96,165,250,0.18)', border: '1px solid rgba(96,165,250,0.35)' }} />, label: 'Available' },
       ].map(({ swatch, label }) => (
         <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
@@ -723,7 +784,7 @@ export default function WeeklyTemplatesPage() {
     const liveMap = new Map(liveStaff.map(s => [s.id, s]));
     return (tplStaff ?? [])
       .filter(s => liveMap.has(s.id))
-      .map(s => normalizeStaff({ ...liveMap.get(s.id), shifts: s.shifts, deskShifts: s.deskShifts }));
+      .map(s => normalizeStaff({ ...liveMap.get(s.id), shifts: s.shifts, deskShifts: s.deskShifts, vrShifts: s.vrShifts }));
   }
 
   function selectTemplate(tpl) {
@@ -828,7 +889,9 @@ export default function WeeklyTemplatesPage() {
   // ── Timeline drag-over (toolbar chips) ───────────────────────────────────────
   function handleTimelineDragOver(e, rowIndex) {
     setHoverRow(rowIndex);
-    if (activeDragType !== 'shift' && activeDragType !== 'desk') return;
+    // Guard list has to name every draggable type — a type missing here reaches
+    // no branch below, so the chip drags with no placement preview at all.
+    if (activeDragType !== 'shift' && activeDragType !== 'desk' && activeDragType !== 'vr') return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const person = orderedStaff[rowIndex];
@@ -849,6 +912,19 @@ export default function WeeklyTemplatesPage() {
       const start = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
       const end = start + duration;
       const valid = !person.deskShifts.some(d => start < d.end && end > d.start);
+      setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
+    } else if (activeDragType === 'vr') {
+      const duration = 1;
+      const host = person.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+      if (!host) {
+        setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+        return;
+      }
+      const start = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+      const end = start + duration;
+      // Desk counts as a conflict too — separate rooms.
+      const valid = !person.vrShifts.some(v => start < v.end && end > v.start) &&
+                    !person.deskShifts.some(d => start < d.end && end > d.start);
       setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
     }
   }
@@ -900,6 +976,29 @@ export default function WeeklyTemplatesPage() {
           const next = [...prev];
           const pp = { ...next[staffIndex] };
           pp.deskShifts = [...pp.deskShifts, { id: `d${Date.now()}`, start: newStart, end: newEnd }];
+          next[staffIndex] = pp;
+          return next;
+        });
+      }
+    } else if (activeDragType === 'vr') {
+      const p = orderedStaff[staffIndex];
+      let newStart = null;
+      if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
+        newStart = previewInfo.start;
+      } else {
+        // Existing desk turns are passed as things to avoid, so an auto-placed
+        // VR turn never lands on top of one.
+        for (const shift of p.shifts) {
+          const slot = firstFreeSlot(p.vrShifts, 1, shift.start, shift.end, p.deskShifts ?? []);
+          if (slot !== null) { newStart = slot; break; }
+        }
+      }
+      if (newStart !== null) {
+        const newEnd = newStart + 1;
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const pp = { ...next[staffIndex] };
+          pp.vrShifts = [...pp.vrShifts, { id: `v${Date.now()}`, start: newStart, end: newEnd }];
           next[staffIndex] = pp;
           return next;
         });
@@ -1025,6 +1124,52 @@ export default function WeeklyTemplatesPage() {
     setDraggingBarInfo({ type: 'desk', staffIndex, deskIndex, deskId: desk.id, duration: desk.end - desk.start, originalStart: desk.start, originalEnd: desk.end });
   }
 
+  // ── VR bar resize (mouse) ─────────────────────────────────────────────────────
+  function handleVrBarMouseDown(e, staffIndex, vrIndex, mode) {
+    const timelineEl = e.currentTarget.closest('[data-timeline]');
+    const { width: timelineWidth } = timelineEl.getBoundingClientRect();
+    const startX       = e.clientX;
+    const vr0          = orderedStaff[staffIndex].vrShifts[vrIndex];
+    const initialStart = vr0.start;
+    const initialEnd   = vr0.end;
+    const otherVrs     = orderedStaff[staffIndex].vrShifts.filter((_, j) => j !== vrIndex);
+    const deskTurns    = orderedStaff[staffIndex].deskShifts ?? [];
+    const { lo: shiftLo, hi: shiftHi } = vrBoundsFor(orderedStaff[staffIndex], vr0);
+
+    setActiveBar({ type: 'vr', staffIndex, vrIndex, mode });
+    document.body.style.cursor     = 'ew-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(me) {
+      const delta = ((me.clientX - startX) / timelineWidth) * TOTAL_HOURS;
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[staffIndex], vrShifts: [...next[staffIndex].vrShifts] };
+        const v = { ...p.vrShifts[vrIndex] };
+        if (mode === 'left')  v.start = snapHalf(clamp(initialStart + delta, shiftLo, initialEnd - 0.5));
+        else                  v.end   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, shiftHi));
+        if (!otherVrs.some(ov => v.start < ov.end && v.end > ov.start) &&
+            !deskTurns.some(d => v.start < d.end && v.end > d.start)) p.vrShifts[vrIndex] = v;
+        next[staffIndex] = p;
+        return next;
+      });
+    }
+    function onUp() {
+      setActiveBar(null);
+      document.body.style.cursor = document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function handleVrBarDragStart(e, staffIndex, vrIndex) {
+    e.dataTransfer.effectAllowed = 'move';
+    const vr = orderedStaff[staffIndex].vrShifts[vrIndex];
+    setDraggingBarInfo({ type: 'vr', staffIndex, vrIndex, vrId: vr.id, duration: vr.end - vr.start, originalStart: vr.start, originalEnd: vr.end });
+  }
+
   function handleBarDragEnd() {
     shiftDragActiveRef.current = false;
     setPreviewInfo(null);
@@ -1067,7 +1212,7 @@ export default function WeeklyTemplatesPage() {
     if (!draggingBarInfo) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
-    const { type, staffIndex, shiftIndex, deskIndex, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, vrIndex, duration } = draggingBarInfo;
     const sameRow = staffIndex === rowIndex;
 
     if (type === 'shift') {
@@ -1120,13 +1265,45 @@ export default function WeeklyTemplatesPage() {
         const valid      = !target.deskShifts.some(d => newStart < d.end && newEnd > d.start);
         setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
       }
+
+    } else if (type === 'vr') {
+      if (sameRow) {
+        setPreviewInfo(null);
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p = { ...next[staffIndex], vrShifts: [...next[staffIndex].vrShifts] };
+          const host = p.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+          if (!host) return prev;
+          const newStart = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+          const newEnd   = newStart + duration;
+          const otherVrs = p.vrShifts.filter((_, j) => j !== vrIndex);
+          if (!otherVrs.some(ov => newStart < ov.end && newEnd > ov.start) &&
+              !(p.deskShifts ?? []).some(d => newStart < d.end && newEnd > d.start)) {
+            p.vrShifts[vrIndex] = { ...p.vrShifts[vrIndex], start: newStart, end: newEnd };
+          }
+          next[staffIndex] = p;
+          return next;
+        });
+      } else {
+        const target = orderedStaff[rowIndex];
+        const host   = target.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+        if (!host) {
+          setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+          return;
+        }
+        const newStart = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+        const newEnd   = newStart + duration;
+        const valid    = !target.vrShifts.some(v => newStart < v.end && newEnd > v.start) &&
+                         !(target.deskShifts ?? []).some(d => newStart < d.end && newEnd > d.start);
+        setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
+      }
     }
   }
 
   // ── Bar drop ──────────────────────────────────────────────────────────────────
   function handleBarDrop(e, rowIndex) {
     if (!draggingBarInfo) return;
-    const { type, staffIndex, shiftIndex, deskIndex } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, vrIndex } = draggingBarInfo;
     if (staffIndex === rowIndex) return;
     if (!previewInfo || previewInfo.staffIndex !== rowIndex || !previewInfo.valid || previewInfo.start === null) return;
 
@@ -1174,6 +1351,18 @@ export default function WeeklyTemplatesPage() {
         next[rowIndex] = tgt;
         return next;
       });
+
+    } else if (type === 'vr') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const src = { ...next[staffIndex] };
+        src.vrShifts = src.vrShifts.filter((_, j) => j !== vrIndex);
+        next[staffIndex] = src;
+        const tgt = { ...next[rowIndex] };
+        tgt.vrShifts = [...tgt.vrShifts, { id: `v${Date.now()}`, start, end }];
+        next[rowIndex] = tgt;
+        return next;
+      });
     }
   }
 
@@ -1199,6 +1388,14 @@ export default function WeeklyTemplatesPage() {
         const next = [...prev];
         const p = { ...next[target.staffIndex] };
         p.deskShifts = p.deskShifts.filter((_, j) => j !== target.deskIndex);
+        next[target.staffIndex] = p;
+        return next;
+      });
+    } else if (target.type === 'vr') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[target.staffIndex] };
+        p.vrShifts = p.vrShifts.filter((_, j) => j !== target.vrIndex);
         next[target.staffIndex] = p;
         return next;
       });
@@ -1229,6 +1426,14 @@ export default function WeeklyTemplatesPage() {
         next[t.staffIndex] = p;
         return next;
       });
+    } else if (t.type === 'vr') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[t.staffIndex], vrShifts: [...next[t.staffIndex].vrShifts] };
+        p.vrShifts[t.vrIndex] = { ...p.vrShifts[t.vrIndex], start: data.vrStart, end: data.vrEnd };
+        next[t.staffIndex] = p;
+        return next;
+      });
     }
   }
 
@@ -1240,7 +1445,7 @@ export default function WeeklyTemplatesPage() {
   function handleTrashDrop() {
     setTrashOver(false);
     if (draggingBarInfo) {
-      const { type, staffIndex, shiftIndex, deskIndex } = draggingBarInfo;
+      const { type, staffIndex, shiftIndex, deskIndex, vrIndex } = draggingBarInfo;
       if (type === 'shift') {
         // Desk time sitting on the deleted shift goes with it, unless another
         // remaining shift still covers it.
@@ -1249,8 +1454,11 @@ export default function WeeklyTemplatesPage() {
           person.shifts[shiftIndex],
           person.shifts.filter((_, j) => j !== shiftIndex),
           person.deskShifts ?? [],
+          [],
+          person.vrShifts ?? [],
         );
         const orphanedDeskIds = new Set(orphaned.deskShifts.map(d => d.id));
+        const orphanedVrIds   = new Set(orphaned.vrShifts.map(v => v.id));
 
         setOrderedStaff(prev => {
           const next = [...prev];
@@ -1258,6 +1466,7 @@ export default function WeeklyTemplatesPage() {
           p.shifts     = p.shifts.filter((_, j) => j !== shiftIndex);
           p.scheduled  = p.shifts.length > 0;
           p.deskShifts = (p.deskShifts ?? []).filter(d => !orphanedDeskIds.has(d.id));
+          p.vrShifts   = (p.vrShifts   ?? []).filter(v => !orphanedVrIds.has(v.id));
           next[staffIndex] = p;
           return sortByShift(next);
         });
@@ -1266,6 +1475,14 @@ export default function WeeklyTemplatesPage() {
           const next = [...prev];
           const p = { ...next[staffIndex] };
           p.deskShifts = p.deskShifts.filter((_, j) => j !== deskIndex);
+          next[staffIndex] = p;
+          return next;
+        });
+      } else if (type === 'vr') {
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p = { ...next[staffIndex] };
+          p.vrShifts = p.vrShifts.filter((_, j) => j !== vrIndex);
           next[staffIndex] = p;
           return next;
         });
@@ -1457,6 +1674,13 @@ export default function WeeklyTemplatesPage() {
                   onDragEnd={endDrag}
                 />
                 <DragChip
+                  label="New VR Shift" isActive={activeDragType === 'vr'}
+                  color="var(--color-vr)" borderColor="#5e2226" bg="rgba(94,34,38,0.4)"
+                  icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('vr'); }}
+                  onDragEnd={endDrag}
+                />
+                <DragChip
                   label="New Desk Shift" isActive={activeDragType === 'desk'}
                   color="var(--color-yellow)" borderColor="#5a4428" bg="rgba(61,44,24,0.4)"
                   icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
@@ -1494,6 +1718,7 @@ export default function WeeklyTemplatesPage() {
               onPoolDrop={personId => { addToDay(personId); setPoolDragId(null); }}
               onBarMouseDown={handleBarMouseDown}
               onDeskBarMouseDown={handleDeskBarMouseDown}
+              onVrBarMouseDown={handleVrBarMouseDown}
               activeBar={activeBar}
               activeDragType={activeDragType}
               hoverRow={hoverRow}
@@ -1502,6 +1727,7 @@ export default function WeeklyTemplatesPage() {
               draggingBarInfo={draggingBarInfo}
               onShiftBarDragStart={handleShiftBarDragStart}
               onDeskBarDragStart={handleDeskBarDragStart}
+              onVrBarDragStart={handleVrBarDragStart}
               onBarDragEnd={handleBarDragEnd}
               onBarDragOver={handleBarDragOver}
               onBarDrop={handleBarDrop}

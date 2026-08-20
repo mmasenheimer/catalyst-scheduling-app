@@ -144,6 +144,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
           const person     = personFor(date);
           const shifts     = person?.shifts ?? [];
           const deskShifts = person?.deskShifts ?? [];
+          const vrShifts   = person?.vrShifts ?? [];
           const scheduled  = shifts.length > 0;
           const dayEvents  = getEventsForDate(date, events).filter(e => e.assignedStaff.includes(me.id));
           const today     = isToday(date);
@@ -216,6 +217,20 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                         </span>
                       </div>
                     ))}
+                    {vrShifts.map(v => (
+                      <div
+                        key={v.id ?? `${v.start}-${v.end}`}
+                        className="absolute top-3 h-8 rounded select-none"
+                        style={{ ...posStyle(v.start, v.end), background: 'var(--color-vr)', opacity: 0.75, zIndex: 3 }}
+                      >
+                        <span
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                          style={{ fontSize: 9, color: 'white', fontWeight: 600 }}
+                        >
+                          VR
+                        </span>
+                      </div>
+                    ))}
                     {dayEvents.map(evt => {
                       return (
                         <div
@@ -256,6 +271,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
         {[
           { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
           { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-vr)', opacity: 0.75 }} />, label: 'VR' },
           { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: '#3b2a6e', opacity: 0.9 }} />, label: 'Event' },
         ].map(({ swatch, label }) => (
           <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>

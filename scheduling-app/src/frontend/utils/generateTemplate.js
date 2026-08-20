@@ -1,10 +1,20 @@
 import { HOURS_START, HOURS_END } from "../../data/mockData";
 import {
-  getTarget, formatTime, getDeskWindow, isDeskRequired, mergeAdjacentShifts,
+  getTarget, formatTime, getDutyWindow, isDutyRequired, mergeAdjacentShifts,
+  DUTY_KINDS,
 } from "./scheduleUtils";
 
 // Half-hour resolution, matching the editor's snapping.
 const SLOT = 0.5;
+
+// Generator-side duty metadata. The shape of a duty lives in scheduleUtils
+// (DUTIES); this adds only what generation needs — which array to write and how
+// to name the turns it creates. Desk keeps its original `gend` prefix so
+// regenerating an existing template produces identical ids.
+const DUTY_GEN = {
+  desk: { field: "deskShifts", idPrefix: "gend" },
+  vr: { field: "vrShifts", idPrefix: "genvr" },
+};
 
 // Days a weekly template covers. Saturday is omitted — the studio is closed and
 // staffingTargetsByDay.saturday is empty.
@@ -28,75 +38,95 @@ const worksAt = (person, h) =>
   person.shifts.some((sh) => sh.start <= h && sh.end >= h + SLOT);
 
 /**
- * Put exactly one person on the desk for every half-hour the desk needs manning,
- * drawing only on hours people are actually scheduled.
+ * Put exactly one person on a duty post — the front desk, or the VR studio — for
+ * every half-hour it needs manning, drawing only on hours people are actually
+ * scheduled.
  *
- * The desk window is narrower than the working day — see deskHoursByDay — so
- * early openers and late closers get no desk duty at all.
+ * Called once per duty (see DUTIES in scheduleUtils). The coverage window is
+ * narrower than the working day — see deskHoursByDay / vrHoursByDay — so early
+ * openers and late closers get no duty at all.
  *
  * These are the two rules `buildAlerts` enforces on a real day: no gap inside the
- * desk window, and never two people on desk at once. Both hold by construction
- * here — each slot is handed to exactly one person, and only ever to someone
- * whose shift already covers it. Desk/event conflicts, the third rule, can't
- * arise because generated templates contain no events.
+ * coverage window, and never two people on the same post at once. Both hold by
+ * construction here — each slot is handed to exactly one person, and only ever to
+ * someone whose shift already covers it. Duty/event conflicts, the third rule,
+ * can't arise because generated templates contain no events.
  *
- * No single desk block may exceed `maxDeskRun`. That's a hard cap, so blocks are
- * built as the walk proceeds rather than by merging slots afterwards — merging
- * would silently fuse two consecutive turns by the same person back into one
- * over-long block.
+ * The fourth rule is cross-duty: nobody holds desk and VR at the same time, since
+ * they are separate rooms. That holds because `availableAt` excludes anyone
+ * already posted elsewhere in the slot, and duties are assigned in sequence.
  *
- * Whoever is on the desk keeps it until the cap or the end of their shift, so
+ * No single block may exceed `maxRun`. That's a hard cap, so blocks are built as
+ * the walk proceeds rather than by merging slots afterwards — merging would
+ * silently fuse two consecutive turns by the same person back into one over-long
+ * block.
+ *
+ * Whoever holds the post keeps it until the cap or the end of their shift, so
  * cover reads as a handful of blocks rather than a mosaic of 30-minute handoffs.
- * At each handover the desk goes to whoever has had the least desk time all week,
- * so duty rotates instead of landing on whoever opens. If nobody else is on
- * shift, the same person starts a fresh block rather than the desk going unmanned
- * — a coverage gap is a real problem, back-to-back turns are just untidy.
+ * At each handover it goes to whoever has had the least time on that post all
+ * week, so duty rotates instead of landing on whoever opens. If nobody else is
+ * available, the same person starts a fresh block rather than the post going
+ * unmanned — a coverage gap is a real problem, back-to-back turns are just untidy.
  */
-function assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow) {
+function assignDutyCoverage(dayStaff, dutyHours, maxRun, dow, kind) {
   if (dayStaff.length === 0) return dayStaff;
+
+  const { field, idPrefix } = DUTY_GEN[kind];
+  // Every duty other than this one. A person can only be in one place at a time,
+  // so someone already holding another duty in a slot is not available for this
+  // one. Duties are assigned in sequence, so by the time VR runs the desk rota
+  // is already on these records and this sees it.
+  const otherFields = DUTY_KINDS.filter((k) => k !== kind).map(
+    (k) => DUTY_GEN[k].field,
+  );
+  const busyElsewhere = (person, h) =>
+    otherFields.some((f) =>
+      (person[f] ?? []).some((t) => t.start <= h && t.end > h),
+    );
+  const availableAt = (p, h) => worksAt(p, h) && !busyElsewhere(p, h);
 
   const slots = [];
   for (let h = HOURS_START; h < HOURS_END; h += SLOT) {
-    // Only where the desk is needed *and* somebody is there to man it.
-    if (isDeskRequired(h, dow, SLOT) && dayStaff.some((p) => worksAt(p, h))) {
+    // Only where the duty is needed *and* somebody is free to cover it.
+    if (isDutyRequired(kind, h, dow, SLOT) && dayStaff.some((p) => availableAt(p, h))) {
       slots.push(h);
     }
   }
   if (slots.length === 0) return dayStaff;
 
   const blocks = []; // { staffId, start, end }
-  const turnsToday = new Map(); // staffId → desk blocks already given today
+  const turnsToday = new Map(); // staffId → blocks already given today
   let cur = null;
 
   for (const h of slots) {
-    const onShift = dayStaff.filter((p) => worksAt(p, h));
+    const onShift = dayStaff.filter((p) => availableAt(p, h));
 
-    // The incumbent keeps the desk only while still on shift, still under the
+    // The incumbent keeps the post only while still on shift, still under the
     // cap, and with no break in the slots (a closed studio hour ends a block).
     const canContinue =
       cur != null &&
       cur.end === h &&
-      cur.end - cur.start + SLOT <= maxDeskRun &&
+      cur.end - cur.start + SLOT <= maxRun &&
       onShift.some((p) => p.id === cur.staffId);
 
     if (canContinue) {
       cur.end += SLOT;
-      deskHours.set(cur.staffId, (deskHours.get(cur.staffId) ?? 0) + SLOT);
+      dutyHours.set(cur.staffId, (dutyHours.get(cur.staffId) ?? 0) + SLOT);
       continue;
     }
 
-    // Handover: prefer anyone but the outgoing person so the desk rotates, and
-    // fall back to them only if they're the sole person on shift.
+    // Handover: prefer anyone but the outgoing person so the post rotates, and
+    // fall back to them only if they're the sole person available.
     const others = onShift.filter((p) => p.id !== cur?.staffId);
     const pool = others.length ? others : onShift;
-    // Nobody takes a second turn today while somebody on shift hasn't had a
-    // first — that's the whole point of staffing one person per desk turn. Only
-    // once today is even does weekly desk time decide, so it still evens out
-    // across the week for people who work different numbers of days.
+    // Nobody takes a second turn today while somebody available hasn't had a
+    // first — that's the whole point of staffing one person per turn. Only once
+    // today is even does weekly time decide, so it still evens out across the
+    // week for people who work different numbers of days.
     pool.sort(
       (a, b) =>
         (turnsToday.get(a.id) ?? 0) - (turnsToday.get(b.id) ?? 0) ||
-        (deskHours.get(a.id) ?? 0) - (deskHours.get(b.id) ?? 0) ||
+        (dutyHours.get(a.id) ?? 0) - (dutyHours.get(b.id) ?? 0) ||
         a.id - b.id,
     );
     const pick = pool[0].id;
@@ -104,7 +134,7 @@ function assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow) {
     if (cur) blocks.push(cur);
     cur = { staffId: pick, start: h, end: h + SLOT };
     turnsToday.set(pick, (turnsToday.get(pick) ?? 0) + 1);
-    deskHours.set(pick, (deskHours.get(pick) ?? 0) + SLOT);
+    dutyHours.set(pick, (dutyHours.get(pick) ?? 0) + SLOT);
   }
   if (cur) blocks.push(cur);
 
@@ -113,8 +143,8 @@ function assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow) {
     if (mine.length === 0) return person;
     return {
       ...person,
-      deskShifts: mine.map((b, i) => ({
-        id: `gend-${person.id}-${i}`,
+      [field]: mine.map((b, i) => ({
+        id: `${idPrefix}-${person.id}-${i}`,
         start: b.start,
         end: b.end,
       })),
@@ -145,14 +175,18 @@ function assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow) {
  *
  * @param staff               live roster (needs id, name, maxHoursPerWeek)
  * @param availabilityByStaff { [staffId]: { [dow]: [{start,end}] } }
- * Desk cover is layered on afterwards, once each day's shifts are settled — see
- * assignDeskCoverage. It can only draw on hours people are already scheduled, so
- * it has to run second.
+ * Duty cover — the front desk and the VR studio — is layered on afterwards, once
+ * each day's shifts are settled, by assignDutyCoverage. It can only draw on
+ * hours people are already scheduled, so it has to run second. Desk is assigned
+ * before VR, and VR skips anyone already on desk in that slot: they are separate
+ * rooms, so one person cannot hold both at once.
  *
  * @param minShiftHours       shifts shorter than this get extended if possible
  * @param maxShiftHours       cap on a single continuous shift
- * @param assignDesks         also fill the desk rota (one person on at all times)
+ * @param assignDesks         also fill the desk and VR rotas (one person on each
+ *                            at all times)
  * @param maxDeskRun          hard cap on the length of a single desk shift
+ * @param maxVrRun            hard cap on the length of a single VR shift
  * @param minStaffPerDay      distinct staff to schedule per day; defaults to one
  *                            per desk turn, so nobody needs two desk shifts
  * @returns { days, stats, gaps, warnings }
@@ -166,12 +200,18 @@ export function generateWeeklyTemplate({
   padding = 1,
   assignDesks = true,
   maxDeskRun = 1,
+  maxVrRun = 1,
   minStaffPerDay = null,
 }) {
   const weeklyHours = new Map(staff.map((s) => [s.id, 0]));
-  // Tracked across the whole week, not per day, so desk duty evens out over the
-  // week rather than repeatedly landing on whoever opens each morning.
-  const deskHours = new Map(staff.map((s) => [s.id, 0]));
+  // Tracked across the whole week, not per day, so duty time evens out over the
+  // week rather than repeatedly landing on whoever opens each morning. One map
+  // per duty, so a heavy desk week doesn't make someone look overloaded for VR.
+  const dutyHours = {
+    desk: new Map(staff.map((s) => [s.id, 0])),
+    vr: new Map(staff.map((s) => [s.id, 0])),
+  };
+  const maxRunFor = { desk: maxDeskRun, vr: maxVrRun };
   const capOf = (s) =>
     s.maxHoursPerWeek == null ? Infinity : s.maxHoursPerWeek;
 
@@ -357,7 +397,7 @@ export function generateWeeklyTemplate({
   // the desk-shift cap. A 9-hour desk window at 1-hour turns needs 9 of them —
   // which is also the headcount that lets everyone have at most one turn.
   const deskTurnsFor = (ctx) => {
-    const w = getDeskWindow(ctx.dow);
+    const w = getDutyWindow('desk', ctx.dow);
     return w ? Math.ceil((w.end - w.start) / maxDeskRun) : 0;
   };
 
@@ -568,15 +608,25 @@ export function generateWeeklyTemplate({
           start: sh.start,
           end: sh.end,
         })),
-        deskShifts: [], // filled by assignDeskCoverage once the day is settled
+        // Both filled by assignDutyCoverage once the day is settled.
+        deskShifts: [],
+        vrShifts: [],
         scheduled: true,
       });
     }
 
     // Earliest start first, matching how the editor orders rows.
     dayStaff.sort((a, b) => a.shifts[0].start - b.shifts[0].start);
+    // Desk first, then VR: assignDutyCoverage skips anyone already holding
+    // another duty in a slot, so the order decides which post gets first pick of
+    // the people on shift. Desk leads because it is the one that must never be
+    // unmanned while the studio is open.
     days[name] = assignDesks
-      ? assignDeskCoverage(dayStaff, deskHours, maxDeskRun, dow)
+      ? DUTY_KINDS.reduce(
+          (people, kind) =>
+            assignDutyCoverage(people, dutyHours[kind], maxRunFor[kind], dow, kind),
+          dayStaff,
+        )
       : dayStaff;
   }
 
@@ -586,7 +636,8 @@ export function generateWeeklyTemplate({
       id: s.id,
       name: s.name,
       hours: round1(weeklyHours.get(s.id) ?? 0),
-      desk: round1(deskHours.get(s.id) ?? 0),
+      desk: round1(dutyHours.desk.get(s.id) ?? 0),
+      vr: round1(dutyHours.vr.get(s.id) ?? 0),
       cap: s.maxHoursPerWeek ?? null,
       days: TEMPLATE_DAYS.filter((d) =>
         days[d.name]?.some((p) => p.id === s.id),

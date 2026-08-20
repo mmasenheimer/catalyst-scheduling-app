@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability, deskBoundsFor } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, orphanedByShiftRemoval, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -35,11 +35,12 @@ function getMondayOf(date) {
 function normalizeStaff(s) {
   const shifts = s.shifts ?? (s.shiftStart != null ? [{ id: `s${s.id}-0`, start: s.shiftStart, end: s.shiftEnd }] : []);
   const deskShifts = s.deskShifts ?? (s.deskStart != null ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }] : []);
-  return { ...s, shifts, deskShifts, scheduled: shifts.length > 0 };
+  const vrShifts = s.vrShifts ?? (s.vrStart != null ? [{ id: `v${s.id}-0`, start: s.vrStart, end: s.vrEnd }] : []);
+  return { ...s, shifts, deskShifts, vrShifts, scheduled: shifts.length > 0 };
 }
 
 function blankStaff(s) {
-  return normalizeStaff({ ...s, shifts: [], deskShifts: [], scheduled: false, shiftStart: null, shiftEnd: null, deskStart: null, deskEnd: null });
+  return normalizeStaff({ ...s, shifts: [], deskShifts: [], vrShifts: [], scheduled: false, shiftStart: null, shiftEnd: null, deskStart: null, deskEnd: null, vrStart: null, vrEnd: null });
 }
 
 function sortByShift(arr) {
@@ -59,8 +60,8 @@ function mergeStaffOverrides(liveStaff, overrides) {
   return liveStaff.map(person => {
     const override = overrideMap.get(person.id);
     if (!override) return blankStaff(person);
-    const { shifts, deskShifts } = normalizeStaff(override);
-    return normalizeStaff({ ...person, shifts, deskShifts });
+    const { shifts, deskShifts, vrShifts } = normalizeStaff(override);
+    return normalizeStaff({ ...person, shifts, deskShifts, vrShifts });
   });
 }
 
@@ -178,6 +179,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     if (target.type === 'shift') { const sh = orderedStaff[target.staffIndex].shifts[target.shiftIndex]; return { shiftStart: sh.start, shiftEnd: sh.end }; }
     if (target.type === 'desk')  { const dk = orderedStaff[target.staffIndex].deskShifts[target.deskIndex]; return { deskStart: dk.start, deskEnd: dk.end }; }
+    if (target.type === 'vr')    { const v = orderedStaff[target.staffIndex].vrShifts[target.vrIndex]; return { vrStart: v.start, vrEnd: v.end }; }
     const evt = dayEvents.find(e => e.id === target.eventId);
     return { name: evt?.name||'', type: evt?.type||'program', start: evt?.start||9, end: evt?.end||10, staffNeeded: evt?.staffNeeded||1, notes: evt?.notes||'', repeating: !!evt?.repeating, repeatFrom: evt?.repeatFrom??null, repeatUntil: evt?.repeatUntil??null, days: evt?.days??[] };
   });
@@ -186,8 +188,8 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const title = target.type === 'shift' ? 'Edit Shift' : target.type === 'desk' ? 'Edit Desk Shift' : 'Edit Event';
-  const staffName = (target.type === 'shift' || target.type === 'desk') ? orderedStaff[target.staffIndex]?.name : null;
+  const title = target.type === 'shift' ? 'Edit Shift' : target.type === 'desk' ? 'Edit Desk Shift' : target.type === 'vr' ? 'Edit VR Shift' : 'Edit Event';
+  const staffName = (target.type === 'shift' || target.type === 'desk' || target.type === 'vr') ? orderedStaff[target.staffIndex]?.name : null;
   const fl = { display:'block', fontSize:12, color:'var(--color-text-dim)', marginBottom:4 };
   const ti = { width:'100%', padding:'6px 8px', borderRadius:6, fontSize:13, boxSizing:'border-box', background:'var(--color-muted)', border:'1px solid var(--color-border)', color:'var(--color-text)' };
   return (
@@ -208,6 +210,10 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
           {target.type === 'desk' && (<>
             <div><label style={fl}>Desk Start</label><TimeSelect value={form.deskStart} onChange={v=>setForm(f=>({...f,deskStart:Math.min(v,f.deskEnd-0.5)}))} max={form.deskEnd-0.5}/></div>
             <div><label style={fl}>Desk End</label><TimeSelect value={form.deskEnd} onChange={v=>setForm(f=>({...f,deskEnd:Math.max(v,f.deskStart+0.5)}))} min={form.deskStart+0.5}/></div>
+          </>)}
+          {target.type === 'vr' && (<>
+            <div><label style={fl}>VR Start</label><TimeSelect value={form.vrStart} onChange={v=>setForm(f=>({...f,vrStart:Math.min(v,f.vrEnd-0.5)}))} max={form.vrEnd-0.5}/></div>
+            <div><label style={fl}>VR End</label><TimeSelect value={form.vrEnd} onChange={v=>setForm(f=>({...f,vrEnd:Math.max(v,f.vrStart+0.5)}))} min={form.vrStart+0.5}/></div>
           </>)}
           {target.type === 'event' && (<>
             <div><label style={fl}>Event Name</label><input type="text" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={ti}/></div>
@@ -343,6 +349,8 @@ const StaffRow = React.memo(function StaffRow({
   const currentDragT = activeDragType ?? draggingBarInfo?.type;
   const tbHighlight  = activeDragType==='shift'
     ? { background:'rgba(74,124,94,0.15)', borderColor:'var(--color-green)' }
+    : activeDragType==='vr'
+      ? {background:'rgba(181,51,58,0.14)',borderColor:'var(--color-vr)'}
     : activeDragType==='desk'
       ? { background:'rgba(200,148,56,0.12)', borderColor:'var(--color-yellow)' }
       : { background:'rgba(59,42,110,0.2)',   borderColor:'#7c5cbf' };
@@ -395,7 +403,7 @@ const StaffRow = React.memo(function StaffRow({
             only translateX changes tick-to-tick. (No scaleX, which would distort the
             dashed border.) */}
         {preview&&preview.start!==null && (
-          <div style={{position:'absolute',pointerEvents:'none',borderRadius:4,top:(ROW_H-26)/2,left:0,height:26,width:`${((preview.end-preview.start)/TOTAL_HOURS)*100}%`,transform:`translateX(${((preview.start-HOURS_START)/(preview.end-preview.start))*100}%)`,background:preview.valid?(currentDragT==='shift'?'rgba(74,124,94,0.35)':currentDragT==='desk'?'rgba(200,148,56,0.35)':'rgba(59,42,110,0.5)'):'rgba(200,64,64,0.25)',border:`2px dashed ${preview.valid?(currentDragT==='shift'?'var(--color-green)':currentDragT==='desk'?'var(--color-yellow)':'#7c5cbf'):'var(--color-red)'}`,zIndex:22}}/>
+          <div style={{position:'absolute',pointerEvents:'none',borderRadius:4,top:(ROW_H-26)/2,left:0,height:26,width:`${((preview.end-preview.start)/TOTAL_HOURS)*100}%`,transform:`translateX(${((preview.start-HOURS_START)/(preview.end-preview.start))*100}%)`,background:preview.valid?(currentDragT==='shift'?'rgba(74,124,94,0.35)':currentDragT==='desk'?'rgba(200,148,56,0.35)':currentDragT==='vr'?'rgba(181,51,58,0.35)':'rgba(59,42,110,0.5)'):'rgba(200,64,64,0.25)',border:`2px dashed ${preview.valid?(currentDragT==='shift'?'var(--color-green)':currentDragT==='desk'?'var(--color-yellow)':currentDragT==='vr'?'var(--color-vr)':'#7c5cbf'):'var(--color-red)'}`,zIndex:22}}/>
         )}
 
         {/* Shift bars */}
@@ -427,6 +435,24 @@ const StaffRow = React.memo(function StaffRow({
               {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleDeskBarMouseDown(e,rowIndex,di,'left');}}/>}
               <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',paddingLeft:10,paddingRight:10,pointerEvents:'none'}}>Desk</span>
               {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleDeskBarMouseDown(e,rowIndex,di,'right');}}/>}
+            </div>
+          );
+        })}
+
+        {/* VR bars — same behaviour as desk, different post. Higher z-index so
+            that on the overlap the alerts flag, this stays clickable. */}
+        {person.vrShifts.map((v,vi) => {
+          const isAct=activeBar?.type==='vr'&&activeBar?.staffIndex===rowIndex&&activeBar?.vrIndex===vi;
+          const isDrg=draggingBarInfo?.type==='vr'&&draggingBarInfo?.staffIndex===rowIndex&&draggingBarInfo?.vrIndex===vi;
+          return (
+            <div key={v.id} draggable={!finalized}
+              style={{position:'absolute',height:24,borderRadius:4,overflow:'hidden',userSelect:'none',top:'50%',transform:'translateY(-50%)',...posStyle(v.start,v.end),background:'var(--color-vr)',opacity:isDrg?0.3:isAct?1:0.75,cursor:finalized?'default':'grab',boxShadow:isAct?'0 0 0 2px #e05a62':'none',zIndex:isAct?10:3}}
+              onDragStart={e=>{e.stopPropagation();!finalized&&h.handleVrBarDragStart(e,rowIndex,vi);}}
+              onDragEnd={h.handleBarDragEnd}
+              onContextMenu={e=>{e.preventDefault();!finalized&&h.handleBarContextMenu(e,{type:'vr',staffIndex:rowIndex,vrIndex:vi});}}>
+              {!finalized&&<div style={{position:'absolute',left:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleVrBarMouseDown(e,rowIndex,vi,'left');}}/>}
+              <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',paddingLeft:10,paddingRight:10,pointerEvents:'none'}}>VR</span>
+              {!finalized&&<div style={{position:'absolute',right:0,top:0,width:7,height:'100%',cursor:'ew-resize',background:'rgba(255,255,255,0.15)',zIndex:2}} onMouseDown={e=>{e.stopPropagation();e.preventDefault();h.handleVrBarMouseDown(e,rowIndex,vi,'right');}}/>}
             </div>
           );
         })}
@@ -715,6 +741,15 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       const end   = start + dur;
       const pEvts = dayEvents.filter(ev => ev.assignedStaff.includes(p.id));
       commitPreview({ staffIndex: rowIdx, start, end, valid: !p.deskShifts.some(d => start < d.end && end > d.start) && !pEvts.some(ev => start < ev.end && end > ev.start) });
+    } else if (activeDragType === 'vr') {
+      const dur  = 1;
+      const host = p.shifts.find(sh => raw >= sh.start && raw <= sh.end);
+      if (!host) { commitPreview({ staffIndex: rowIdx, start: null, end: null, valid: false }); return; }
+      const start = snapHalf(clamp(raw - dur/2, host.start, host.end - dur));
+      const end   = start + dur;
+      const pEvts = dayEvents.filter(ev => ev.assignedStaff.includes(p.id));
+      // Desk counts as a conflict too — separate rooms.
+      commitPreview({ staffIndex: rowIdx, start, end, valid: !p.vrShifts.some(v => start < v.end && end > v.start) && !p.deskShifts.some(d => start < d.end && end > d.start) && !pEvts.some(ev => start < ev.end && end > ev.start) });
     } else if (activeDragType === 'event' && draggingEvtId != null) {
       const evt = dayEvents.find(ev => ev.id === draggingEvtId); if (!evt) return;
       const hasDeskConflict  = p.deskShifts?.some(d => d.start < evt.end && d.end > evt.start);
@@ -831,6 +866,38 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     const p = orderedStaff[si]; const sh = p.shifts[shIdx];
     setDraggingBarInfo({ type:'shift', staffIndex:si, shiftIndex:shIdx, shiftId:sh.id, personId:p.id, duration:sh.end-sh.start, originalStart:sh.start, originalEnd:sh.end });
   }
+  // ── VR resize ───────────────────────────────────────────────────────────────
+  function handleVrBarMouseDown(e, si, vi, mode) {
+    const tl = e.currentTarget.closest('[data-timeline]');
+    const { width: tw } = tl.getBoundingClientRect();
+    const sx = e.clientX;
+    const v0 = orderedStaff[si].vrShifts[vi];
+    const iS = v0.start, iE = v0.end;
+    const others = orderedStaff[si].vrShifts.filter((_,j) => j !== vi);
+    const desks  = orderedStaff[si].deskShifts ?? [];
+    const pEvts  = dayEvents.filter(ev => ev.assignedStaff.includes(orderedStaff[si].id));
+    const { lo, hi } = vrBoundsFor(orderedStaff[si], v0);
+    setActiveBar({ type:'vr', staffIndex:si, vrIndex:vi, mode });
+    document.body.style.cursor='ew-resize'; document.body.style.userSelect='none';
+    function onMove(me){
+      const d=((me.clientX-sx)/tw)*TOTAL_HOURS;
+      setOrderedStaff(prev=>{
+        const next=[...prev]; const p={...next[si],vrShifts:[...next[si].vrShifts]}; const v={...p.vrShifts[vi]};
+        if(mode==='left') v.start=snapHalf(clamp(iS+d,lo,iE-0.5)); else v.end=snapHalf(clamp(iE+d,iS+0.5,hi));
+        if(!others.some(o=>v.start<o.end&&v.end>o.start)&&!desks.some(dk=>v.start<dk.end&&v.end>dk.start)&&!pEvts.some(ev=>v.start<ev.end&&v.end>ev.start)) p.vrShifts[vi]=v;
+        next[si]=p; return next;
+      });
+    }
+    function onUp(){ setActiveBar(null); document.body.style.cursor=document.body.style.userSelect=''; window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); }
+    window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+  }
+
+  function handleVrBarDragStart(e, si, vi) {
+    e.dataTransfer.effectAllowed='move';
+    const v = orderedStaff[si].vrShifts[vi];
+    setDraggingBarInfo({ type:'vr', staffIndex:si, vrIndex:vi, vrId:v.id, duration:v.end-v.start, originalStart:v.start, originalEnd:v.end });
+  }
+
   function handleDeskBarDragStart(e, si, di) {
     e.dataTransfer.effectAllowed = 'move';
     const dk = orderedStaff[si].deskShifts[di];
@@ -884,6 +951,11 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         p.shifts=p.shifts.filter((_,j)=>j!==target.shiftIndex); p.scheduled=p.shifts.length>0;
         next[target.staffIndex]=p; return sortByShift(next);
       });
+    } else if (target.type === 'vr') {
+      setOrderedStaff(prev => {
+        const next=[...prev]; const p={...next[target.staffIndex]};
+        p.vrShifts=p.vrShifts.filter((_,j)=>j!==target.vrIndex); next[target.staffIndex]=p; return next;
+      });
     } else if (target.type === 'desk') {
       setOrderedStaff(prev => {
         const next=[...prev]; const p={...next[target.staffIndex]};
@@ -909,6 +981,12 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         p.shifts[t.shiftIndex]={...p.shifts[t.shiftIndex],start:data.shiftStart,end:data.shiftEnd};
         next[t.staffIndex]=p; return sortByShift(next);
       });
+    } else if (t.type === 'vr') {
+      setOrderedStaff(prev => {
+        const next=[...prev]; const p={...next[t.staffIndex],vrShifts:[...next[t.staffIndex].vrShifts]};
+        p.vrShifts[t.vrIndex]={...p.vrShifts[t.vrIndex],start:data.vrStart,end:data.vrEnd};
+        next[t.staffIndex]=p; return next;
+      });
     } else if (t.type === 'desk') {
       setOrderedStaff(prev => {
         const next=[...prev]; const p={...next[t.staffIndex],deskShifts:[...next[t.staffIndex].deskShifts]};
@@ -925,7 +1003,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (!draggingBarInfo) return;
     const rect = getRowRect(e, rowIdx);
     const raw  = HOURS_START + ((e.clientX-rect.left)/rect.width)*TOTAL_HOURS;
-    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, duration } = draggingBarInfo;
+    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, vrIndex:vi, eventId, duration } = draggingBarInfo;
     const same = si === rowIdx;
     if (type === 'shift') {
       const ns = snapHalf(clamp(raw-duration/2, HOURS_START, HOURS_END-duration)); const ne = ns+duration;
@@ -959,6 +1037,25 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         const tEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(tgt.id));
         commitPreview({staffIndex:rowIdx,start:ns,end:ne,valid:!tgt.deskShifts.some(d=>ns<d.end&&ne>d.start)&&!tEvts.some(ev=>ns<ev.end&&ne>ev.start)});
       }
+    } else if (type === 'vr') {
+      if (same) {
+        setPreviewNow(null);
+        setOrderedStaff(prev => {
+          const next=[...prev]; const p={...next[si],vrShifts:[...next[si].vrShifts]};
+          const host=p.shifts.find(sh=>raw>=sh.start&&raw<=sh.end); if (!host) return prev;
+          const ns=snapHalf(clamp(raw-duration/2,host.start,host.end-duration)); const ne=ns+duration;
+          const others=p.vrShifts.filter((_,j)=>j!==vi);
+          const pEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(p.id));
+          if (!others.some(o=>ns<o.end&&ne>o.start)&&!(p.deskShifts??[]).some(d=>ns<d.end&&ne>d.start)&&!pEvts.some(ev=>ns<ev.end&&ne>ev.start)) p.vrShifts[vi]={...p.vrShifts[vi],start:ns,end:ne};
+          next[si]=p; return next;
+        });
+      } else {
+        const tgt=orderedStaff[rowIdx]; const host=tgt.shifts.find(sh=>raw>=sh.start&&raw<=sh.end);
+        if (!host) { commitPreview({staffIndex:rowIdx,start:null,end:null,valid:false}); return; }
+        const ns=snapHalf(clamp(raw-duration/2,host.start,host.end-duration)); const ne=ns+duration;
+        const tEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(tgt.id));
+        commitPreview({staffIndex:rowIdx,start:ns,end:ne,valid:!tgt.vrShifts.some(v=>ns<v.end&&ne>v.start)&&!(tgt.deskShifts??[]).some(d=>ns<d.end&&ne>d.start)&&!tEvts.some(ev=>ns<ev.end&&ne>ev.start)});
+      }
     } else if (type === 'event' && !same) {
       const evt=dayEvents.find(ev=>ev.id===eventId); if (!evt) return;
       const tgt=orderedStaff[rowIdx];
@@ -969,7 +1066,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // ── Bar drop (cross-row) ────────────────────────────────────────────────────
   function handleBarDrop(e, rowIdx) {
     if (!draggingBarInfo) return;
-    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, eventId, staffId } = draggingBarInfo;
+    const { type, staffIndex:si, shiftIndex:shIdx, deskIndex:di, vrIndex:vi, eventId, staffId } = draggingBarInfo;
     if (si === rowIdx) return;
     const preview = latestPreviewRef.current;   // synchronous truth — never a frame stale
     if (!preview || preview.staffIndex !== rowIdx || !preview.valid || preview.start === null) return;
@@ -999,6 +1096,17 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       const conflict=orderedStaff.find((s,ii)=>ii!==rowIdx&&ii!==si&&s.deskShifts?.some(d=>start<d.end&&end>d.start));
       if (conflict) {
         setAvailWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)});
+      } else doMove();
+    } else if (type === 'vr') {
+      const doMove=()=>setOrderedStaff(prev=>{
+        const next=[...prev];
+        const src={...next[si]}; src.vrShifts=src.vrShifts.filter((_,j)=>j!==vi); next[si]=src;
+        const tg={...next[rowIdx]}; tg.vrShifts=[...tg.vrShifts,{id:`v${Date.now()}`,start,end}]; next[rowIdx]=tg;
+        return next;
+      });
+      const conflict=orderedStaff.find((s,ii)=>ii!==rowIdx&&ii!==si&&s.vrShifts?.some(v=>start<v.end&&end>v.start));
+      if (conflict) {
+        setAvailWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)});
       } else doMove();
     } else if (type === 'event') {
       assignEventWithShiftCheck(eventId, rowIdx, { alsoUnassignStaffId: staffId });
@@ -1070,6 +1178,23 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         if (conflict) { endDrag(); setAvailWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)}); return; }
         doPlace();
       }
+    } else if (activeDragType === 'vr') {
+      const p=orderedStaff[si]; const pEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(p.id));
+      let ns=null;
+      if (preview?.staffIndex===si&&preview.valid&&preview.start!==null) ns=preview.start;
+      // Existing desk turns are passed as things to avoid, so an auto-placed VR
+      // turn never lands on top of one.
+      else { const avoid=[...pEvts,...(p.deskShifts??[])]; for (const sh of p.shifts) { const slot=firstFreeSlot(p.vrShifts,1,sh.start,sh.end,avoid); if(slot!==null){ns=slot;break;} } }
+      if (ns!==null) {
+        const ne=ns+1;
+        const doPlace=()=>setOrderedStaff(prev=>{
+          const next=[...prev]; const pp={...next[si]};
+          pp.vrShifts=[...pp.vrShifts,{id:`v${Date.now()}`,start:ns,end:ne}]; next[si]=pp; return next;
+        });
+        const conflict=orderedStaff.find((s,ii)=>ii!==si&&s.vrShifts?.some(v=>ns<v.end&&ne>v.start));
+        if (conflict) { endDrag(); setAvailWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)}); return; }
+        doPlace();
+      }
     } else if (activeDragType === 'event' && draggingEvtId != null) {
       assignEventWithShiftCheck(draggingEvtId, si);
     }
@@ -1093,8 +1218,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // so it doesn't defeat StaffRow's memo.
   handlersRef.current = {
     handleTimelineDragOver, handleBarDragOver, handleTimelineDrop, handleBarDrop,
-    handleShiftBarDragStart, handleDeskBarDragStart, handleEventBarDragStart,
-    handleBarDragEnd, handleBarContextMenu, handleBarMouseDown, handleDeskBarMouseDown,
+    handleShiftBarDragStart, handleDeskBarDragStart, handleVrBarDragStart, handleEventBarDragStart,
+    handleBarDragEnd, handleBarContextMenu, handleBarMouseDown, handleDeskBarMouseDown, handleVrBarMouseDown,
     handleEventBarMouseDown,
   };
 
@@ -1148,7 +1273,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         <div style={{ padding:'4px 10px', borderBottom:'1px solid var(--color-border)', display:'flex', flexDirection:'column', gap:2 }}>
           {alerts.map((a,i) => (
             <div key={i} style={{ fontSize:11, color:'var(--color-text-dim)', display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':a.type==='yellow'?'var(--color-yellow)':'var(--color-accent-bright)', flexShrink:0 }}/>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':a.type==='vr'?'var(--color-vr)':a.type==='yellow'?'var(--color-yellow)':'var(--color-accent-bright)', flexShrink:0 }}/>
               {a.text}
             </div>
           ))}
@@ -1162,6 +1287,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
             <DragChip label="New Shift" isActive={activeDragType==='shift'} color="var(--color-green)" borderColor="#2a4a38" bg="rgba(74,124,94,0.15)"
               icon={<div style={{width:12,height:8,borderRadius:2,background:'currentColor',opacity:0.8}}/>}
               onDragStart={e=>{e.dataTransfer.effectAllowed='copy';setActiveDragType('shift');}} onDragEnd={endDrag}/>
+            <DragChip label="New VR Shift" isActive={activeDragType==='vr'} color="var(--color-vr)" borderColor="#5e2226" bg="rgba(94,34,38,0.4)"
+              icon={<div style={{width:14,height:10,borderRadius:2,border:'1.5px solid currentColor'}}/>}
+              onDragStart={e=>{e.dataTransfer.effectAllowed='copy';setActiveDragType('vr');}} onDragEnd={endDrag}/>
             <DragChip label="New Desk Shift" isActive={activeDragType==='desk'} color="var(--color-yellow)" borderColor="#5a4428" bg="rgba(61,44,24,0.4)"
               icon={<div style={{width:12,height:8,borderRadius:2,border:'1.5px solid currentColor'}}/>}
               onDragStart={e=>{e.dataTransfer.effectAllowed='copy';setActiveDragType('desk');}} onDragEnd={endDrag}/>
@@ -1180,7 +1308,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
             onDrop={()=>{
               setTrashOver(false);
               if (draggingBarInfo) {
-                const {type,staffIndex:si,shiftIndex:shIdx,deskIndex:di,eventId,staffId}=draggingBarInfo;
+                const {type,staffIndex:si,shiftIndex:shIdx,deskIndex:di,vrIndex:vi,eventId,staffId}=draggingBarInfo;
                 if(type==='shift'){
                   // Clear the desk time and event assignments that sat on this
                   // shift too — otherwise they stay drawn on a row that's no
@@ -1193,10 +1321,12 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
                     dayEvents.filter(ev => ev.assignedStaff.includes(person.id)),
                   );
                   const orphanedDeskIds = new Set(orphaned.deskShifts.map(d=>d.id));
-                  setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.shifts=p.shifts.filter((_,j)=>j!==shIdx);p.scheduled=p.shifts.length>0;p.deskShifts=(p.deskShifts??[]).filter(d=>!orphanedDeskIds.has(d.id));next[si]=p;return sortByShift(next);});
+                  const orphanedVrIds   = new Set(orphaned.vrShifts.map(v=>v.id));
+                  setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.shifts=p.shifts.filter((_,j)=>j!==shIdx);p.scheduled=p.shifts.length>0;p.deskShifts=(p.deskShifts??[]).filter(d=>!orphanedDeskIds.has(d.id));p.vrShifts=(p.vrShifts??[]).filter(v=>!orphanedVrIds.has(v.id));next[si]=p;return sortByShift(next);});
                   orphaned.events.forEach(ev => unassignStaffFromEvent(ev.id, person.id));
                 }
                 else if(type==='desk'){setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.deskShifts=p.deskShifts.filter((_,j)=>j!==di);next[si]=p;return next;});}
+                else if(type==='vr'){setOrderedStaff(prev=>{const next=[...prev];const p={...next[si]};p.vrShifts=p.vrShifts.filter((_,j)=>j!==vi);next[si]=p;return next;});}
                 else if(type==='event'){unassignStaffFromEvent(eventId,staffId);}
                 setDraggingBarInfo(null);
               }
@@ -1245,7 +1375,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
       {/* Legend */}
       <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
-        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-yellow)',opacity:0.75,label:'Desk'},{color:'#3b2a6e',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
+        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-yellow)',opacity:0.75,label:'Desk'},{color:'var(--color-vr)',opacity:0.75,label:'VR'},{color:'#3b2a6e',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
           <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'var(--color-text-dim)' }}>
             <div style={{ width:18, height:7, borderRadius:2, background:color, opacity }}/>
             {label}
@@ -1270,7 +1400,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
               <ul style={{ listStyle:'none', padding:0, display:'flex', flexDirection:'column', gap:4 }}>
                 {finalizeWarn.map((a,i) => (
                   <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:6, fontSize:12 }}>
-                    <span style={{ width:8, height:8, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':'var(--color-yellow)', flexShrink:0, marginTop:3 }}/>
+                    <span style={{ width:8, height:8, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'#a080e0':a.type==='vr'?'var(--color-vr)':'var(--color-yellow)', flexShrink:0, marginTop:3 }}/>
                     <span style={{ color:'var(--color-text-dim)' }}>{a.text}</span>
                   </li>
                 ))}
@@ -1612,7 +1742,7 @@ export default function WeeklyViewPage() {
                     <ul style={{ listStyle:'none', padding:0, display:'flex', flexDirection:'column', gap:3 }}>
                       {d.issues.map((a,j) => (
                         <li key={j} style={{ display:'flex', alignItems:'flex-start', gap:6, fontSize:12 }}>
-                          <span style={{ width:7, height:7, borderRadius:'50%', background:a.type==='red'?'var(--color-red)':'var(--color-yellow)', flexShrink:0, marginTop:4 }}/>
+                          <span style={{ width:7, height:7, borderRadius:'50%', background:a.type==='red'?'var(--color-red)':a.type==='vr'?'var(--color-vr)':'var(--color-yellow)', flexShrink:0, marginTop:4 }}/>
                           <span style={{ color:'var(--color-text-dim)' }}>{a.text}</span>
                         </li>
                       ))}

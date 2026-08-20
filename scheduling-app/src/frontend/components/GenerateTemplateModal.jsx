@@ -148,6 +148,8 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                             {people.length} staff · {people.reduce((n, p) => n + p.shifts.length, 0)} shifts
                             {' · '}
                             {people.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0)} desk
+                            {', '}
+                            {people.reduce((n, p) => n + (p.vrShifts?.length ?? 0), 0)} VR
                           </span>
                         </div>
                         {people.length === 0
@@ -159,6 +161,12 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                                   <span style={{ color: 'var(--color-text)' }}>{p.name}</span>
                                   <span className="text-right" style={{ color: 'var(--color-accent-bright)' }}>
                                     {p.shifts.map(s => `${formatTime(s.start)}–${formatTime(s.end)}`).join(', ')}
+                                    {p.vrShifts?.length > 0 && (
+                                      <>
+                                        {' · VR '}
+                                        {p.vrShifts.map(v => `${formatTime(v.start)}–${formatTime(v.end)}`).join(', ')}
+                                      </>
+                                    )}
                                     {p.deskShifts?.length > 0 && (
                                       <span style={{ color: 'var(--color-yellow)' }}>
                                         {' · desk '}
@@ -186,6 +194,7 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                       <span style={{ color: s.cap != null && s.hours >= s.cap ? 'var(--color-yellow)' : 'var(--color-text-dim)' }}>
                         {s.hours}h{s.cap != null && ` / ${s.cap}h cap`}
                         {s.desk > 0 && ` · ${s.desk}h desk`}
+                        {s.vr > 0 && ` · ${s.vr}h VR`}
                       </span>
                     </div>
                   ))}

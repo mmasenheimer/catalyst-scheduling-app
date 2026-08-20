@@ -304,7 +304,7 @@ export function RequestsProvider({ children }) {
       // 3. Apply + persist the schedule change (awaited so a failure surfaces).
       if (req.type === 'time_off') {
         await applyScheduleChange(req.date, list =>
-          list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [] } : s)
+          list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [], vrShifts: [] } : s)
         );
         // No shifts left, so nothing that day can still be covered.
         releaseOrphanedEvents(req.date, req.staffId, []);
@@ -319,9 +319,15 @@ export function RequestsProvider({ children }) {
 
           return list.map(s => {
             if (s.id === req.staffId) {
-              // Desk time sitting on a shift they still have is theirs to keep;
-              // desk time on the shift they gave away has nothing left under it.
-              return { ...s, shifts: requesterKeeps, deskShifts: coveredBy(requesterKeeps, s.deskShifts) };
+              // Desk and VR time sitting on a shift they still have is theirs
+              // to keep; time on the shift they gave away has nothing left
+              // under it.
+              return {
+                ...s,
+                shifts: requesterKeeps,
+                deskShifts: coveredBy(requesterKeeps, s.deskShifts),
+                vrShifts: coveredBy(requesterKeeps, s.vrShifts),
+              };
             }
             if (s.id === req.targetStaffId) {
               return {
@@ -357,18 +363,18 @@ export function RequestsProvider({ children }) {
             ? [...withoutShift(theirs, req.targetShift), { ...req.requesterShift, id: `s${Date.now()}-b` }]
             : mine;
 
-          // Only the shifts trade hands. Desk duty doesn't transfer — picking up
-          // someone's shift isn't agreeing to their desk slot — but desk time
+          // Only the shifts trade hands. Desk and VR duty don't transfer —
+          // picking up someone's shift isn't agreeing to their post — but time
           // that no longer sits on a shift is dropped rather than left orphaned
           // on a row the person isn't working. The manager then sees a desk
           // coverage gap and reassigns deliberately. Same test the editor uses
           // when a shift is deleted by hand.
           return list.map(s => {
             if (s.id === req.staffId) {
-              return { ...s, shifts: requesterEndsWith, deskShifts: coveredBy(requesterEndsWith, s.deskShifts) };
+              return { ...s, shifts: requesterEndsWith, deskShifts: coveredBy(requesterEndsWith, s.deskShifts), vrShifts: coveredBy(requesterEndsWith, s.vrShifts) };
             }
             if (s.id === req.targetStaffId) {
-              return { ...s, shifts: targetEndsWith, deskShifts: coveredBy(targetEndsWith, s.deskShifts) };
+              return { ...s, shifts: targetEndsWith, deskShifts: coveredBy(targetEndsWith, s.deskShifts), vrShifts: coveredBy(targetEndsWith, s.vrShifts) };
             }
             return s;
           });

@@ -102,9 +102,9 @@ function validateNote(note) {
 // function` — leaving that date unrenderable for everyone, with no way to
 // repair it from inside the app.
 //
-// What is deliberately NOT checked here: whether a desk turn sits inside one of
-// the person's own shifts. It should — a desk turn outside every shift means
-// somebody is covering the front desk while not in the building — but the
+// What is deliberately NOT checked here: whether a duty turn (desk or VR) sits
+// inside one of the person's own shifts. It should — a turn outside every shift
+// means somebody is posted somewhere while not in the building — but the
 // editor auto-saves 600ms after each change, so shrinking a shift would hit
 // this state in passing and the manager would get a failed save mid-edit for
 // something they were about to fix. That belongs in the coverage warnings, not
@@ -178,6 +178,9 @@ function validateScheduleStaff(staff) {
 
     const deskErr = validateIntervalList(person.deskShifts, `${where}.deskShifts`);
     if (deskErr) return deskErr;
+
+    const vrErr = validateIntervalList(person.vrShifts, `${where}.vrShifts`);
+    if (vrErr) return vrErr;
   }
   return null;
 }

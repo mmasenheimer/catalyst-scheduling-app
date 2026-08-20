@@ -47,15 +47,15 @@ router.get("/:id", async (req, res) => {
 });
 
 // PATCH /api/staff/:id
-// This updates specidic fields on a staff member - shift times, desk times, or weekly hour limit
+// This updates specidic fields on a staff member - shift times, desk/VR times, or weekly hour limit
 
 router.patch("/:id", requireManager, async (req, res) => {
   try {
-    const { shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek } =
+    const { shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek } =
       req.body;
     const person = await Staff.findByIdAndUpdate(
       req.params.id,
-      { shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek },
+      { shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek },
       { new: true, runValidators: true },
     );
     if (!person) return res.status(404).json({ error: "Not found" });
@@ -71,7 +71,7 @@ router.patch("/:id", requireManager, async (req, res) => {
 
 router.post("/", requireManager, async (req, res) => {
   try {
-    const { name, shiftStart, shiftEnd, deskStart, deskEnd, maxHoursPerWeek } =
+    const { name, shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek } =
       req.body;
     const person = await createWithNextId(Staff, {
       name,
@@ -79,6 +79,8 @@ router.post("/", requireManager, async (req, res) => {
       shiftEnd,
       deskStart: deskStart ?? null,
       deskEnd: deskEnd ?? null,
+      vrStart: vrStart ?? null,
+      vrEnd: vrEnd ?? null,
       maxHoursPerWeek: maxHoursPerWeek ?? null,
     });
     res.status(201).json(person);

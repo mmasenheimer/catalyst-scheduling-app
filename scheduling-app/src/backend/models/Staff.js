@@ -10,6 +10,10 @@ const staffSchema = new Schema(
     shiftEnd: { type: Number, required: true },
     deskStart: { type: Number, default: null },
     deskEnd: { type: Number, default: null },
+    // VR studio duty, the same shape as the desk scalars above and equally
+    // legacy — the live model is the vrShifts array on each day's snapshot.
+    vrStart: { type: Number, default: null },
+    vrEnd: { type: Number, default: null },
     maxHoursPerWeek: { type: Number, default: null },
   },
   {

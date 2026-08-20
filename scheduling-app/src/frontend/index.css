@@ -13,8 +13,16 @@
   --color-accent: #b05030; /* terracotta — dark enough for white text */
   --color-accent-bright: #e07050; /* lighter terracotta for stats/highlights */
   --color-green: #4a7c5e; /* muted sage — shift bars */
-  --color-yellow: #b07e28; /* warm amber */
+  --color-yellow: #b07e28; /* warm amber — desk duty */
+  /* VR studio duty. A brick red, deliberately NOT --color-red (#c84040): that
+     red is the app's error signal, and the invalid-drop ghost on the very same
+     grid uses it. Keeping VR a shade off means a red bar still reads as "VR"
+     rather than "something is wrong here". */
+  --color-vr: #b5333a;
   --color-red: #c84040; /* muted red */
+  /* The expanding circle on .ripple-btn. Same hue as accent-bright so the
+     hover reads as the button warming up rather than changing colour. */
+  --color-accent-ripple: rgba(224, 112, 80, 0.55);
 }
 
 body {
@@ -71,7 +79,11 @@ html.light {
   --color-accent-bright:#c0603a;
   --color-green:        #3a6b4e;
   --color-yellow:       #9a6e1a;
+  --color-vr:           #a82b32;
   --color-red:          #c84040;
+  /* Light theme's accent-bright is closer to the base accent, so the ripple
+     needs more alpha to stay visible against it. */
+  --color-accent-ripple: rgba(216, 118, 74, 0.7);
 }
 
 html.light body {
@@ -190,3 +202,88 @@ input.date-input-custom::-webkit-calendar-picker-indicator {
   100% { transform: rotate(0deg); }
 }
 .moon-icon:hover { animation: moon-wiggle 1.2s ease-in-out; transform-origin: center; }
+
+/* ── Ripple button (login / logout) ───────────────────────────────────────── */
+/*
+   A circle grows from the centre on hover instead of the button dimming. Used
+   on the two auth actions — Sign In and Log out — so they read as the most
+   deliberate buttons in the app.
+
+   Structure, which the markup has to follow:
+     <button class="ripple-btn">
+       <span class="ripple-transition" />   the expanding circle
+       <span class="ripple-gradient" />     a little depth over the top
+       <span class="ripple-label">Text</span>
+     </button>
+
+   The label needs its own element because both overlays are absolutely
+   positioned siblings — bare text would sit underneath them.
+
+   Colour comes from --color-accent / --color-accent-ripple, so this follows the
+   light and dark themes rather than hardcoding terracotta.
+*/
+.ripple-btn {
+  position: relative;
+  overflow: hidden;
+  border: none;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: white;
+}
+
+.ripple-btn .ripple-transition {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background-color: var(--color-accent-ripple);
+  transition-property: width, height;
+  transition-duration: 500ms;
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+/* Sized per button: it must comfortably cover the widest one it's used on, and
+   the two here are very different shapes. Overridden inline where needed. */
+.ripple-btn:hover:not(:disabled) .ripple-transition {
+  width: var(--ripple-size, 16em);
+  height: var(--ripple-size, 16em);
+}
+
+.ripple-btn .ripple-gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    rgba(0, 0, 0, 0),
+    rgba(0, 0, 0, 0),
+    rgba(0, 0, 0, 0.3)
+  );
+  pointer-events: none;
+}
+
+.ripple-btn .ripple-label {
+  position: relative; /* lifts the text above both overlays */
+}
+
+.ripple-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Disabled means in-flight here (Signing in…), so the button should look inert
+   rather than invite another click. */
+.ripple-btn:disabled {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple-btn .ripple-transition {
+    transition-duration: 1ms;
+  }
+  .ripple-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

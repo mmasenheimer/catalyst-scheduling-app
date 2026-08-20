@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { schedulesApi, isConflict } from '../utils/api';
-import { shiftsOf, deskShiftsOf } from '../utils/scheduleUtils';
+import { shiftsOf, deskShiftsOf, vrShiftsOf } from '../utils/scheduleUtils';
 
 const ALL_DAY_NAMES  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEK_ORDER     = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -18,6 +18,7 @@ function wid(s, e)       { return `${((e - s)       / H_TOTAL) * 100}%`; }
 // drew shifts for people who had none.
 const getShifts     = shiftsOf;
 const getDeskShifts = deskShiftsOf;
+const getVrShifts = vrShiftsOf;
 
 function getMondayOf(date) {
   const d = new Date(date);
@@ -36,11 +37,13 @@ function toDateStr(date) {
 function normalizeForSave(person, tplPerson) {
   const shifts     = tplPerson ? (tplPerson.shifts ?? [])     : [];
   const deskShifts = tplPerson ? (tplPerson.deskShifts ?? []) : [];
+  const vrShifts = tplPerson ? (tplPerson.vrShifts ?? []) : [];
   return {
-    ...person, shifts, deskShifts,
+    ...person, shifts, deskShifts, vrShifts,
     scheduled: shifts.length > 0,
     shiftStart: shifts[0]?.start ?? null, shiftEnd: shifts[0]?.end ?? null,
     deskStart: deskShifts[0]?.start ?? null, deskEnd: deskShifts[0]?.end ?? null,
+    vrStart: vrShifts[0]?.start ?? null, vrEnd: vrShifts[0]?.end ?? null,
   };
 }
 function buildStaffForDate(allStaff, tplStaff) {
@@ -69,6 +72,7 @@ function TimeAxis() {
 function StaffRow({ person }) {
   const shifts     = getShifts(person);
   const deskShifts = getDeskShifts(person);
+  const vrShifts   = getVrShifts(person);
   const firstName  = (person.name ?? '').split(' ')[0];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
@@ -88,6 +92,13 @@ function StaffRow({ person }) {
             position: 'absolute', bottom: 0, height: '45%', borderRadius: 2,
             background: 'rgba(234,179,8,0.7)',
             left: pct(ds.start), width: wid(ds.start, ds.end),
+          }} />
+        ))}
+        {vrShifts.map((vs, i) => (
+          <div key={i} style={{
+            position: 'absolute', bottom: 0, height: '45%', borderRadius: 2,
+            background: 'rgba(181,51,58,0.75)',
+            left: pct(vs.start), width: wid(vs.start, vs.end),
           }} />
         ))}
       </div>

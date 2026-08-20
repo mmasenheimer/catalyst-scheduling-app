@@ -213,10 +213,15 @@ function AppLayoutInner() {
       <div className="flex gap-2 mt-2">
         <button
           onClick={handleLogout}
-          className="flex-1 text-xs py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
-          style={{ background: "var(--color-accent)", color: "white", border: "none" }}
+          className="ripple-btn flex-1 text-xs py-1.5 rounded"
+          // Much smaller button than Sign In, so the circle only needs to cover
+          // a short pill — the 16em default would fill it almost instantly and
+          // lose the sweep.
+          style={{ "--ripple-size": "7em" }}
         >
-          Log out
+          <span className="ripple-transition" />
+          <span className="ripple-gradient" />
+          <span className="ripple-label">Log out</span>
         </button>
         <button
           onClick={toggleTheme}

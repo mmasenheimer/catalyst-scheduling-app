@@ -108,13 +108,19 @@ export default function LoginPage() {
             <p className="text-sm" style={{ color: 'var(--color-red)' }}>{error}</p>
           )}
 
+          {/* ripple-btn (see index.css): the overlays are absolutely positioned
+              siblings, so the text needs its own element to sit above them. */}
           <button
             type="submit"
             disabled={submitting}
-            className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-accent)', color: 'white', opacity: submitting ? 0.6 : 1 }}
+            className="ripple-btn py-2.5 rounded-lg text-sm font-semibold"
+            style={{ opacity: submitting ? 0.6 : 1 }}
           >
-            {submitting ? 'Signing in…' : 'Sign In'}
+            <span className="ripple-transition" />
+            <span className="ripple-gradient" />
+            <span className="ripple-label">
+              {submitting ? 'Signing in…' : 'Sign In'}
+            </span>
           </button>
         </form>
 
