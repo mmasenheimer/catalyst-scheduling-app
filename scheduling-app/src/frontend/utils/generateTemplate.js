@@ -1,7 +1,7 @@
 import { HOURS_START, HOURS_END } from "../../data/mockData";
 import {
   getTarget, formatTime, getDutyWindow, isDutyRequired, mergeAdjacentShifts,
-  DUTY_KINDS,
+  COVERAGE_DUTY_KINDS, activeDutyKinds,
 } from "./scheduleUtils";
 
 // Half-hour resolution, matching the editor's snapping.
@@ -11,6 +11,10 @@ const SLOT = 0.5;
 // (DUTIES); this adds only what generation needs — which array to write and how
 // to name the turns it creates. Desk keeps its original `gend` prefix so
 // regenerating an existing template produces identical ids.
+//
+// Only the staffed posts appear here, and every loop below iterates
+// COVERAGE_DUTY_KINDS to match. Nothing auto-assigns a 1-1: it is a specific
+// meeting between two people, which the generator has no basis to invent.
 const DUTY_GEN = {
   desk: { field: "deskShifts", idPrefix: "gend" },
   vr: { field: "vrShifts", idPrefix: "genvr" },
@@ -68,7 +72,7 @@ const worksAt = (person, h) =>
  * available, the same person starts a fresh block rather than the post going
  * unmanned — a coverage gap is a real problem, back-to-back turns are just untidy.
  */
-function assignDutyCoverage(dayStaff, dutyHours, maxRun, dow, kind) {
+function assignDutyCoverage(dayStaff, dutyHours, maxRun, dow, kind, disabledKinds) {
   if (dayStaff.length === 0) return dayStaff;
 
   const { field, idPrefix } = DUTY_GEN[kind];
@@ -76,7 +80,7 @@ function assignDutyCoverage(dayStaff, dutyHours, maxRun, dow, kind) {
   // so someone already holding another duty in a slot is not available for this
   // one. Duties are assigned in sequence, so by the time VR runs the desk rota
   // is already on these records and this sees it.
-  const otherFields = DUTY_KINDS.filter((k) => k !== kind).map(
+  const otherFields = COVERAGE_DUTY_KINDS.filter((k) => k !== kind && !(disabledKinds ?? []).includes(k)).map(
     (k) => DUTY_GEN[k].field,
   );
   const busyElsewhere = (person, h) =>
@@ -202,6 +206,11 @@ export function generateWeeklyTemplate({
   maxDeskRun = 1,
   maxVrRun = 1,
   minStaffPerDay = null,
+  // Duty kinds the studio has switched off (see context/SettingsContext). A
+  // disabled post is never assigned and never reported as a gap — generating VR
+  // rota for a studio that has turned VR off would put back exactly what the
+  // switch is there to remove.
+  disabledDuties = [],
 }) {
   const weeklyHours = new Map(staff.map((s) => [s.id, 0]));
   // Tracked across the whole week, not per day, so duty time evens out over the
@@ -212,6 +221,8 @@ export function generateWeeklyTemplate({
     vr: new Map(staff.map((s) => [s.id, 0])),
   };
   const maxRunFor = { desk: maxDeskRun, vr: maxVrRun };
+  // The posts this run will actually fill.
+  const dutyKinds = activeDutyKinds(COVERAGE_DUTY_KINDS, disabledDuties);
   const capOf = (s) =>
     s.maxHoursPerWeek == null ? Infinity : s.maxHoursPerWeek;
 
@@ -622,9 +633,9 @@ export function generateWeeklyTemplate({
     // the people on shift. Desk leads because it is the one that must never be
     // unmanned while the studio is open.
     days[name] = assignDesks
-      ? DUTY_KINDS.reduce(
+      ? dutyKinds.reduce(
           (people, kind) =>
-            assignDutyCoverage(people, dutyHours[kind], maxRunFor[kind], dow, kind),
+            assignDutyCoverage(people, dutyHours[kind], maxRunFor[kind], dow, kind, disabledDuties),
           dayStaff,
         )
       : dayStaff;

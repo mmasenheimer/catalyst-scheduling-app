@@ -304,7 +304,7 @@ export function RequestsProvider({ children }) {
       // 3. Apply + persist the schedule change (awaited so a failure surfaces).
       if (req.type === 'time_off') {
         await applyScheduleChange(req.date, list =>
-          list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [], vrShifts: [] } : s)
+          list.map(s => s.id === req.staffId ? { ...s, shifts: [], deskShifts: [], vrShifts: [], oneOnOnes: [] } : s)
         );
         // No shifts left, so nothing that day can still be covered.
         releaseOrphanedEvents(req.date, req.staffId, []);
@@ -327,6 +327,7 @@ export function RequestsProvider({ children }) {
                 shifts: requesterKeeps,
                 deskShifts: coveredBy(requesterKeeps, s.deskShifts),
                 vrShifts: coveredBy(requesterKeeps, s.vrShifts),
+                oneOnOnes: coveredBy(requesterKeeps, s.oneOnOnes),
               };
             }
             if (s.id === req.targetStaffId) {
@@ -371,10 +372,10 @@ export function RequestsProvider({ children }) {
           // when a shift is deleted by hand.
           return list.map(s => {
             if (s.id === req.staffId) {
-              return { ...s, shifts: requesterEndsWith, deskShifts: coveredBy(requesterEndsWith, s.deskShifts), vrShifts: coveredBy(requesterEndsWith, s.vrShifts) };
+              return { ...s, shifts: requesterEndsWith, deskShifts: coveredBy(requesterEndsWith, s.deskShifts), vrShifts: coveredBy(requesterEndsWith, s.vrShifts), oneOnOnes: coveredBy(requesterEndsWith, s.oneOnOnes) };
             }
             if (s.id === req.targetStaffId) {
-              return { ...s, shifts: targetEndsWith, deskShifts: coveredBy(targetEndsWith, s.deskShifts), vrShifts: coveredBy(targetEndsWith, s.vrShifts) };
+              return { ...s, shifts: targetEndsWith, deskShifts: coveredBy(targetEndsWith, s.deskShifts), vrShifts: coveredBy(targetEndsWith, s.vrShifts), oneOnOnes: coveredBy(targetEndsWith, s.oneOnOnes) };
             }
             return s;
           });

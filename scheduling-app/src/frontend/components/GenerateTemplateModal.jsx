@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { availabilityApi } from '../utils/api';
 import { generateWeeklyTemplate, summarizeGaps, TEMPLATE_DAYS } from '../utils/generateTemplate';
 import { formatTime, WEEK_DAY_NAMES } from '../utils/scheduleUtils';
+import { useSettings } from '../context/SettingsContext';
 import mockAvailability from '../../data/mockAvailability';
 
 /**
@@ -11,6 +12,8 @@ import mockAvailability from '../../data/mockAvailability';
  * manager no chance to sanity-check the result.
  */
 export function GenerateTemplateModal({ staff, onCreate, onClose }) {
+  const { vrEnabled } = useSettings();
+  const disabledDuties = useMemo(() => (vrEnabled ? [] : ['vr']), [vrEnabled]);
   const [availability, setAvailability] = useState(null);   // null = still loading
   const [usedFallback, setUsedFallback] = useState(false);
   const [name, setName] = useState('Generated from Availability');
@@ -42,8 +45,9 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
   // padding defaults to 1 in the generator — one extra person above the
   // minimum at all times.
   const result = useMemo(
-    () => (availability ? generateWeeklyTemplate({ staff, availabilityByStaff: availability }) : null),
-    [availability, staff],
+    // A studio with VR switched off must not have VR rota generated back into it.
+    () => (availability ? generateWeeklyTemplate({ staff, availabilityByStaff: availability, disabledDuties }) : null),
+    [availability, staff, disabledDuties],
   );
 
   async function handleCreate() {
@@ -148,8 +152,10 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
                             {people.length} staff · {people.reduce((n, p) => n + p.shifts.length, 0)} shifts
                             {' · '}
                             {people.reduce((n, p) => n + (p.deskShifts?.length ?? 0), 0)} desk
-                            {', '}
-                            {people.reduce((n, p) => n + (p.vrShifts?.length ?? 0), 0)} VR
+                            {vrEnabled && <>
+                              {', '}
+                              {people.reduce((n, p) => n + (p.vrShifts?.length ?? 0), 0)} VR
+                            </>}
                           </span>
                         </div>
                         {people.length === 0

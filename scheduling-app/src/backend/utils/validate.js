@@ -25,6 +25,11 @@ const DAY_END = 24;
 const MAX_BLOCKS_PER_DAY = 24;
 const MAX_NOTE_LENGTH = 1000;
 
+// The two free-text fields on a 1-1 (what kind of meeting, and who it's with).
+// Both are typed by the manager and rendered back on the grid and in tooltips, so
+// they get a length cap like every other stored string here.
+const MAX_ONE_ON_ONE_TEXT = 200;
+
 const isPlainObject = v => v != null && typeof v === "object" && !Array.isArray(v);
 const onGrid = n => Math.abs(n / SLOT - Math.round(n / SLOT)) < 1e-9;
 
@@ -181,6 +186,32 @@ function validateScheduleStaff(staff) {
 
     const vrErr = validateIntervalList(person.vrShifts, `${where}.vrShifts`);
     if (vrErr) return vrErr;
+
+    const oooErr = validateOneOnOnes(person.oneOnOnes, `${where}.oneOnOnes`);
+    if (oooErr) return oooErr;
+  }
+  return null;
+}
+
+/**
+ * A person's 1-1s: the same interval rules as any other duty, plus the two free
+ * text fields. Both strings are optional — a 1-1 is created by dropping it on the
+ * grid and filled in afterwards, so an unlabelled one is a legitimate state to
+ * save rather than something to reject.
+ */
+function validateOneOnOnes(list, where) {
+  const intervalErr = validateIntervalList(list, where);
+  if (intervalErr) return intervalErr;
+  if (list === undefined) return null;
+  for (let i = 0; i < list.length; i++) {
+    for (const field of ["kind", "withWhom"]) {
+      const value = list[i][field];
+      if (value === undefined || value === null) continue;
+      if (typeof value !== "string") return `${where}[${i}].${field} must be a string`;
+      if (value.length > MAX_ONE_ON_ONE_TEXT) {
+        return `${where}[${i}].${field} is ${value.length} characters — the most allowed is ${MAX_ONE_ON_ONE_TEXT}`;
+      }
+    }
   }
   return null;
 }

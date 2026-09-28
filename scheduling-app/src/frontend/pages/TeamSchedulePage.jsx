@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
-import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr, getEventsForDate } from '../utils/scheduleUtils';
+import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr, getEventsForDate, oneOnOneLabel } from '../utils/scheduleUtils';
+import { useSettings } from '../context/SettingsContext';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
@@ -36,6 +37,7 @@ function sortByShift(arr) {
 // ── Read-only day box ────────────────────────────────────────────────────────────
 
 function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
+  const { vrEnabled } = useSettings();
   const dow      = date.getDay();
   const isToday  = toDateStr(date) === toDateStr(new Date());
   const dayName  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
@@ -92,28 +94,37 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 
               {(person.deskShifts??[]).map(dk => (
                 <div key={dk.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-yellow)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(dk.start,dk.end),background:'var(--color-bar-desk)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
                   title={`${person.name}: Desk ${formatTime(dk.start)} – ${formatTime(dk.end)}`}
                 >
-                  <span style={{fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>Desk</span>
+                  <span style={{fontSize:9,color:'var(--color-bar-text)',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>Desk</span>
                 </div>
               ))}
 
-              {(person.vrShifts??[]).map(v => (
+              {vrEnabled && (person.vrShifts??[]).map(v => (
                 <div key={v.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(v.start,v.end),background:'var(--color-vr)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',zIndex:3}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(v.start,v.end),background:'var(--color-bar-vr)',opacity:0.75,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',zIndex:3}}
                   title={`${person.name}: VR ${formatTime(v.start)} – ${formatTime(v.end)}`}
                 >
-                  <span style={{fontSize:9,color:'white',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>VR</span>
+                  <span style={{fontSize:9,color:'var(--color-bar-text)',fontWeight:600,whiteSpace:'nowrap',pointerEvents:'none'}}>VR</span>
+                </div>
+              ))}
+
+              {(person.oneOnOnes??[]).map(ooo => (
+                <div key={ooo.id}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(ooo.start,ooo.end),background:'var(--color-bar-oneone)',opacity:0.85,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',zIndex:4}}
+                  title={`${person.name}: ${oneOnOneLabel(ooo)}`}
+                >
+                  <span style={{fontSize:9,color:'var(--color-bar-text)',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',paddingLeft:6,paddingRight:6,pointerEvents:'none'}}>{oneOnOneLabel(ooo,{short:true})}</span>
                 </div>
               ))}
 
               {events.filter(ev=>ev.assignedStaff.includes(person.id)).map(evt => (
                 <div key={evt.id}
-                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'#3b2a6e',opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
+                  style={{position:'absolute',height:24,borderRadius:4,top:'50%',transform:'translateY(-50%)',...posStyle(evt.start,evt.end),background:'var(--color-bar-event)',opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}
                   title={evt.name}
                 >
-                  <span style={{fontSize:10,color:'white',whiteSpace:'nowrap',overflow:'hidden',paddingLeft:6,paddingRight:6,pointerEvents:'none'}}>{evt.name}</span>
+                  <span style={{fontSize:10,fontWeight:600,color:'var(--color-bar-text)',whiteSpace:'nowrap',overflow:'hidden',paddingLeft:6,paddingRight:6,pointerEvents:'none'}}>{evt.name}</span>
                 </div>
               ))}
             </div>
@@ -124,7 +135,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
 
       {/* Legend */}
       <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
-        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-yellow)',opacity:0.75,label:'Desk'},{color:'var(--color-vr)',opacity:0.75,label:'VR'},{color:'#3b2a6e',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
+        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-bar-desk)',opacity:0.75,label:'Desk'},...(vrEnabled?[{color:'var(--color-bar-vr)',opacity:0.75,label:'VR'}]:[]),{color:'var(--color-bar-oneone)',opacity:0.85,label:'1-1'},{color:'var(--color-bar-event)',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
           <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'var(--color-text-dim)' }}>
             <div style={{ width:18, height:7, borderRadius:2, background:color, opacity }}/>
             {label}

@@ -5,6 +5,7 @@ import { ScheduleProvider, useScheduleContext } from "../../context/ScheduleCont
 import { NotificationsProvider, useNotifications } from "../../context/NotificationsContext";
 import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
+import { SettingsProvider } from "../../context/SettingsContext";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 import { GenerateTemplateModal } from "../GenerateTemplateModal";
 import { WEEK_DAY_NAMES } from "../../utils/scheduleUtils";
@@ -618,14 +619,16 @@ function AppLayoutInner() {
 
 export default function AppLayout() {
   return (
-    <ScheduleProvider>
-      <NotificationsProvider>
-        <RequestsProvider>
-          <TemplatesProvider>
-            <AppLayoutInner />
-          </TemplatesProvider>
-        </RequestsProvider>
-      </NotificationsProvider>
-    </ScheduleProvider>
+    <SettingsProvider>
+      <ScheduleProvider>
+        <NotificationsProvider>
+          <RequestsProvider>
+            <TemplatesProvider>
+              <AppLayoutInner />
+            </TemplatesProvider>
+          </RequestsProvider>
+        </NotificationsProvider>
+      </ScheduleProvider>
+    </SettingsProvider>
   );
 }

@@ -8,6 +8,17 @@ import {
   deskBoundsFor,
   mergeAdjacentShifts,
   getStaffCount,
+  DUTY_KINDS,
+  COVERAGE_DUTY_KINDS,
+  getDutyWindow,
+  dutyShiftsOf,
+  orphanedDutyTurns,
+  buildAlerts,
+  oneOnOneLabel,
+  orphanedByShiftRemoval,
+  activeDutyKinds,
+  buildTemplateAlerts,
+  removeShiftAndSweep,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -227,5 +238,212 @@ describe('mergeAdjacentShifts', () => {
     // Identity is load-bearing: callers use it to decide whether state changed.
     const untouched = [at(9, 12)];
     expect(mergeAdjacentShifts(untouched)).toBe(untouched);
+  });
+});
+
+describe('1-1 duty kind', () => {
+  // A 1-1 was added to DUTIES so it would inherit the bar mechanics (host-shift
+  // bounds, orphan detection, deletion sweeps). But every existing consumer of
+  // DUTIES assumed a duty is a *staffed post*, which a 1-1 is not: nothing
+  // requires one to happen, and any number can run at once. These tests pin the
+  // two halves of that distinction, because getting it wrong doesn't error — it
+  // silently invents coverage requirements, or crashes template generation on a
+  // DUTY_GEN lookup that has no entry for it.
+
+  it('is a duty, but not a coverage duty', () => {
+    expect(DUTY_KINDS).toContain('oneOnOne');
+    expect(COVERAGE_DUTY_KINDS).not.toContain('oneOnOne');
+    // The posts that do need covering are still both there.
+    expect(COVERAGE_DUTY_KINDS).toEqual(['desk', 'vr']);
+  });
+
+  it('has no coverage window on any weekday, so no gap can be reported', () => {
+    for (let dow = 0; dow <= 6; dow++) {
+      expect(getDutyWindow('oneOnOne', dow)).toBeNull();
+    }
+  });
+
+  it('reads its turns from the array with no legacy scalar fallback', () => {
+    // Desk and VR fall back to pre-array scalars on old rows. A 1-1 postdates
+    // those, and `legacyStart: null` must not become a `person[null]` lookup.
+    const p = person({ scheduled: true, oneOnOnes: [at(13, 14)] });
+    expect(dutyShiftsOf(p, 'oneOnOne')).toEqual([at(13, 14)]);
+    expect(dutyShiftsOf(person({ scheduled: true }), 'oneOnOne')).toEqual([]);
+  });
+
+  it('flags a 1-1 left outside its shift, the same as a desk turn', () => {
+    // Shrinking a shift strands whatever sat on it. This is the one alert a 1-1
+    // still earns, because the grid would otherwise draw it on an unscheduled row.
+    const p = person({ shifts: [at(9, 12)], oneOnOnes: [at(15, 16)] });
+    expect(orphanedDutyTurns(p, 'oneOnOne')).toEqual([at(15, 16)]);
+    expect(orphanedDutyTurns(person({ shifts: [at(9, 17)], oneOnOnes: [at(15, 16)] }), 'oneOnOne')).toEqual([]);
+  });
+
+  it('never reports a coverage gap or a double-booking for 1-1s', () => {
+    // Two people in 1-1s at the same time is normal, and a day with none is not
+    // short of anything. buildAlerts must say nothing about either.
+    const staff = [
+      person({ id: 1, name: 'Alex C.', shifts: [at(9, 17)], vrShifts: [], oneOnOnes: [at(10, 11)] }),
+      person({ id: 2, name: 'Bo D.',   shifts: [at(9, 17)], vrShifts: [], oneOnOnes: [at(10, 11)] }),
+    ];
+    const texts = buildAlerts(staff, [], 1).map(a => a.text).join(' | ');
+    expect(texts).not.toMatch(/1-1/);
+  });
+});
+
+describe('oneOnOneLabel', () => {
+  // The bar is about an hour of timeline wide, so the full sentence only fits in
+  // the tooltip. Both fields are optional while the manager is still filling the
+  // freshly-dropped bar in, and neither absence may render as "undefined".
+  it('reads as a sentence when both fields are filled', () => {
+    const turn = { kind: 'Embroidery', withWhom: 'Sarah' };
+    expect(oneOnOneLabel(turn)).toBe('Embroidery One-One with Sarah');
+    expect(oneOnOneLabel(turn, { short: true })).toBe('1:1 · Sarah');
+  });
+
+  it('degrades cleanly when either field is missing', () => {
+    expect(oneOnOneLabel({ kind: 'Laser' })).toBe('Laser One-One');
+    expect(oneOnOneLabel({ withWhom: 'Sarah' })).toBe('One-One with Sarah');
+    expect(oneOnOneLabel({})).toBe('One-One');
+    expect(oneOnOneLabel({}, { short: true })).toBe('1:1');
+    // A bar dropped a moment ago, not yet edited.
+    expect(oneOnOneLabel({ kind: '', withWhom: '' }, { short: true })).toBe('1:1');
+    expect(oneOnOneLabel(undefined)).toBe('One-One');
+  });
+
+  it('ignores whitespace-only input rather than printing a dangling "with"', () => {
+    expect(oneOnOneLabel({ kind: '  ', withWhom: '  ' })).toBe('One-One');
+  });
+});
+
+describe('orphanedByShiftRemoval with 1-1s', () => {
+  // Deleting a shift has to sweep up the 1-1s sitting on it, or they stay drawn
+  // on a row that is no longer scheduled. The 1-1 list is the sixth positional
+  // argument, appended so existing callers keep working — a caller that forgets
+  // to pass it gets an empty list, which is how the Weekly view silently stopped
+  // sweeping VR turns.
+  it('returns only the 1-1s the remaining shifts no longer cover', () => {
+    const removed = at(9, 12);
+    const remaining = [at(14, 18)];
+    const oneOnOnes = [at(10, 11), at(15, 16)];
+    const result = orphanedByShiftRemoval(removed, remaining, [], [], [], oneOnOnes);
+    expect(result.oneOnOnes).toEqual([at(10, 11)]);
+  });
+
+  it('defaults to an empty list when no 1-1s are passed', () => {
+    expect(orphanedByShiftRemoval(at(9, 12), [], [], []).oneOnOnes).toEqual([]);
+  });
+});
+
+describe('disabling a duty studio-wide', () => {
+  // A studio can switch the VR post off (see context/SettingsContext). The flag is
+  // runtime state from the backend, so it can't live in the module-level DUTIES
+  // table — it has to be passed in. These pin that a disabled post produces no
+  // alerts of any kind, while leaving the posts still in use untouched.
+
+  const scheduled = over => person({ shifts: [at(9, 17)], deskShifts: [], vrShifts: [], ...over });
+
+  it('drops the disabled kind and keeps the rest', () => {
+    expect(activeDutyKinds(['desk', 'vr'], ['vr'])).toEqual(['desk']);
+    expect(activeDutyKinds(['desk', 'vr'], [])).toEqual(['desk', 'vr']);
+    // No argument means nothing is disabled — that default is what keeps every
+    // existing call site working unchanged.
+    expect(activeDutyKinds(['desk', 'vr'])).toEqual(['desk', 'vr']);
+  });
+
+  it('reports no VR coverage gap once VR is off', () => {
+    // Monday has a VR window, and nobody is on it — normally a gap alert.
+    const staff = [scheduled()];
+    expect(buildAlerts(staff, [], 1).some(a => /VR/.test(a.text))).toBe(true);
+    expect(buildAlerts(staff, [], 1, { disabledDuties: ['vr'] }).some(a => /VR/.test(a.text))).toBe(false);
+  });
+
+  it('still reports the desk gap that is genuinely there', () => {
+    // Switching VR off must not silence desk: the point is to remove one post,
+    // not to quieten the alerts bar.
+    const staff = [scheduled()];
+    const texts = buildAlerts(staff, [], 1, { disabledDuties: ['vr'] }).map(a => a.text).join(' | ');
+    expect(texts).toMatch(/desk/i);
+  });
+
+  it('stops flagging a stranded VR turn, and the desk/VR room clash', () => {
+    // Both of these are about VR existing. With VR off there is no VR turn to be
+    // stranded and no second room to double-book.
+    const stranded = person({ shifts: [at(9, 12)], deskShifts: [at(10, 11)], vrShifts: [at(15, 16)] });
+    const on  = buildAlerts([stranded], [], 1).map(a => a.text).join(' | ');
+    const off = buildAlerts([stranded], [], 1, { disabledDuties: ['vr'] }).map(a => a.text).join(' | ');
+    expect(on).toMatch(/VR/);
+    expect(off).not.toMatch(/VR/);
+  });
+
+  it('says so in the template all-clear line', () => {
+    const clear = person({ shifts: [at(9, 17)], deskShifts: [at(9, 17)], vrShifts: [] });
+    const off = buildTemplateAlerts([clear], null, { disabledDuties: ['vr'] });
+    expect(off.map(a => a.text).join(' ')).not.toMatch(/VR/);
+  });
+});
+
+describe('removeShiftAndSweep', () => {
+  // The bug: dragging a shift bar to the trash deleted the shift and marked the
+  // row Unscheduled, but its desk turn, VR turn, 1-1 and event assignment stayed
+  // drawn on the row. Cause: the same-row drag handler repositions a shift live as
+  // the cursor moves, so a bar dragged up to the trash arrives with its start/end
+  // set to wherever the cursor last crossed the timeline. The sweep compared the
+  // stranded items against *that* position, found no overlap, and kept them all.
+
+  const loaded = () => person({
+    shifts: [{ id: 's1', start: 9, end: 17 }],
+    deskShifts: [{ id: 'd1', start: 10, end: 11 }],
+    vrShifts: [{ id: 'v1', start: 13, end: 14 }],
+    oneOnOnes: [{ id: 'o1', start: 15, end: 16, kind: 'Laser', withWhom: 'Sarah' }],
+  });
+  const evt = { id: 7, start: 11, end: 12, assignedStaff: [1] };
+
+  it('clears everything that sat on the only shift', () => {
+    const { person: swept, events } = removeShiftAndSweep(loaded(), 0, [evt]);
+    expect(swept.shifts).toEqual([]);
+    expect(swept.scheduled).toBe(false);
+    expect(swept.deskShifts).toEqual([]);
+    expect(swept.vrShifts).toEqual([]);
+    expect(swept.oneOnOnes).toEqual([]);
+    expect(events).toEqual([evt]);
+  });
+
+  it('sweeps against the extent given, not where the bar ended up', () => {
+    // Reproduces the drag: the shift has been moved to 17–21 by the time it is
+    // dropped on the trash, far from the 10–11 desk turn and 15–16 1-1.
+    const dragged = { ...loaded(), shifts: [{ id: 's1', start: 17, end: 21 }] };
+
+    // Without the override — the old behaviour — nothing is found.
+    const naive = removeShiftAndSweep(dragged, 0, [evt]);
+    expect(naive.person.deskShifts).toHaveLength(1);
+    expect(naive.person.oneOnOnes).toHaveLength(1);
+    expect(naive.events).toEqual([]);
+
+    // With the extent captured at drag start, everything is swept.
+    const fixed = removeShiftAndSweep(dragged, 0, [evt], { start: 9, end: 17 });
+    expect(fixed.person.deskShifts).toEqual([]);
+    expect(fixed.person.vrShifts).toEqual([]);
+    expect(fixed.person.oneOnOnes).toEqual([]);
+    expect(fixed.events).toEqual([evt]);
+  });
+
+  it('leaves alone whatever a second shift still covers', () => {
+    // Deleting the morning shift must not strip the afternoon's desk turn.
+    const two = person({
+      shifts: [{ id: 's1', start: 9, end: 12 }, { id: 's2', start: 14, end: 18 }],
+      deskShifts: [{ id: 'd1', start: 10, end: 11 }, { id: 'd2', start: 15, end: 16 }],
+      vrShifts: [],
+      oneOnOnes: [],
+    });
+    const { person: swept } = removeShiftAndSweep(two, 0, []);
+    expect(swept.shifts.map(s => s.id)).toEqual(['s2']);
+    expect(swept.scheduled).toBe(true);
+    expect(swept.deskShifts.map(d => d.id)).toEqual(['d2']);
+  });
+
+  it('is a no-op on an index that isn\'t there', () => {
+    const p = loaded();
+    expect(removeShiftAndSweep(p, 4, []).person).toBe(p);
   });
 });

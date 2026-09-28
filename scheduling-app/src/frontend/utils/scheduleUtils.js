@@ -9,7 +9,10 @@ function normalizeStaffShifts(s) {
   const shifts = s.shifts ?? (s.shiftStart != null ? [{ id: `s${s.id}-0`, start: s.shiftStart, end: s.shiftEnd }] : []);
   const deskShifts = s.deskShifts ?? (s.deskStart != null ? [{ id: `d${s.id}-0`, start: s.deskStart, end: s.deskEnd }] : []);
   const vrShifts = s.vrShifts ?? (s.vrStart != null ? [{ id: `v${s.id}-0`, start: s.vrStart, end: s.vrEnd }] : []);
-  return { ...s, shifts, deskShifts, vrShifts };
+  // 1-1s postdate the legacy scalar fields entirely, so there is no pair to fall
+  // back to — a row without the array simply has none.
+  const oneOnOnes = s.oneOnOnes ?? [];
+  return { ...s, shifts, deskShifts, vrShifts, oneOnOnes };
 }
 
 /**
@@ -24,9 +27,9 @@ export function mergeStaffOverrides(liveStaff, overrides) {
   const overrideMap = new Map((overrides ?? []).map(s => [s.id, s]));
   return liveStaff.map(person => {
     const override = overrideMap.get(person.id);
-    if (!override) return normalizeStaffShifts({ ...person, shifts: [], deskShifts: [], vrShifts: [] });
-    const { shifts, deskShifts, vrShifts } = normalizeStaffShifts(override);
-    return { ...person, shifts, deskShifts, vrShifts };
+    if (!override) return normalizeStaffShifts({ ...person, shifts: [], deskShifts: [], vrShifts: [], oneOnOnes: [] });
+    const { shifts, deskShifts, vrShifts, oneOnOnes } = normalizeStaffShifts(override);
+    return { ...person, shifts, deskShifts, vrShifts, oneOnOnes };
   });
 }
 
@@ -160,6 +163,7 @@ export function orphanedByShiftRemoval(
   deskShifts = [],
   assignedEvents = [],
   vrShifts = [],
+  oneOnOnes = [],
 ) {
   const overlaps = (a, b) => a.start < b.end && a.end > b.start;
   const stillCovered = item => remainingShifts.some(sh => overlaps(item, sh));
@@ -169,7 +173,55 @@ export function orphanedByShiftRemoval(
     // Appended after `assignedEvents` rather than beside deskShifts so the
     // existing positional callers keep working unchanged while they are updated.
     vrShifts: vrShifts.filter(orphaned),
+    oneOnOnes: oneOnOnes.filter(orphaned),
     events: assignedEvents.filter(orphaned),
+  };
+}
+
+/**
+ * Remove one of a person's shifts and sweep up whatever it was carrying.
+ *
+ * Returns the rewritten person, plus the events that need unassigning — event
+ * assignment lives on the Event document rather than on the person, so only the
+ * caller can finish that half.
+ *
+ * `removedExtent` overrides where the deleted shift is treated as having been.
+ * It exists for the drag-to-trash path: the same-row drag handler repositions a
+ * shift live as the cursor moves, so a bar dragged up to the trash zone arrives
+ * with its start/end set to wherever the cursor last crossed the timeline. Judged
+ * against *that*, the desk turn or 1-1 that was sitting on the shift no longer
+ * overlaps it and nothing gets swept — the shift vanishes and its bars stay
+ * behind on a row now marked Unscheduled. Passing the extent captured at drag
+ * start (draggingBarInfo.originalStart/originalEnd) is what finds them.
+ */
+export function removeShiftAndSweep(person, shiftIndex, assignedEvents = [], removedExtent = null) {
+  const shifts = person?.shifts ?? [];
+  const removed = removedExtent ?? shifts[shiftIndex];
+  if (!removed) return { person, events: [] };
+
+  const remaining = shifts.filter((_, j) => j !== shiftIndex);
+  const orphaned = orphanedByShiftRemoval(
+    removed,
+    remaining,
+    person.deskShifts ?? [],
+    assignedEvents,
+    person.vrShifts ?? [],
+    person.oneOnOnes ?? [],
+  );
+  const deskIds = new Set(orphaned.deskShifts.map(d => d.id));
+  const vrIds   = new Set(orphaned.vrShifts.map(v => v.id));
+  const oooIds  = new Set(orphaned.oneOnOnes.map(o => o.id));
+
+  return {
+    person: {
+      ...person,
+      shifts: remaining,
+      scheduled: remaining.length > 0,
+      deskShifts: (person.deskShifts ?? []).filter(d => !deskIds.has(d.id)),
+      vrShifts:   (person.vrShifts   ?? []).filter(v => !vrIds.has(v.id)),
+      oneOnOnes:  (person.oneOnOnes  ?? []).filter(o => !oooIds.has(o.id)),
+    },
+    events: orphaned.events,
   };
 }
 
@@ -335,16 +387,25 @@ export function getTarget(hour, dow = 1) {
 }
 
 /**
- * The two duty types: front desk, and the VR studio.
+ * The duty types: front desk, the VR studio, and one-to-one meetings.
  *
  * A duty is time inside a shift spent somewhere specific instead of the main
- * studio floor. Both behave identically — one person at a time, inside a host
- * shift, capped run length, auto-assigned by the generator — so the logic below
- * is written once against this table rather than twice. `DUTIES` is the single
- * place to add a third.
+ * studio floor. Desk and VR behave identically — one person at a time, inside a
+ * host shift, capped run length, auto-assigned by the generator — so the logic
+ * below is written once against this table rather than twice. `DUTIES` is the
+ * single place to add another.
  *
  * `field` is the array on a person's day record; `legacyStart`/`legacyEnd` are
  * the pre-array scalars still present on old rows (see dutyShiftsOf).
+ *
+ * `coverage` is what separates a staffed post from a personal commitment. Desk
+ * and VR are posts: the studio needs exactly one person on each during a window,
+ * so an empty window is a gap and two people on it at once is a mistake, and the
+ * template generator fills them automatically. A 1-1 is neither — any number of
+ * people can be in one simultaneously, nothing requires one to exist, and only
+ * the manager places them. Everything keyed off coverage therefore skips it (see
+ * COVERAGE_DUTY_KINDS); the per-person structural checks still apply, because a
+ * 1-1 stranded outside its shift is wrong for the same reason a desk turn is.
  */
 export const DUTIES = {
   desk: {
@@ -353,9 +414,10 @@ export const DUTIES = {
     legacyEnd: 'deskEnd',
     hoursByDay: deskHoursByDay,
     label: 'desk',
-    // Alert dot colour. Desk keeps the generic warning yellow; VR gets its own
+    // Alert dot color. Desk keeps the generic warning yellow; VR gets its own
     // so a VR problem is identifiable in a mixed list at a glance.
     alertType: 'yellow',
+    coverage: true,
   },
   vr: {
     field: 'vrShifts',
@@ -364,10 +426,62 @@ export const DUTIES = {
     hoursByDay: vrHoursByDay,
     label: 'VR',
     alertType: 'vr',
+    coverage: true,
+  },
+  oneOnOne: {
+    field: 'oneOnOnes',
+    // No legacy scalars: 1-1s were added after the arrays were the only format.
+    legacyStart: null,
+    legacyEnd: null,
+    // Empty rather than a weekday map — a 1-1 is never required, so there is no
+    // window to be short of. getDutyWindow returns null for every weekday, which
+    // is already how dutyGapAlerts recognises "nothing to check".
+    hoursByDay: {},
+    label: '1-1',
+    alertType: 'oneOnOne',
+    coverage: false,
   },
 };
 
 export const DUTY_KINDS = Object.keys(DUTIES);
+
+/**
+ * The duties that represent a staffed post, and so have coverage windows worth
+ * reporting gaps and double-ups against. Callers doing anything coverage-shaped
+ * — gap alerts, concurrency alerts, template generation — must iterate this
+ * rather than DUTY_KINDS, or they will invent requirements for 1-1s.
+ */
+export const COVERAGE_DUTY_KINDS = DUTY_KINDS.filter(k => DUTIES[k].coverage);
+
+/**
+ * `kinds` with anything the studio has switched off removed.
+ *
+ * A disabled duty has to be passed in rather than read from a module-level flag:
+ * these are pure functions over plain data, and the setting is studio state that
+ * arrives from the backend at runtime (see context/SettingsContext). Callers that
+ * don't care pass nothing and get every kind, which is why every existing call
+ * site and test keeps working unchanged.
+ */
+export function activeDutyKinds(kinds, disabled) {
+  if (!disabled || disabled.length === 0) return kinds;
+  return kinds.filter(k => !disabled.includes(k));
+}
+
+/**
+ * The bar label for a 1-1: the type and who it's with, both free text and both
+ * optional while the manager is still filling them in.
+ *
+ * `short` is what fits on the bar itself (an hour of timeline is narrow); the
+ * long form is the tooltip, and reads as the sentence the feature was asked for
+ * — "Performance One-One with Sarah".
+ */
+export function oneOnOneLabel(turn, { short = false } = {}) {
+  const kind = (turn?.kind ?? '').trim();
+  const withWhom = (turn?.withWhom ?? '').trim();
+  if (short) return withWhom ? `1:1 · ${withWhom}` : '1:1';
+  const lead = kind ? `${kind} One-One` : 'One-One';
+  return withWhom ? `${lead} with ${withWhom}` : lead;
+}
 
 /** The hours a duty needs manning on this weekday, or null if none. */
 export function getDutyWindow(kind, dow = 1) {
@@ -492,6 +606,8 @@ export function dutyShiftsOf(person, kind) {
   const duty = DUTIES[kind];
   if (!duty) return [];
   if (Array.isArray(person?.[duty.field])) return person[duty.field];
+  // A duty with no legacy scalars (1-1) has nothing to fall back to.
+  if (!duty.legacyStart) return [];
   return person?.scheduled && person?.[duty.legacyStart] != null
     ? [{ start: person[duty.legacyStart], end: person[duty.legacyEnd] }]
     : [];
@@ -712,25 +828,35 @@ function dutyConcurrencyAlerts(staff, kind) {
 }
 
 /** Per-person duty alerts: event clashes, stranded turns, and desk/VR overlap. */
-function perPersonDutyAlerts(person, events) {
+function perPersonDutyAlerts(person, events, disabledDuties) {
   const alerts = [];
-  for (const kind of DUTY_KINDS) {
+  for (const kind of activeDutyKinds(DUTY_KINDS, disabledDuties)) {
     for (const msg of checkDutyConflicts(person, events, kind)) {
       alerts.push({ type: DUTIES[kind].alertType, text: `${person.name}: ${msg}` });
     }
     alerts.push(...orphanedDutyAlerts(person, kind));
   }
-  // Cross-duty: the only rule comparing the two duties to each other. Coloured
+  // Cross-duty: the only rule comparing the two duties to each other. Colored
   // as a VR alert because VR is the half a reader needs to look at — desk on its
-  // own was fine until VR landed on top of it.
-  for (const msg of checkDutyOverlap(person)) {
-    alerts.push({ type: DUTIES.vr.alertType, text: `${person.name}: ${msg}` });
+  // own was fine until VR landed on top of it. Skipped entirely when VR is off:
+  // with no VR in play there is no pair to compare.
+  if (!disabledDuties?.includes('vr')) {
+    for (const msg of checkDutyOverlap(person)) {
+      alerts.push({ type: DUTIES.vr.alertType, text: `${person.name}: ${msg}` });
+    }
   }
   return alerts;
 }
 
-/** Build the alerts list from current staff + events */
-export function buildAlerts(staff, events, dow = 1) {
+/**
+ * Build the alerts list from current staff + events.
+ *
+ * `disabledDuties` names duty kinds the studio has switched off (see
+ * activeDutyKinds). Nothing about them is reported — no coverage gaps, no
+ * double-ups, no stranded turns — because a post that doesn't exist can't be
+ * short-staffed. Omit it and every duty is checked, as before.
+ */
+export function buildAlerts(staff, events, dow = 1, { disabledDuties } = {}) {
   const alerts = [];
 
   for (let h = HOURS_START; h < HOURS_END; h += 0.5) {
@@ -744,14 +870,16 @@ export function buildAlerts(staff, events, dow = 1) {
     }
   }
 
-  // Coverage gaps and double-staffing, for every duty (desk and VR).
-  for (const kind of DUTY_KINDS) {
+  // Coverage gaps and double-staffing, for the staffed posts only (desk and VR).
+  // 1-1s are excluded by COVERAGE_DUTY_KINDS: nothing requires one to happen, and
+  // any number of people can be in one at the same time.
+  for (const kind of activeDutyKinds(COVERAGE_DUTY_KINDS, disabledDuties)) {
     alerts.push(...dutyGapAlerts(staff, kind, dow));
     alerts.push(...dutyConcurrencyAlerts(staff, kind));
   }
 
   staff.forEach(person => {
-    alerts.push(...perPersonDutyAlerts(person, events));
+    alerts.push(...perPersonDutyAlerts(person, events, disabledDuties));
   });
 
   events.forEach(evt => {
@@ -810,13 +938,13 @@ export function buildAlerts(staff, events, dow = 1) {
  * promised by this function's old comment but never implemented — it matters now
  * that auto-generated templates carry desk shifts of their own.
  */
-export function buildTemplateAlerts(staff, dow = null) {
+export function buildTemplateAlerts(staff, dow = null, { disabledDuties } = {}) {
   const alerts = [];
 
   // Coverage gaps within this weekday's window, and double-staffing, per duty.
   // `dow == null` means the caller has no weekday in hand (a day template not
   // yet placed), so there is no window to check against.
-  for (const kind of DUTY_KINDS) {
+  for (const kind of activeDutyKinds(COVERAGE_DUTY_KINDS, disabledDuties)) {
     if (dow != null) alerts.push(...dutyGapAlerts(staff, kind, dow));
     alerts.push(...dutyConcurrencyAlerts(staff, kind));
   }
@@ -824,10 +952,15 @@ export function buildTemplateAlerts(staff, dow = null) {
   // Turns stranded outside their shift, and desk/VR overlap — the same checks
   // the daily and weekly editors run. A template can strand one the same way,
   // by resizing a shift. No events exist in a template, hence the empty list.
-  staff.forEach(person => alerts.push(...perPersonDutyAlerts(person, [])));
+  staff.forEach(person => alerts.push(...perPersonDutyAlerts(person, [], disabledDuties)));
 
   if (alerts.length === 0) {
-    alerts.push({ type: 'blue', text: 'No desk or VR conflicts. Looks good!' });
+    alerts.push({
+      type: 'blue',
+      text: disabledDuties?.includes('vr')
+        ? 'No desk conflicts. Looks good!'
+        : 'No desk or VR conflicts. Looks good!',
+    });
   }
   return alerts;
 }

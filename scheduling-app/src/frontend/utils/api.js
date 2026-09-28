@@ -71,10 +71,23 @@ export function isConflict(err) {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
+// Studio-wide settings, shared by every user (not per-account preferences —
+// those live on authApi). Reading is open to any signed-in user; the PATCH is
+// manager-only server-side.
+export const settingsApi = {
+  get: () => request("/settings"),
+  update: (patch) => request("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+};
+
 export const authApi = {
   login: (username, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => request("/auth/me"),
+  // The signed-in user's schedule bar colors, as a partial { desk?, vr?, event?,
+  // oneOnOne? } of hues. A key sent as null clears it back to the app default; a
+  // key left out is untouched.
+  saveBarColors: (hues) =>
+    request("/auth/me/bar-colors", { method: "PATCH", body: JSON.stringify(hues) }),
   // Set a new password (forced first-login change, or voluntary). Authenticated.
   // currentPassword is required for voluntary changes, ignored on the forced one.
   changePassword: (newPassword, currentPassword) =>

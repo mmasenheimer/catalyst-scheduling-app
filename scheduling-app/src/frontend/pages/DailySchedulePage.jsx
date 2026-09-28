@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, orphanedByShiftRemoval, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -13,6 +13,8 @@ import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
+import { BarColorPicker } from '../components/BarColorPicker';
+import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -31,11 +33,14 @@ function normalizeStaff(s) {
   const vrShifts = s.vrShifts ?? (s.scheduled && s.vrStart != null
     ? [{ id: `v${s.id}-0`, start: s.vrStart, end: s.vrEnd }]
     : []);
+  // No legacy scalar pair to fall back to — 1-1s only ever existed as an array.
+  const oneOnOnes = s.oneOnOnes ?? [];
   return {
     ...s,
     shifts,
     deskShifts,
     vrShifts,
+    oneOnOnes,
     scheduled: shifts.length > 0,
     shiftStart: s.shiftStart ?? shifts[0]?.start,
     shiftEnd:   s.shiftEnd   ?? shifts[0]?.end,
@@ -97,6 +102,9 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text)'; }}>
           Save as Template
         </button>
+        {/* Recolors every event bar on the schedule — not gated on `finalized`,
+            since it's a display preference rather than an edit to the day. */}
+        <BarColorPicker align="left" />
       </div>
       <div className="flex items-center gap-2">
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
@@ -127,10 +135,16 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
 // resize is active — the parent freezes its props during a gesture, so this
 // only recomputes once the gesture ends.
 const AlertsBar = memo(function AlertsBar({ staff, events, dow }) {
-  const alerts   = buildAlerts(staff, events, dow);
-  // A lookup, not a chain: a type missing here renders a dot with no colour at
+  // From context, not a prop: a settings change must reach this even though the
+  // parent freezes its props during a drag, and a context update bypasses memo.
+  const { vrEnabled } = useSettings();
+  const alerts   = buildAlerts(staff, events, dow, { disabledDuties: vrEnabled ? [] : ['vr'] });
+  // A lookup, not a chain: a type missing here renders a dot with no color at
   // all rather than falling back to yellow.
-  const dotColor = { understaffed: 'var(--color-green)', yellow: 'var(--color-yellow)', vr: 'var(--color-vr)', event: '#a080e0', blue: 'var(--color-accent-bright)' };
+  // A lookup keyed by the alertType each duty declares in DUTIES, so desk's
+  // 'yellow' and VR's 'vr' now resolve to those bars' chosen colors rather than
+  // the app's warning palette.
+  const dotColor = { understaffed: 'var(--color-green)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', event: 'var(--color-bar-event-dot)', oneOnOne: 'var(--color-bar-oneone-dot)', blue: 'var(--color-accent-bright)' };
   return (
     <div className="p-3 rounded-xl mb-5 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
@@ -149,15 +163,16 @@ const AlertsBar = memo(function AlertsBar({ staff, events, dow }) {
 
 function ScheduleGrid({
   staff, events, finalized,
-  onBarMouseDown, onDeskBarMouseDown, onVrBarMouseDown, onEventBarMouseDown, activeBar,
+  onBarMouseDown, onDeskBarMouseDown, onVrBarMouseDown, onOneOnOneBarMouseDown, onEventBarMouseDown, activeBar,
   activeDragType, hoverRow, onTimelineDragOver, onTimelineDrop,
   draggingBarInfo,
-  onShiftBarDragStart, onDeskBarDragStart, onVrBarDragStart, onEventBarDragStart, onBarDragEnd,
+  onShiftBarDragStart, onDeskBarDragStart, onVrBarDragStart, onOneOnOneBarDragStart, onEventBarDragStart, onBarDragEnd,
   onBarDragOver, onBarDrop,
   onBarContextMenu,
   getPersonAvailability,
   previewInfo,
 }) {
+  const { vrEnabled } = useSettings();
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   function posStyle(start, end) {
@@ -171,10 +186,12 @@ function ScheduleGrid({
   const toolbarHighlight = activeDragType === 'shift'
     ? { background: 'rgba(74,124,94,0.15)',  borderColor: 'var(--color-green)' }
     : activeDragType === 'desk'
-      ? { background: 'rgba(200,148,56,0.12)', borderColor: 'var(--color-yellow)' }
+      ? { background: 'var(--color-bar-desk-fill-soft)', borderColor: 'var(--color-bar-desk-bright)' }
       : activeDragType === 'vr'
-        ? { background: 'rgba(181,51,58,0.14)', borderColor: 'var(--color-vr)' }
-        : { background: 'rgba(59,42,110,0.2)',   borderColor: '#7c5cbf' };
+        ? { background: 'var(--color-bar-vr-fill-soft)', borderColor: 'var(--color-bar-vr-bright)' }
+        : activeDragType === 'oneOnOne'
+          ? { background: 'var(--color-bar-oneone-fill-soft)', borderColor: 'var(--color-bar-oneone-bright)' }
+          : { background: 'var(--color-bar-event-fill-soft)', borderColor: 'var(--color-bar-event-bright)' };
 
   return (
     <>
@@ -288,10 +305,10 @@ function ScheduleGrid({
                     left:  `${((previewInfo.start - HOURS_START) / TOTAL_HOURS) * 100}%`,
                     width: `${((previewInfo.end - previewInfo.start) / TOTAL_HOURS) * 100}%`,
                     background: previewInfo.valid
-                      ? (currentDragType === 'shift' ? 'rgba(74,124,94,0.35)' : currentDragType === 'desk' ? 'rgba(200,148,56,0.35)' : currentDragType === 'vr' ? 'rgba(181,51,58,0.35)' : 'rgba(59,42,110,0.5)')
+                      ? (currentDragType === 'shift' ? 'rgba(74,124,94,0.35)' : currentDragType === 'desk' ? 'var(--color-bar-desk-fill-strong)' : currentDragType === 'vr' ? 'var(--color-bar-vr-fill-strong)' : currentDragType === 'oneOnOne' ? 'var(--color-bar-oneone-fill-strong)' : 'var(--color-bar-event-fill-strong)')
                       : 'rgba(200,64,64,0.25)',
                     border: `2px dashed ${previewInfo.valid
-                      ? (currentDragType === 'shift' ? 'var(--color-green)' : currentDragType === 'desk' ? 'var(--color-yellow)' : currentDragType === 'vr' ? 'var(--color-vr)' : '#7c5cbf')
+                      ? (currentDragType === 'shift' ? 'var(--color-green)' : currentDragType === 'desk' ? 'var(--color-bar-desk-bright)' : currentDragType === 'vr' ? 'var(--color-bar-vr-bright)' : currentDragType === 'oneOnOne' ? 'var(--color-bar-oneone-bright)' : 'var(--color-bar-event-bright)')
                       : 'var(--color-red)'}`,
                     zIndex: 22,
                   }}
@@ -349,10 +366,10 @@ function ScheduleGrid({
                     style={{
                       ...posStyle(desk.start, desk.end),
                       top: '50%', transform: 'translateY(-50%)',
-                      background: 'var(--color-yellow)',
+                      background: 'var(--color-bar-desk)',
                       opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
                       cursor: finalized ? 'default' : 'grab',
-                      boxShadow: isDeskActive ? '0 0 0 2px #e0b050' : 'none',
+                      boxShadow: isDeskActive ? '0 0 0 2px var(--color-bar-desk-bright)' : 'none',
                       transition: isDeskActive || isDeskDragging ? 'none' : 'box-shadow 0.1s',
                       zIndex: isDeskActive ? 10 : 2,
                     }}
@@ -384,7 +401,7 @@ function ScheduleGrid({
                   Sits in the same vertical band because a person can't hold both
                   at once; on the rare overlap the alert flags, the higher
                   z-index keeps this one clickable rather than buried. */}
-              {person.vrShifts.map((vr, vi) => {
+              {vrEnabled && person.vrShifts.map((vr, vi) => {
                 const isVrActive   = activeBar?.type === 'vr' && activeBar?.staffIndex === i && activeBar?.vrIndex === vi;
                 const isVrDragging = draggingBarInfo?.type === 'vr' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.vrIndex === vi;
                 return (
@@ -395,10 +412,10 @@ function ScheduleGrid({
                     style={{
                       ...posStyle(vr.start, vr.end),
                       top: '50%', transform: 'translateY(-50%)',
-                      background: 'var(--color-vr)',
+                      background: 'var(--color-bar-vr)',
                       opacity: isVrDragging ? 0.3 : (isVrActive ? 1 : 0.75),
                       cursor: finalized ? 'default' : 'grab',
-                      boxShadow: isVrActive ? '0 0 0 2px #e05a62' : 'none',
+                      boxShadow: isVrActive ? '0 0 0 2px var(--color-bar-vr-bright)' : 'none',
                       transition: isVrActive || isVrDragging ? 'none' : 'box-shadow 0.1s',
                       zIndex: isVrActive ? 10 : 3,
                     }}
@@ -426,6 +443,53 @@ function ScheduleGrid({
                 );
               })}
 
+              {/* 1-1 bars — a meeting inside a shift rather than a staffed post,
+                  so unlike desk and VR nothing requires one and any number of
+                  people can be in one at once. Placement still avoids the other
+                  in-shift bars because they all share this vertical band. */}
+              {(person.oneOnOnes ?? []).map((ooo, oi) => {
+                const isOooActive   = activeBar?.type === 'oneOnOne' && activeBar?.staffIndex === i && activeBar?.oneOnOneIndex === oi;
+                const isOooDragging = draggingBarInfo?.type === 'oneOnOne' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.oneOnOneIndex === oi;
+                return (
+                  <div
+                    key={ooo.id}
+                    draggable={!finalized}
+                    className="absolute h-6 rounded overflow-hidden select-none"
+                    title={oneOnOneLabel(ooo)}
+                    style={{
+                      ...posStyle(ooo.start, ooo.end),
+                      top: '50%', transform: 'translateY(-50%)',
+                      background: 'var(--color-bar-oneone)',
+                      opacity: isOooDragging ? 0.3 : (isOooActive ? 1 : 0.85),
+                      cursor: finalized ? 'default' : 'grab',
+                      boxShadow: isOooActive ? '0 0 0 2px var(--color-bar-oneone-bright)' : 'none',
+                      transition: isOooActive || isOooDragging ? 'none' : 'box-shadow 0.1s',
+                      zIndex: isOooActive ? 10 : 4,
+                    }}
+                    onDragStart={e => { e.stopPropagation(); !finalized && onOneOnOneBarDragStart(e, i, oi); }}
+                    onDragEnd={onBarDragEnd}
+                    onContextMenu={e => { e.preventDefault(); !finalized && onBarContextMenu(e, { type: 'oneOnOne', staffIndex: i, oneOnOneIndex: oi }); }}
+                  >
+                    {!finalized && (
+                      <div
+                        style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onOneOnOneBarMouseDown(e, i, oi, 'left'); }}
+                      />
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      style={{ fontSize: 9, color: 'var(--color-bar-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', paddingLeft: 10, paddingRight: 10 }}>
+                      {oneOnOneLabel(ooo, { short: true })}
+                    </span>
+                    {!finalized && (
+                      <div
+                        style={{ position: 'absolute', right: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize', background: 'rgba(255,255,255,0.15)', zIndex: 2 }}
+                        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onOneOnOneBarMouseDown(e, i, oi, 'right'); }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
               {/* Event bars — HTML5 draggable for move/trash, mouse events for resize */}
               {events.filter(e => e.assignedStaff.includes(person.id)).map(evt => {
                 const isEvtActive   = activeBar?.type === 'event' && activeBar?.eventId === evt.id;
@@ -438,10 +502,10 @@ function ScheduleGrid({
                     style={{
                       ...posStyle(evt.start, evt.end),
                       top: '50%', transform: 'translateY(-50%)',
-                      background: '#3b2a6e',
+                      background: 'var(--color-bar-event)',
                       cursor: finalized ? 'default' : 'grab',
                       zIndex: isEvtActive ? 10 : 3,
-                      boxShadow: isEvtActive ? '0 0 0 2px #7c5cbf' : 'none',
+                      boxShadow: isEvtActive ? '0 0 0 2px var(--color-bar-event-bright)' : 'none',
                       opacity: isEvtDragging ? 0.3 : (isEvtActive ? 1 : 0.9),
                       transition: isEvtActive || isEvtDragging ? 'none' : 'box-shadow 0.1s',
                     }}
@@ -457,7 +521,7 @@ function ScheduleGrid({
                       />
                     )}
                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                      style={{ fontSize: 10, paddingLeft: 10, paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-bar-text)', paddingLeft: 10, paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                       {evt.name}
                     </span>
                     {!finalized && (
@@ -480,9 +544,10 @@ function ScheduleGrid({
     <div className="flex items-center gap-5 mt-3 px-1 flex-wrap">
       {[
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-vr)', opacity: 0.75 }} />, label: 'VR' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: '#3b2a6e', opacity: 0.9 }} />, label: 'Event' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
+        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-oneone)', opacity: 0.85 }} />, label: '1-1' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-event)', opacity: 0.9 }} />, label: 'Event' },
       ].map(({ swatch, label }) => (
         <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
           {swatch}{label}
@@ -603,6 +668,10 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
       const vr = orderedStaff[target.staffIndex].vrShifts[target.vrIndex];
       return { vrStart: vr.start, vrEnd: vr.end };
     }
+    if (target.type === 'oneOnOne') {
+      const ooo = orderedStaff[target.staffIndex].oneOnOnes[target.oneOnOneIndex];
+      return { oooKind: ooo.kind ?? '', oooWith: ooo.withWhom ?? '', oooStart: ooo.start, oooEnd: ooo.end };
+    }
     const evt = allEvents.find(e => e.id === target.eventId);
     return { name: evt?.name || '', type: evt?.type || 'program', start: evt?.start || 9, end: evt?.end || 10, staffNeeded: evt?.staffNeeded || 1, notes: evt?.notes || '', repeating: !!evt?.repeating, repeatFrom: evt?.repeatFrom ?? null, repeatUntil: evt?.repeatUntil ?? null, days: evt?.days ?? [] };
   });
@@ -615,8 +684,9 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
 
   const title = target.type === 'shift' ? 'Edit Shift'
     : target.type === 'desk' ? 'Edit Desk Shift'
-    : target.type === 'vr' ? 'Edit VR Shift' : 'Edit Event';
-  const staffName = (target.type === 'shift' || target.type === 'desk' || target.type === 'vr')
+    : target.type === 'vr' ? 'Edit VR Shift'
+    : target.type === 'oneOnOne' ? 'Edit 1-1' : 'Edit Event';
+  const staffName = (target.type === 'shift' || target.type === 'desk' || target.type === 'vr' || target.type === 'oneOnOne')
     ? orderedStaff[target.staffIndex]?.name : null;
   const shiftBounds = null;
 
@@ -679,6 +749,39 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
               <div>
                 <label style={fieldLabel}>VR End</label>
                 <TimeSelect value={form.vrEnd} onChange={v => setForm(f => ({ ...f, vrEnd: Math.max(v, f.vrStart + 0.5) }))} min={form.vrStart + 0.5} max={shiftBounds?.max} />
+              </div>
+            </>
+          )}
+          {target.type === 'oneOnOne' && (
+            <>
+              {/* Both free text: the type of 1-1, and who it's with. Either may be
+                  left blank — a 1-1 is created by dropping it on the grid and
+                  labelled afterwards, so a half-filled one has to be saveable. */}
+              <div>
+                <label style={fieldLabel}>Type of 1-1</label>
+                <input type="text" autoFocus maxLength={200} value={form.oooKind}
+                  onChange={e => setForm(f => ({ ...f, oooKind: e.target.value }))}
+                  placeholder="e.g. Embroidery, Laser, CNC" style={textInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>1-1 with</label>
+                <input type="text" maxLength={200} value={form.oooWith}
+                  onChange={e => setForm(f => ({ ...f, oooWith: e.target.value }))}
+                  placeholder="Who the 1-1 is with" style={textInput} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: -4 }}>
+                Shows on the bar as <strong style={{ color: 'var(--color-text)' }}>{oneOnOneLabel({ kind: form.oooKind, withWhom: form.oooWith }, { short: true })}</strong>
+                {' — '}{oneOnOneLabel({ kind: form.oooKind, withWhom: form.oooWith })} on hover.
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label style={fieldLabel}>Start</label>
+                  <TimeSelect value={form.oooStart} onChange={v => setForm(f => ({ ...f, oooStart: Math.min(v, f.oooEnd - 0.5) }))} max={form.oooEnd - 0.5} />
+                </div>
+                <div className="flex-1">
+                  <label style={fieldLabel}>End</label>
+                  <TimeSelect value={form.oooEnd} onChange={v => setForm(f => ({ ...f, oooEnd: Math.max(v, f.oooStart + 0.5) }))} min={form.oooStart + 0.5} />
+                </div>
               </div>
             </>
           )}
@@ -992,6 +1095,15 @@ export default function DailySchedulePage() {
   const currentDow = schedule.currentDate.getDay();
   const dateStr    = toDateStr(schedule.currentDate);
 
+  // VR switched off studio-wide removes it from this page entirely: no chip to
+  // drag, no bars, no alerts, and no VR turn counted when deciding whether
+  // something else can be placed (an invisible obstacle would just look broken).
+  // Saved VR turns stay in state and are written back untouched, so it's
+  // reversible — see SettingsContext.
+  const { vrEnabled } = useSettings();
+  const disabledDuties = useMemo(() => (vrEnabled ? [] : ['vr']), [vrEnabled]);
+  const vrOf = p => (vrEnabled ? (p?.vrShifts ?? []) : []);
+
   // Always derived live — events are global and shouldn't freeze just because
   // the day's staff schedule was finalized (unlike shifts, there's no reason
   // a finalized day should show a stale/different event list than reality).
@@ -1231,7 +1343,8 @@ export default function DailySchedulePage() {
     // Guard list has to name every draggable type — a type missing here reaches
     // no branch below, so the chip drags with no placement preview at all.
     if (activeDragType !== 'shift' && activeDragType !== 'desk'
-        && activeDragType !== 'vr' && activeDragType !== 'event') return;
+        && activeDragType !== 'vr' && activeDragType !== 'oneOnOne'
+        && activeDragType !== 'event') return;
     const rect = getRowRect(e, rowIndex);
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
     const person = orderedStaff[rowIndex];
@@ -1253,6 +1366,7 @@ export default function DailySchedulePage() {
       const end = start + duration;
       const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(person.id));
       const valid = !person.deskShifts.some(d => start < d.end && end > d.start) &&
+                    !(person.oneOnOnes ?? []).some(o => start < o.end && end > o.start) &&
                     !personEvents.some(ev => start < ev.end && end > ev.start);
       setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
     } else if (activeDragType === 'vr') {
@@ -1269,6 +1383,26 @@ export default function DailySchedulePage() {
       // one person cannot hold both at the same time.
       const valid = !person.vrShifts.some(v => start < v.end && end > v.start) &&
                     !person.deskShifts.some(d => start < d.end && end > d.start) &&
+                    !(person.oneOnOnes ?? []).some(o => start < o.end && end > o.start) &&
+                    !personEvents.some(ev => start < ev.end && end > ev.start);
+      setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
+    } else if (activeDragType === 'oneOnOne') {
+      // Inside a host shift like any duty. Unlike desk and VR there is no
+      // cross-person check: two people can be in separate 1-1s at the same time.
+      // The conflict set is only this person's other in-band bars, which exists
+      // to stop the bars drawing on top of each other.
+      const duration = 1;
+      const host = person.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+      if (!host) {
+        setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+        return;
+      }
+      const start = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+      const end = start + duration;
+      const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(person.id));
+      const valid = !(person.oneOnOnes ?? []).some(o => start < o.end && end > o.start) &&
+                    !person.deskShifts.some(d => start < d.end && end > d.start) &&
+                    !vrOf(person).some(v => start < v.end && end > v.start) &&
                     !personEvents.some(ev => start < ev.end && end > ev.start);
       setPreviewInfo({ staffIndex: rowIndex, start, end, valid });
     } else if (activeDragType === 'event' && draggingEventId !== null) {
@@ -1486,6 +1620,58 @@ export default function DailySchedulePage() {
     setDraggingBarInfo({ type: 'vr', staffIndex, vrIndex, vrId: vr.id, duration: vr.end - vr.start, originalStart: vr.start, originalEnd: vr.end });
   }
 
+  // ── 1-1 bar resize (mouse events only) ───────────────────────────────────────
+  // Same shape as the desk and VR handlers above: bounds from the host shift, and
+  // a conflict set of everything else in the row's in-shift band. The text fields
+  // are untouched by a resize, so they ride along on the spread.
+  function handleOneOnOneBarMouseDown(e, staffIndex, oneOnOneIndex, mode) {
+    const timelineEl = e.currentTarget.closest('[data-timeline]');
+    const { width: timelineWidth } = timelineEl.getBoundingClientRect();
+    const startX       = e.clientX;
+    const person0      = orderedStaff[staffIndex];
+    const ooo0         = person0.oneOnOnes[oneOnOneIndex];
+    const initialStart = ooo0.start;
+    const initialEnd   = ooo0.end;
+    const otherOoos    = person0.oneOnOnes.filter((_, j) => j !== oneOnOneIndex);
+    const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(person0.id));
+    const otherDuties  = [...(person0.deskShifts ?? []), ...vrOf(person0)];
+    const { lo: shiftLo, hi: shiftHi } = dutyBoundsFor(person0, ooo0);
+
+    setActiveBar({ type: 'oneOnOne', staffIndex, oneOnOneIndex, mode });
+    document.body.style.cursor     = 'ew-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(me) {
+      const delta = ((me.clientX - startX) / timelineWidth) * TOTAL_HOURS;
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[staffIndex], oneOnOnes: [...next[staffIndex].oneOnOnes] };
+        const o = { ...p.oneOnOnes[oneOnOneIndex] };
+        if (mode === 'left')  o.start = snapHalf(clamp(initialStart + delta, shiftLo, initialEnd - 0.5));
+        else                  o.end   = snapHalf(clamp(initialEnd   + delta, initialStart + 0.5, shiftHi));
+        if (!otherOoos.some(oo => o.start < oo.end && o.end > oo.start) &&
+            !otherDuties.some(d => o.start < d.end && o.end > d.start) &&
+            !personEvents.some(ev => o.start < ev.end && o.end > ev.start)) p.oneOnOnes[oneOnOneIndex] = o;
+        next[staffIndex] = p;
+        return next;
+      });
+    }
+    function onUp() {
+      setActiveBar(null);
+      document.body.style.cursor = document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function handleOneOnOneBarDragStart(e, staffIndex, oneOnOneIndex) {
+    e.dataTransfer.effectAllowed = 'move';
+    const ooo = orderedStaff[staffIndex].oneOnOnes[oneOnOneIndex];
+    setDraggingBarInfo({ type: 'oneOnOne', staffIndex, oneOnOneIndex, oneOnOneId: ooo.id, duration: ooo.end - ooo.start, originalStart: ooo.start, originalEnd: ooo.end });
+  }
+
   function handleDeskBarDragStart(e, staffIndex, deskIndex) {
     e.dataTransfer.effectAllowed = 'move';
     const desk = orderedStaff[staffIndex].deskShifts[deskIndex];
@@ -1546,14 +1732,20 @@ export default function DailySchedulePage() {
     const { target } = contextMenu;
     setContextMenu(null);
     if (target.type === 'shift') {
+      // Sweeps the same way the trash does — deleting a shift from the menu used
+      // to leave its desk/VR/1-1 bars and event assignments stranded on the row.
+      const person = orderedStaff[target.staffIndex];
+      const { person: swept, events } = removeShiftAndSweep(
+        person,
+        target.shiftIndex,
+        todayEvents.filter(ev => ev.assignedStaff.includes(person.id)),
+      );
       setOrderedStaff(prev => {
         const next = [...prev];
-        const p = { ...next[target.staffIndex] };
-        p.shifts = p.shifts.filter((_, j) => j !== target.shiftIndex);
-        p.scheduled = p.shifts.length > 0;
-        next[target.staffIndex] = p;
+        next[target.staffIndex] = swept;
         return sortByShift(next);
       });
+      events.forEach(ev => schedule.unassignStaffFromEvent(ev.id, person.id));
     } else if (target.type === 'desk') {
       setOrderedStaff(prev => {
         const next = [...prev];
@@ -1567,6 +1759,14 @@ export default function DailySchedulePage() {
         const next = [...prev];
         const p = { ...next[target.staffIndex] };
         p.vrShifts = p.vrShifts.filter((_, j) => j !== target.vrIndex);
+        next[target.staffIndex] = p;
+        return next;
+      });
+    } else if (target.type === 'oneOnOne') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[target.staffIndex] };
+        p.oneOnOnes = (p.oneOnOnes ?? []).filter((_, j) => j !== target.oneOnOneIndex);
         next[target.staffIndex] = p;
         return next;
       });
@@ -1607,6 +1807,18 @@ export default function DailySchedulePage() {
         next[t.staffIndex] = p;
         return next;
       });
+    } else if (t.type === 'oneOnOne') {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = { ...next[t.staffIndex], oneOnOnes: [...next[t.staffIndex].oneOnOnes] };
+        p.oneOnOnes[t.oneOnOneIndex] = {
+          ...p.oneOnOnes[t.oneOnOneIndex],
+          kind: data.oooKind.trim(), withWhom: data.oooWith.trim(),
+          start: data.oooStart, end: data.oooEnd,
+        };
+        next[t.staffIndex] = p;
+        return next;
+      });
     } else if (t.type === 'event') {
       schedule.updateEvent(t.eventId, { name: data.name, type: data.type, start: data.start, end: data.end, staffNeeded: data.staffNeeded, notes: data.notes, repeating: data.repeating, repeatFrom: data.repeatFrom, repeatUntil: data.repeatUntil });
     }
@@ -1617,7 +1829,7 @@ export default function DailySchedulePage() {
     if (!draggingBarInfo) return;
     const rect = getRowRect(e, rowIndex);
     const rawHours = HOURS_START + ((e.clientX - rect.left) / rect.width) * TOTAL_HOURS;
-    const { type, staffIndex, shiftIndex, deskIndex, vrIndex, eventId, duration } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, vrIndex, oneOnOneIndex, eventId, duration } = draggingBarInfo;
     const sameRow = staffIndex === rowIndex;
 
     if (type === 'shift') {
@@ -1707,6 +1919,45 @@ export default function DailySchedulePage() {
         const targetEvts = todayEvents.filter(ev => ev.assignedStaff.includes(target.id));
         const valid      = !target.vrShifts.some(v => newStart < v.end && newEnd > v.start) &&
                            !target.deskShifts.some(d => newStart < d.end && newEnd > d.start) &&
+                           !(target.oneOnOnes ?? []).some(o => newStart < o.end && newEnd > o.start) &&
+                           !targetEvts.some(ev => newStart < ev.end && newEnd > ev.start);
+        setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
+      }
+
+    } else if (type === 'oneOnOne') {
+      if (sameRow) {
+        setPreviewInfo(null);
+        setOrderedStaff(prev => {
+          const next = [...prev];
+          const p = { ...next[staffIndex], oneOnOnes: [...next[staffIndex].oneOnOnes] };
+          const host = p.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+          if (!host) return prev;
+          const newStart   = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+          const newEnd     = newStart + duration;
+          const otherOoos  = p.oneOnOnes.filter((_, j) => j !== oneOnOneIndex);
+          const personEvts = todayEvents.filter(ev => ev.assignedStaff.includes(p.id));
+          if (!otherOoos.some(oo => newStart < oo.end && newEnd > oo.start) &&
+              !(p.deskShifts ?? []).some(d => newStart < d.end && newEnd > d.start) &&
+              !vrOf(p).some(v => newStart < v.end && newEnd > v.start) &&
+              !personEvts.some(ev => newStart < ev.end && newEnd > ev.start)) {
+            p.oneOnOnes[oneOnOneIndex] = { ...p.oneOnOnes[oneOnOneIndex], start: newStart, end: newEnd };
+          }
+          next[staffIndex] = p;
+          return next;
+        });
+      } else {
+        const target = orderedStaff[rowIndex];
+        const host   = target.shifts.find(sh => rawHours >= sh.start && rawHours <= sh.end);
+        if (!host) {
+          setPreviewInfo({ staffIndex: rowIndex, start: null, end: null, valid: false });
+          return;
+        }
+        const newStart   = snapHalf(clamp(rawHours - duration / 2, host.start, host.end - duration));
+        const newEnd     = newStart + duration;
+        const targetEvts = todayEvents.filter(ev => ev.assignedStaff.includes(target.id));
+        const valid      = !(target.oneOnOnes ?? []).some(o => newStart < o.end && newEnd > o.start) &&
+                           !target.deskShifts.some(d => newStart < d.end && newEnd > d.start) &&
+                           !vrOf(target).some(v => newStart < v.end && newEnd > v.start) &&
                            !targetEvts.some(ev => newStart < ev.end && newEnd > ev.start);
         setPreviewInfo({ staffIndex: rowIndex, start: newStart, end: newEnd, valid });
       }
@@ -1730,7 +1981,7 @@ export default function DailySchedulePage() {
 
   function handleBarDrop(e, rowIndex) {
     if (!draggingBarInfo) return;
-    const { type, staffIndex, shiftIndex, deskIndex, vrIndex, eventId, staffId } = draggingBarInfo;
+    const { type, staffIndex, shiftIndex, deskIndex, vrIndex, oneOnOneIndex, eventId, staffId } = draggingBarInfo;
     if (staffIndex === rowIndex) return; // same-row position already settled via dragover
     if (!previewInfo || previewInfo.staffIndex !== rowIndex || !previewInfo.valid || previewInfo.start === null) return;
 
@@ -1822,6 +2073,22 @@ export default function DailySchedulePage() {
       } else {
         doMove();
       }
+
+    } else if (type === 'oneOnOne') {
+      // Straight move, with no cross-person conflict prompt: a 1-1 is not a post
+      // only one person can hold, so another row having one at the same time is
+      // normal rather than something to confirm. The two text fields move with it.
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const src = { ...next[staffIndex] };
+        const moved = src.oneOnOnes[oneOnOneIndex];
+        src.oneOnOnes = src.oneOnOnes.filter((_, j) => j !== oneOnOneIndex);
+        next[staffIndex] = src;
+        const tgt = { ...next[rowIndex] };
+        tgt.oneOnOnes = [...(tgt.oneOnOnes ?? []), { ...moved, id: `o${Date.now()}`, start, end }];
+        next[rowIndex] = tgt;
+        return next;
+      });
 
     } else if (type === 'event') {
       assignEventWithShiftCheck(eventId, rowIndex, { alsoUnassignStaffId: staffId });
@@ -1924,8 +2191,10 @@ export default function DailySchedulePage() {
       if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
         newStart = previewInfo.start;
       } else {
+        // 1-1s join the avoid list so an auto-placed desk turn doesn't land on one.
+        const avoid = [...personEvents, ...(p.oneOnOnes ?? []), ...vrOf(p)];
         for (const shift of p.shifts) {
-          const slot = firstFreeSlot(p.deskShifts, 1, shift.start, shift.end, personEvents);
+          const slot = firstFreeSlot(p.deskShifts, 1, shift.start, shift.end, avoid);
           if (slot !== null) { newStart = slot; break; }
         }
       }
@@ -1961,9 +2230,9 @@ export default function DailySchedulePage() {
       if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
         newStart = previewInfo.start;
       } else {
-        // Desk turns are passed as things to avoid, so an auto-placed VR turn
-        // never lands on top of one.
-        const avoid = [...personEvents, ...(p.deskShifts ?? [])];
+        // Desk turns and 1-1s are passed as things to avoid, so an auto-placed VR
+        // turn never lands on top of one.
+        const avoid = [...personEvents, ...(p.deskShifts ?? []), ...(p.oneOnOnes ?? [])];
         for (const shift of p.shifts) {
           const slot = firstFreeSlot(p.vrShifts, 1, shift.start, shift.end, avoid);
           if (slot !== null) { newStart = slot; break; }
@@ -1994,6 +2263,35 @@ export default function DailySchedulePage() {
         }
         doPlace();
       }
+    } else if (activeDragType === 'oneOnOne') {
+      const p = orderedStaff[staffIndex];
+      const personEvents = todayEvents.filter(ev => ev.assignedStaff.includes(p.id));
+      let newStart = null;
+      if (previewInfo?.staffIndex === staffIndex && previewInfo.valid && previewInfo.start !== null) {
+        newStart = previewInfo.start;
+      } else {
+        const avoid = [...personEvents, ...(p.deskShifts ?? []), ...vrOf(p)];
+        for (const shift of p.shifts) {
+          const slot = firstFreeSlot(p.oneOnOnes ?? [], 1, shift.start, shift.end, avoid);
+          if (slot !== null) { newStart = slot; break; }
+        }
+      }
+      // Nowhere inside a shift to put it — a row with no shift can't host a 1-1.
+      if (newStart === null) { endDrag(); return; }
+      const newEnd = newStart + 1;
+      // Index the new turn will land at, captured before the append so the edit
+      // modal opened below addresses the right one.
+      const newIndex = (p.oneOnOnes ?? []).length;
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const pp = { ...next[staffIndex] };
+        pp.oneOnOnes = [...(pp.oneOnOnes ?? []), { id: `o${Date.now()}`, start: newStart, end: newEnd, kind: '', withWhom: '' }];
+        next[staffIndex] = pp;
+        return next;
+      });
+      // A 1-1 is meaningless until it says what it is and who it's with, so the
+      // editor opens straight away rather than leaving an unlabelled bar behind.
+      setEditModal({ type: 'oneOnOne', staffIndex, oneOnOneIndex: newIndex });
     } else if (activeDragType === 'event' && draggingEventId !== null) {
 
       assignEventWithShiftCheck(draggingEventId, staffIndex);
@@ -2046,7 +2344,7 @@ export default function DailySchedulePage() {
   }
 
   function handleFinalize() {
-    const alerts = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), todayEvents, currentDow);
+    const alerts = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), todayEvents, currentDow, { disabledDuties });
     const issues = alerts.filter(a => a.type !== 'blue');
     if (issues.length > 0) {
       setFinalizeWarning(issues);
@@ -2115,16 +2413,25 @@ export default function DailySchedulePage() {
             />
             <DragChip
               label="New Desk Shift" isActive={activeDragType === 'desk'}
-              color="var(--color-yellow)" borderColor="#5a4428" bg="rgba(61,44,24,0.4)"
+              color="var(--color-bar-desk-dot)" borderColor="var(--color-bar-desk)" bg="var(--color-bar-desk-fill)"
               icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
               onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('desk'); }}
               onDragEnd={endDrag}
             />
+            {vrEnabled && (
+              <DragChip
+                label="New VR Shift" isActive={activeDragType === 'vr'}
+                color="var(--color-bar-vr-dot)" borderColor="var(--color-bar-vr)" bg="var(--color-bar-vr-fill)"
+                icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
+                onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('vr'); }}
+                onDragEnd={endDrag}
+              />
+            )}
             <DragChip
-              label="New VR Shift" isActive={activeDragType === 'vr'}
-              color="var(--color-vr)" borderColor="#5e2226" bg="rgba(94,34,38,0.4)"
+              label="New 1-1" isActive={activeDragType === 'oneOnOne'}
+              color="var(--color-bar-oneone-dot)" borderColor="var(--color-bar-oneone)" bg="var(--color-bar-oneone-fill)"
               icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
-              onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('vr'); }}
+              onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('oneOnOne'); }}
               onDragEnd={endDrag}
             />
             {todayEvents.length > 0 && (
@@ -2134,7 +2441,7 @@ export default function DailySchedulePage() {
               <DragChip
                 key={evt.id} label={evt.name}
                 isActive={activeDragType === 'event' && draggingEventId === evt.id}
-                color="#a080e0" borderColor="#3b2a6e" bg="rgba(59,42,110,0.25)"
+                color="var(--color-bar-event-dot)" borderColor="var(--color-bar-event)" bg="var(--color-bar-event-fill)"
                 icon={<div style={{ width: 8, height: 8, borderRadius: '50%', background: 'currentColor' }} />}
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('event'); setDraggingEventId(evt.id); }}
                 onDragEnd={endDrag}
@@ -2152,35 +2459,29 @@ export default function DailySchedulePage() {
               setTrashHtmlOver(false);
               // Bar drag → delete/unschedule
               if (draggingBarInfo) {
-                const { type, staffIndex, shiftIndex, deskIndex, vrIndex, eventId } = draggingBarInfo;
+                const { type, staffIndex, shiftIndex, deskIndex, vrIndex, oneOnOneIndex, eventId } = draggingBarInfo;
                 if (type === 'shift') {
-                  // Deleting a shift also clears the desk time and event
-                  // assignments that were sitting on it — otherwise those bars
-                  // stay on the row even though the person is now unscheduled.
-                  const person    = orderedStaff[staffIndex];
-                  const removed   = person.shifts[shiftIndex];
-                  const remaining = person.shifts.filter((_, j) => j !== shiftIndex);
-                  const orphaned  = orphanedByShiftRemoval(
-                    removed,
-                    remaining,
-                    person.deskShifts ?? [],
+                  // Deleting a shift also clears the desk time, VR time, 1-1s and
+                  // event assignments that were sitting on it — otherwise those
+                  // bars stay on the row even though the person is now
+                  // unscheduled. The extent captured at drag start is what's
+                  // compared against, not the bar's current position: dragging it
+                  // up here moved it (see removeShiftAndSweep).
+                  const person = orderedStaff[staffIndex];
+                  const { person: swept, events } = removeShiftAndSweep(
+                    person,
+                    shiftIndex,
                     todayEvents.filter(ev => ev.assignedStaff.includes(person.id)),
-                    person.vrShifts ?? [],
+                    draggingBarInfo.originalStart != null
+                      ? { start: draggingBarInfo.originalStart, end: draggingBarInfo.originalEnd }
+                      : null,
                   );
-                  const orphanedDeskIds = new Set(orphaned.deskShifts.map(d => d.id));
-                  const orphanedVrIds   = new Set(orphaned.vrShifts.map(v => v.id));
-
                   setOrderedStaff(prev => {
                     const next = [...prev];
-                    const p = { ...next[staffIndex] };
-                    p.shifts = p.shifts.filter((_, j) => j !== shiftIndex);
-                    p.scheduled = p.shifts.length > 0;
-                    p.deskShifts = (p.deskShifts ?? []).filter(d => !orphanedDeskIds.has(d.id));
-                    p.vrShifts   = (p.vrShifts   ?? []).filter(v => !orphanedVrIds.has(v.id));
-                    next[staffIndex] = p;
+                    next[staffIndex] = swept;
                     return sortByShift(next);
                   });
-                  orphaned.events.forEach(ev => schedule.unassignStaffFromEvent(ev.id, person.id));
+                  events.forEach(ev => schedule.unassignStaffFromEvent(ev.id, person.id));
                 } else if (type === 'desk') {
                   setOrderedStaff(prev => {
                     const next = [...prev];
@@ -2194,6 +2495,14 @@ export default function DailySchedulePage() {
                     const next = [...prev];
                     const p = { ...next[staffIndex] };
                     p.vrShifts = p.vrShifts.filter((_, j) => j !== vrIndex);
+                    next[staffIndex] = p;
+                    return next;
+                  });
+                } else if (type === 'oneOnOne') {
+                  setOrderedStaff(prev => {
+                    const next = [...prev];
+                    const p = { ...next[staffIndex] };
+                    p.oneOnOnes = (p.oneOnOnes ?? []).filter((_, j) => j !== oneOnOneIndex);
                     next[staffIndex] = p;
                     return next;
                   });
@@ -2222,6 +2531,7 @@ export default function DailySchedulePage() {
         onBarMouseDown={handleBarMouseDown}
         onDeskBarMouseDown={handleDeskBarMouseDown}
         onVrBarMouseDown={handleVrBarMouseDown}
+        onOneOnOneBarMouseDown={handleOneOnOneBarMouseDown}
         onEventBarMouseDown={handleEventBarMouseDown}
         activeBar={activeBar}
         activeDragType={activeDragType} hoverRow={hoverRow}
@@ -2231,6 +2541,7 @@ export default function DailySchedulePage() {
         onShiftBarDragStart={handleShiftBarDragStart}
         onDeskBarDragStart={handleDeskBarDragStart}
         onVrBarDragStart={handleVrBarDragStart}
+        onOneOnOneBarDragStart={handleOneOnOneBarDragStart}
         onEventBarDragStart={handleEventBarDragStart}
         onBarDragEnd={handleBarDragEnd}
         onBarDragOver={handleBarDragOver}
@@ -2297,7 +2608,7 @@ export default function DailySchedulePage() {
               <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {finalizeWarning.map((a, i) => (
                   <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'understaffed' ? 'var(--color-green)' : a.type === 'event' ? '#a080e0' : a.type === 'vr' ? 'var(--color-vr)' : 'var(--color-yellow)', flexShrink: 0, marginTop: 3 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'understaffed' ? 'var(--color-green)' : a.type === 'event' ? 'var(--color-bar-event-dot)' : a.type === 'vr' ? 'var(--color-bar-vr-dot)' : a.type === 'oneOnOne' ? 'var(--color-bar-oneone-dot)' : 'var(--color-bar-desk-dot)', flexShrink: 0, marginTop: 3 }} />
                     <span style={{ color: 'var(--color-text-dim)' }}>{a.text}</span>
                   </li>
                 ))}

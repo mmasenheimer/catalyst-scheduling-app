@@ -8,6 +8,11 @@ const { requireAuth, requireManager } = require("../middleware/auth");
 
 const MIN_PASSWORD_LENGTH = 8;
 
+// The schedule bar kinds whose color a user can personalise. Kept in step with
+// BAR_KINDS in frontend/utils/barColors.js and the --bar-*-hue custom properties
+// in frontend/index.css. Shift bars are deliberately absent — they stay green.
+const BAR_COLOR_KINDS = ["desk", "vr", "event", "oneOnOne"];
+
 function normUsername(username) {
   return String(username || "").toLowerCase().trim();
 }
@@ -209,6 +214,41 @@ router.get("/me", requireAuth, async (req, res) => {
     res.json({ user });
   } catch (err) {
     res.status(500).json({ error: "Failed to load account" });
+  }
+});
+
+// PATCH /api/auth/me/bar-colors  { desk?, vr?, event?, oneOnOne? } → { user }
+//
+// The hues a user has picked for the schedule's bar kinds. Sent as a partial: a
+// key present is set, a key sent as null clears it back to the app default, and a
+// key left out is untouched — so changing one bar's color never disturbs the
+// other three (two tabs open on the picker would otherwise overwrite each other).
+//
+// Any authenticated user may set their own; nothing here is manager-only, because
+// this only affects what that account sees.
+router.patch("/me/bar-colors", requireAuth, async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const update = {};
+    for (const kind of BAR_COLOR_KINDS) {
+      if (!(kind in body)) continue;
+      const value = body[kind];
+      if (value === null) { update[`barColors.${kind}`] = undefined; continue; }
+      // Reject rather than wrap: a hue outside 0–359 means the client is confused,
+      // and silently coercing it would hide that.
+      if (!Number.isInteger(value) || value < 0 || value > 359) {
+        return res.status(400).json({ error: `${kind} must be a whole number from 0 to 359` });
+      }
+      update[`barColors.${kind}`] = value;
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: "No bar colors given to update" });
+    }
+    const user = await User.findByIdAndUpdate(req.user.id, { $set: update }, { new: true });
+    if (!user) return res.status(404).json({ error: "Account no longer exists" });
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save bar colors" });
   }
 });
 

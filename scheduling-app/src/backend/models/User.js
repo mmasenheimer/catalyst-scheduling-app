@@ -25,6 +25,18 @@ const userSchema = new Schema(
     // that's what makes a password reset actually cut off active sessions
     // (JWTs are stateless and can't be revoked individually).
     tokenVersion: { type: Number, default: 0 },
+    // Hue (0–359) per schedule bar kind, so the colors a manager picks follow
+    // them to any device instead of living in one browser's localStorage. Purely
+    // presentational and per-account: it changes nothing about the schedule and
+    // nobody else's view. A kind left unset falls back to the default in
+    // index.css, which is why there are no defaults here — an absent value has to
+    // stay distinguishable from a deliberate choice.
+    barColors: {
+      desk: { type: Number, default: undefined },
+      vr: { type: Number, default: undefined },
+      event: { type: Number, default: undefined },
+      oneOnOne: { type: Number, default: undefined },
+    },
     createdAt: { type: Date, default: Date.now },
   },
   {

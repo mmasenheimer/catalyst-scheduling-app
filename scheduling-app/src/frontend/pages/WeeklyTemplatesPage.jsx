@@ -7,6 +7,7 @@ import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
 import { DeleteIcon } from '../components/DeleteIcon';
+import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -65,10 +66,11 @@ const DAY_NAME_TO_DOW = {
 };
 
 function AlertsBar({ staff, day }) {
-  const alerts   = buildTemplateAlerts(staff, DAY_NAME_TO_DOW[day] ?? null);
-  // A lookup, not a chain: a type missing here renders a dot with no colour at
+  const { vrEnabled } = useSettings();
+  const alerts   = buildTemplateAlerts(staff, DAY_NAME_TO_DOW[day] ?? null, { disabledDuties: vrEnabled ? [] : ['vr'] });
+  // A lookup, not a chain: a type missing here renders a dot with no color at
   // all rather than falling back to yellow.
-  const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-yellow)', vr: 'var(--color-vr)', blue: 'var(--color-accent-bright)' };
+  const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', blue: 'var(--color-accent-bright)' };
   return (
     <div className="p-3 rounded-xl mb-5 border"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', minHeight: 72 }}>
@@ -333,6 +335,7 @@ function TemplateGrid({
   onBarDragOver, onBarDrop, onBarContextMenu,
   getPersonAvailability, previewInfo, onRemoveFromDay,
 }) {
+  const { vrEnabled } = useSettings();
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   function posStyle(start, end) {
@@ -345,7 +348,7 @@ function TemplateGrid({
 
   const toolbarHighlight = activeDragType === 'shift'
     ? { background: 'rgba(74,124,94,0.15)',  borderColor: 'var(--color-green)' }
-    : { background: 'rgba(200,148,56,0.12)', borderColor: 'var(--color-yellow)' };
+    : { background: 'var(--color-bar-desk-fill-soft)', borderColor: 'var(--color-bar-desk-bright)' };
 
   return (
     <>
@@ -490,7 +493,7 @@ function TemplateGrid({
                       ? (currentDragType === 'shift' ? 'rgba(74,124,94,0.35)' : 'rgba(200,148,56,0.35)')
                       : 'rgba(200,64,64,0.25)',
                     border: `2px dashed ${previewInfo.valid
-                      ? (currentDragType === 'shift' ? 'var(--color-green)' : 'var(--color-yellow)')
+                      ? (currentDragType === 'shift' ? 'var(--color-green)' : 'var(--color-bar-desk-bright)')
                       : 'var(--color-red)'}`,
                     zIndex: 22,
                   }}
@@ -544,7 +547,7 @@ function TemplateGrid({
                     style={{
                       ...posStyle(desk.start, desk.end),
                       top: '50%', transform: 'translateY(-50%)',
-                      background: 'var(--color-yellow)',
+                      background: 'var(--color-bar-desk)',
                       opacity: isDeskDragging ? 0.3 : (isDeskActive ? 1 : 0.75),
                       cursor: 'grab',
                       boxShadow: isDeskActive ? '0 0 0 2px #e0b050' : 'none',
@@ -573,7 +576,7 @@ function TemplateGrid({
 
               {/* VR bars — same behaviour as desk, different post. Higher z-index
                   so that on the overlap the alerts flag, this stays clickable. */}
-              {person.vrShifts.map((vr, vi) => {
+              {vrEnabled && person.vrShifts.map((vr, vi) => {
                 const isVrActive   = activeBar?.type === 'vr' && activeBar?.staffIndex === i && activeBar?.vrIndex === vi;
                 const isVrDragging = draggingBarInfo?.type === 'vr' && draggingBarInfo?.staffIndex === i && draggingBarInfo?.vrIndex === vi;
                 return (
@@ -584,7 +587,7 @@ function TemplateGrid({
                     style={{
                       ...posStyle(vr.start, vr.end),
                       top: '50%', transform: 'translateY(-50%)',
-                      background: 'var(--color-vr)',
+                      background: 'var(--color-bar-vr)',
                       opacity: isVrDragging ? 0.3 : (isVrActive ? 1 : 0.75),
                       cursor: 'grab',
                       boxShadow: isVrActive ? '0 0 0 2px #e05a62' : 'none',
@@ -621,8 +624,8 @@ function TemplateGrid({
     <div className="flex items-center gap-5 px-1 flex-wrap mb-4">
       {[
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-vr)', opacity: 0.75 }} />, label: 'VR' },
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
+        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
         { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'rgba(96,165,250,0.18)', border: '1px solid rgba(96,165,250,0.35)' }} />, label: 'Available' },
       ].map(({ swatch, label }) => (
         <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
@@ -638,6 +641,7 @@ function TemplateGrid({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyTemplatesPage() {
+  const { vrEnabled } = useSettings();
   const { templates, selectedId, setSelectedId, registerSelectGuard, updateTemplate, removeTemplate } = useTemplates();
   const { staff, getAvailability } = useScheduleContext();
   const [templateName,  setTemplateName]  = useState('');
@@ -1673,16 +1677,16 @@ export default function WeeklyTemplatesPage() {
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('shift'); }}
                   onDragEnd={endDrag}
                 />
-                <DragChip
+                {vrEnabled && <DragChip
                   label="New VR Shift" isActive={activeDragType === 'vr'}
-                  color="var(--color-vr)" borderColor="#5e2226" bg="rgba(94,34,38,0.4)"
+                  color="var(--color-bar-vr-dot)" borderColor="var(--color-bar-vr)" bg="var(--color-bar-vr-fill)"
                   icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('vr'); }}
                   onDragEnd={endDrag}
-                />
+                />}
                 <DragChip
                   label="New Desk Shift" isActive={activeDragType === 'desk'}
-                  color="var(--color-yellow)" borderColor="#5a4428" bg="rgba(61,44,24,0.4)"
+                  color="var(--color-bar-desk-dot)" borderColor="var(--color-bar-desk)" bg="var(--color-bar-desk-fill)"
                   icon={<div style={{ width: 14, height: 10, borderRadius: 2, border: '1.5px solid currentColor' }} />}
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; setActiveDragType('desk'); }}
                   onDragEnd={endDrag}

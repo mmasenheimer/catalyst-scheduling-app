@@ -56,7 +56,7 @@ export default function AvailabilityManagerPage() {
         <div>
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Staff Availability</h2>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-            Weekly availability submitted by staff — reference this when building the daily schedule
+            Weekly availability submitted by staff — timestamped when sent in
           </p>
         </div>
       </div>

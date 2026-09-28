@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi, getToken, setToken, UNAUTHORIZED_EVENT } from '../utils/api';
+import { adoptServerBarHues, clearBarHues } from '../utils/barColors';
 
 const AuthContext = createContext(null);
 
@@ -13,7 +14,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!getToken()) return;
     authApi.me()
-      .then(({ user }) => setUser(user))
+      .then(({ user }) => {
+        setUser(user);
+        // The account's schedule bar colors. The cached palette already painted
+        // before first render; this replaces it with the server's copy, which is
+        // what picks up a color changed on another device.
+        adoptServerBarHues(user?.barColors);
+      })
       .catch(() => { setToken(null); setUser(null); })
       .finally(() => setLoading(false));
   }, []);
@@ -31,6 +38,7 @@ export function AuthProvider({ children }) {
     const { token, user } = await authApi.login(username, password);
     setToken(token);
     setUser(user);
+    adoptServerBarHues(user?.barColors);
     return user;
   }, []);
 
@@ -49,6 +57,9 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    // Drop the cached palette too, or the next account to sign in on this browser
+    // would paint with the previous one's colors until /auth/me lands.
+    clearBarHues();
   }, []);
 
   return (

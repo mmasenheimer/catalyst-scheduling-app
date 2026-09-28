@@ -83,6 +83,7 @@ app.use("/api/availability", requireAuth, require("./routes/availability"));
 app.use("/api/templates", requireAuth, require("./routes/templates"));
 app.use("/api/notifications", requireAuth, require("./routes/notifications"));
 app.use("/api/requests", requireAuth, require("./routes/requests"));
+app.use("/api/settings", requireAuth, require("./routes/settings"));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;

@@ -21,8 +21,73 @@
   --color-vr: #b5333a;
   --color-red: #c84040; /* muted red */
   /* The expanding circle on .ripple-btn. Same hue as accent-bright so the
-     hover reads as the button warming up rather than changing colour. */
+     hover reads as the button warming up rather than changing color. */
   --color-accent-ripple: rgba(224, 112, 80, 0.55);
+
+  /* ── Schedule bar colors ───────────────────────────────────────────────
+     The four bar kinds a manager can recolor: desk duty, VR duty, events, and
+     1-1s. Each derives its whole set of shades from one hue, which the color
+     picker in the Daily and Weekly views rewrites at runtime by setting
+     --bar-<kind>-hue on this element (see utils/barColors.js).
+
+     Shift bars are deliberately absent: they stay --color-green as the neutral
+     base layer the other four sit on top of.
+
+     Saturation and lightness are fixed at the vivid pair below, identically for
+     every kind, so no choice can come out washed out and every bar stays dark
+     enough to carry white label text. Keep these in step with the SAT / LUM
+     constants in utils/barColors.js, which the picker's swatches are drawn from.
+
+     The defaults approximate the colors these bars have always had: desk amber,
+     VR brick red, event violet. 1-1 is new, and takes a teal that none of the
+     other three (nor the green shift bars) sits near.
+
+     Note these are theme-independent, unlike the --color-yellow / --color-vr the
+     desk and VR bars used to draw from. Those two are also the app's *warning*
+     colors (the Alerts heading, the over-hours banner), which is exactly why
+     the bars needed their own variables rather than repointing those. */
+  --bar-desk-hue: 38;
+  --bar-vr-hue: 357;
+  --bar-event-hue: 257;
+  --bar-oneone-hue: 186;
+
+  --color-bar-desk: hsl(var(--bar-desk-hue) 70% 44%);
+  --color-bar-desk-bright: hsl(var(--bar-desk-hue) 70% 62%);
+  --color-bar-desk-dot: hsl(var(--bar-desk-hue) 70% 72%);
+  --color-bar-desk-fill: hsl(var(--bar-desk-hue) 70% 44% / 0.25);
+  --color-bar-desk-fill-soft: hsl(var(--bar-desk-hue) 70% 44% / 0.2);
+  --color-bar-desk-fill-strong: hsl(var(--bar-desk-hue) 70% 44% / 0.5);
+  --color-bar-desk-border: hsl(var(--bar-desk-hue) 70% 62% / 0.35);
+
+  --color-bar-vr: hsl(var(--bar-vr-hue) 70% 44%);
+  --color-bar-vr-bright: hsl(var(--bar-vr-hue) 70% 62%);
+  --color-bar-vr-dot: hsl(var(--bar-vr-hue) 70% 72%);
+  --color-bar-vr-fill: hsl(var(--bar-vr-hue) 70% 44% / 0.25);
+  --color-bar-vr-fill-soft: hsl(var(--bar-vr-hue) 70% 44% / 0.2);
+  --color-bar-vr-fill-strong: hsl(var(--bar-vr-hue) 70% 44% / 0.5);
+  --color-bar-vr-border: hsl(var(--bar-vr-hue) 70% 62% / 0.35);
+
+  --color-bar-event: hsl(var(--bar-event-hue) 70% 44%);
+  --color-bar-event-bright: hsl(var(--bar-event-hue) 70% 62%);
+  --color-bar-event-dot: hsl(var(--bar-event-hue) 70% 72%);
+  --color-bar-event-fill: hsl(var(--bar-event-hue) 70% 44% / 0.25);
+  --color-bar-event-fill-soft: hsl(var(--bar-event-hue) 70% 44% / 0.2);
+  --color-bar-event-fill-strong: hsl(var(--bar-event-hue) 70% 44% / 0.5);
+  --color-bar-event-border: hsl(var(--bar-event-hue) 70% 62% / 0.35);
+
+  --color-bar-oneone: hsl(var(--bar-oneone-hue) 70% 44%);
+  --color-bar-oneone-bright: hsl(var(--bar-oneone-hue) 70% 62%);
+  --color-bar-oneone-dot: hsl(var(--bar-oneone-hue) 70% 72%);
+  --color-bar-oneone-fill: hsl(var(--bar-oneone-hue) 70% 44% / 0.25);
+  --color-bar-oneone-fill-soft: hsl(var(--bar-oneone-hue) 70% 44% / 0.2);
+  --color-bar-oneone-fill-strong: hsl(var(--bar-oneone-hue) 70% 44% / 0.5);
+  --color-bar-oneone-border: hsl(var(--bar-oneone-hue) 70% 62% / 0.35);
+
+  /* Label text printed on any bar. Explicit rather than inherited: these spans
+     used to fall back to --color-text, which is near-black in light theme and so
+     put dark text on a dark bar. One value for all four — the fixed lightness
+     above guarantees white reads on every hue. */
+  --color-bar-text: #ffffff;
 }
 
 body {
@@ -219,7 +284,7 @@ input.date-input-custom::-webkit-calendar-picker-indicator {
    The label needs its own element because both overlays are absolutely
    positioned siblings — bare text would sit underneath them.
 
-   Colour comes from --color-accent / --color-accent-ripple, so this follows the
+   Color comes from --color-accent / --color-accent-ripple, so this follows the
    light and dark themes rather than hardcoding terracotta.
 */
 .ripple-btn {

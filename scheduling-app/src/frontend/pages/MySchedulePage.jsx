@@ -8,7 +8,9 @@ import {
   toDateStr,
   buildSavedScheduleMap,
   personForDate,
+  oneOnOneLabel,
 } from '../utils/scheduleUtils';
+import { useSettings } from '../context/SettingsContext';
 import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
@@ -111,6 +113,7 @@ function WeekHeader({ me, weekDays, onPrev, onNext, shiftsCount, hoursCount, eve
 // ── Schedule grid (read-only) ──────────────────────────────────────────────────
 
 function MyScheduleGrid({ me, weekDays, events, personFor }) {
+  const { vrEnabled } = useSettings();
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   return (
@@ -145,6 +148,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
           const shifts     = person?.shifts ?? [];
           const deskShifts = person?.deskShifts ?? [];
           const vrShifts   = person?.vrShifts ?? [];
+          const oneOnOnes  = person?.oneOnOnes ?? [];
           const scheduled  = shifts.length > 0;
           const dayEvents  = getEventsForDate(date, events).filter(e => e.assignedStaff.includes(me.id));
           const today     = isToday(date);
@@ -207,27 +211,42 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                       <div
                         key={dk.id ?? `${dk.start}-${dk.end}`}
                         className="absolute top-3 h-8 rounded select-none"
-                        style={{ ...posStyle(dk.start, dk.end), background: 'var(--color-yellow)', opacity: 0.75, zIndex: 2 }}
+                        style={{ ...posStyle(dk.start, dk.end), background: 'var(--color-bar-desk)', opacity: 0.75, zIndex: 2 }}
                       >
                         <span
                           className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                          style={{ fontSize: 9, color: 'white', fontWeight: 600 }}
+                          style={{ fontSize: 9, color: 'var(--color-bar-text)', fontWeight: 600 }}
                         >
                           Desk
                         </span>
                       </div>
                     ))}
-                    {vrShifts.map(v => (
+                    {vrEnabled && vrShifts.map(v => (
                       <div
                         key={v.id ?? `${v.start}-${v.end}`}
                         className="absolute top-3 h-8 rounded select-none"
-                        style={{ ...posStyle(v.start, v.end), background: 'var(--color-vr)', opacity: 0.75, zIndex: 3 }}
+                        style={{ ...posStyle(v.start, v.end), background: 'var(--color-bar-vr)', opacity: 0.75, zIndex: 3 }}
                       >
                         <span
                           className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                          style={{ fontSize: 9, color: 'white', fontWeight: 600 }}
+                          style={{ fontSize: 9, color: 'var(--color-bar-text)', fontWeight: 600 }}
                         >
                           VR
+                        </span>
+                      </div>
+                    ))}
+                    {oneOnOnes.map(ooo => (
+                      <div
+                        key={ooo.id ?? `${ooo.start}-${ooo.end}`}
+                        className="absolute top-3 h-8 rounded select-none"
+                        title={oneOnOneLabel(ooo)}
+                        style={{ ...posStyle(ooo.start, ooo.end), background: 'var(--color-bar-oneone)', opacity: 0.85, zIndex: 4 }}
+                      >
+                        <span
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                          style={{ fontSize: 9, color: 'var(--color-bar-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', paddingLeft: 6, paddingRight: 6 }}
+                        >
+                          {oneOnOneLabel(ooo, { short: true })}
                         </span>
                       </div>
                     ))}
@@ -239,14 +258,14 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                           title={`${evt.name} — you're working this`}
                           style={{
                             ...posStyle(evt.start, evt.end),
-                            background: '#3b2a6e',
+                            background: 'var(--color-bar-event)',
                             opacity: 0.9,
                             zIndex: 3,
                           }}
                         >
                           <span
                             className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                            style={{ fontSize: 10, color: 'white', paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden' }}
+                            style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-bar-text)', paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden' }}
                           >
                             {evt.name}
                           </span>
@@ -270,9 +289,10 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
       <div className="flex items-center gap-5 px-1 flex-wrap">
         {[
           { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-yellow)', opacity: 0.75 }} />, label: 'Desk' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-vr)', opacity: 0.75 }} />, label: 'VR' },
-          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: '#3b2a6e', opacity: 0.9 }} />, label: 'Event' },
+          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
+        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
+        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-oneone)', opacity: 0.85 }} />, label: '1-1' },
+          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-event)', opacity: 0.9 }} />, label: 'Event' },
         ].map(({ swatch, label }) => (
           <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
             {swatch}{label}
