@@ -3,6 +3,7 @@ import { availabilityApi } from '../utils/api';
 import { generateWeeklyTemplate, summarizeGaps, TEMPLATE_DAYS } from '../utils/generateTemplate';
 import { formatTime, WEEK_DAY_NAMES } from '../utils/scheduleUtils';
 import { useSettings } from '../context/SettingsContext';
+import { RippleButton } from './RippleButton';
 import mockAvailability from '../../data/mockAvailability';
 
 /**
@@ -85,12 +86,7 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
-          <div>
-            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Generate Template from Availability</h3>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-              Builds shifts that meet the minimum staffing targets using only submitted availability.
-            </p>
-          </div>
+          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Generate Template from Availability</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
         </div>
 
@@ -226,13 +222,13 @@ export function GenerateTemplateModal({ staff, onCreate, onClose }) {
           <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
             Cancel
           </button>
-          <button
+          <RippleButton
             onClick={handleCreate}
             disabled={!result || saving}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none', opacity: !result || saving ? 0.6 : 1 }}
+            style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, opacity: !result || saving ? 0.6 : 1 }}
           >
             {saving ? 'Creating…' : 'Create Template'}
-          </button>
+          </RippleButton>
         </div>
       </div>
     </div>

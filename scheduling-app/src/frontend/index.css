@@ -107,6 +107,29 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* ── Button corners ───────────────────────────────────────────────────────── */
+/*
+   Every button in the app uses the same 4px corner as the Log out button
+   (Tailwind's `rounded`). Buttons set their corners in a dozen different ways —
+   Tailwind classes, inline borderRadius values from 4 to 20 — so one rule here
+   enforces it, and any button added later inherits it automatically.
+
+   !important is deliberate: it's the only way a stylesheet can win over an
+   inline `style={{ borderRadius }}`. The side effect is that a button's own
+   `rounded-lg` class or inline radius no longer does anything — this rule is
+   the one place to change button corners.
+
+   Opt out with `round-button`, for the few buttons that are meant to be circles
+   (the colour-picker trigger and its preset swatches).
+*/
+button {
+  border-radius: 4px !important;
+}
+
+button.round-button {
+  border-radius: 9999px !important;
+}
+
 /* ── Glass surface ────────────────────────────────────────────────────────── */
 /*
    A translucent --color-surface, for cards that should let the page backdrop show

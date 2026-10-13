@@ -416,7 +416,7 @@ function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCa
 function SuccessState({ request, onReset }) {
   return (
     <div
-      className="p-5 rounded border glass-surface"
+      className="p-5 rounded-md border glass-surface"
       style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="text-center py-6">
@@ -471,7 +471,7 @@ function SectionHeading({ title, sub }) {
 function EmptyState({ text }) {
   return (
     <div
-      className="px-4 py-3 rounded border text-sm glass-surface"
+      className="px-4 py-3 rounded-md border text-sm glass-surface"
       style={{
         borderColor: 'var(--color-border)',
         color: 'var(--color-text-dim)',
@@ -519,7 +519,7 @@ export default function ShiftRequestPage() {
     return (
       <div>
         <div
-          className="flex items-center p-5 rounded border mb-4 glass-surface"
+          className="flex items-center p-5 rounded-md border mb-4 glass-surface"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <div>
@@ -610,7 +610,7 @@ export default function ShiftRequestPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex justify-between items-start p-5 rounded mb-6 border glass-surface"
+        className="flex justify-between items-start p-5 rounded-md mb-6 border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div>
@@ -632,7 +632,7 @@ export default function ShiftRequestPage() {
         <>
           {/* Tabs */}
           <div
-            className="flex rounded p-1 mb-6 w-fit border glass-surface"
+            className="flex rounded-md p-1 mb-6 w-fit border glass-surface"
             style={{ borderColor: 'var(--color-border)' }}
           >
             {[

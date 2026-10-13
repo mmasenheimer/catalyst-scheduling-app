@@ -160,7 +160,7 @@ function AppLayoutInner() {
         if (to === "/weekly" && location.pathname !== "/weekly") setWeeklyViewLoading(true);
         if (to === "/team-schedule" && location.pathname !== "/team-schedule") setTeamScheduleLoading(true);
       }}
-      className="relative py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
+      className="relative py-2 px-3 rounded text-sm font-medium transition-colors hover:opacity-90"
       style={({ isActive }) => ({
         background:  isActive ? "rgba(176, 80, 48, 0.1)" : "transparent",
         color:       isActive ? "var(--color-text)" : "var(--color-text-dim)",
@@ -307,11 +307,10 @@ function AppLayoutInner() {
               Templates
             </span>
             <RippleButton
-              onClick={() => setApplyTplOpen(true)}
-              tone="green"
-              style={{ padding: '3px 9px', borderRadius: 5, fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}
+              onClick={() => setGenerateOpen(true)}
+              style={{ padding: '3px 9px', borderRadius: 5, fontSize: 10, fontWeight: 600, textAlign: 'center' }}
             >
-              Apply a Template
+              ＋ Auto-Generate from Availability
             </RippleButton>
           </div>
 
@@ -324,11 +323,12 @@ function AppLayoutInner() {
           </RippleButton>
 
           <RippleButton
-            onClick={() => setGenerateOpen(true)}
+            onClick={() => setApplyTplOpen(true)}
+            tone="green"
             rippleSize="18em"
             style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 12, marginBottom: 4, lineHeight: 1.3 }}
           >
-            ＋ Auto-Generate from Availability
+            Apply a Template
           </RippleButton>
 
           {(() => {

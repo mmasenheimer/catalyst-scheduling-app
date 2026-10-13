@@ -408,7 +408,7 @@ export default function CalendarPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex items-center gap-3 p-4 sm:p-5 rounded mb-6 border glass-surface"
+        className="flex items-center gap-3 p-4 sm:p-5 rounded-md mb-6 border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}
       >
         {/* Left: title */}
@@ -470,7 +470,7 @@ export default function CalendarPage() {
 
       {/* Calendar grid */}
       <div
-        className="rounded border overflow-hidden glass-surface"
+        className="rounded-md border overflow-hidden glass-surface"
         style={{
           borderColor: 'var(--color-border)',
           // Fills the rest of the page rather than stopping at the cells'

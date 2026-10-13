@@ -251,7 +251,7 @@ export default function AddEventPage() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="mb-6 p-4 sm:p-5 rounded border glass-surface text-center"
+      <div className="mb-6 p-4 sm:p-5 rounded-md border glass-surface text-center"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>
           Add Event
@@ -263,7 +263,7 @@ export default function AddEventPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="p-6 rounded border flex flex-col gap-5 glass-surface"
+        className="p-6 rounded-md border flex flex-col gap-5 glass-surface"
         style={{ borderColor: 'var(--color-border)' }}
       >
         {/* Event Name */}

@@ -97,6 +97,7 @@ export function BarColorPicker({ align = 'right' }) {
           four-way split nobody can read at 28px. */}
       <button
         type="button"
+        className="round-button"
         onClick={() => setOpen(o => !o)}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -201,6 +202,7 @@ export function BarColorPicker({ align = 'right' }) {
               <button
                 key={h}
                 type="button"
+                className="round-button"
                 onClick={() => setBarHue(activeKind, h)}
                 title={label}
                 aria-label={label}

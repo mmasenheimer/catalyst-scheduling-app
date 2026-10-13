@@ -145,7 +145,7 @@ function DayEventsList({ events, staff, onDelete }) {
 function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, onDragEnd }) {
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title={label}
-      style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:7, border:`1px dashed ${isActive ? color : borderColor}`, color: isActive ? color : 'var(--color-text-dim)', background: isActive ? bg : 'transparent', cursor:'grab', fontSize:11, fontWeight:500, userSelect:'none', maxWidth:140 }}>
+      style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:4, border:`1px dashed ${isActive ? color : borderColor}`, color: isActive ? color : 'var(--color-text-dim)', background: isActive ? bg : 'transparent', cursor:'grab', fontSize:11, fontWeight:500, userSelect:'none', maxWidth:140 }}>
       <span style={{ pointerEvents:'none' }}>{icon}</span>
       <span style={{ pointerEvents:'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
     </div>
@@ -1340,7 +1340,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   };
 
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:4, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>

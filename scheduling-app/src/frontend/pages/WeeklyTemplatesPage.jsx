@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -8,6 +8,7 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
 import { DeleteIcon } from '../components/DeleteIcon';
 import { useSettings } from '../context/SettingsContext';
+import { RippleButton } from '../components/RippleButton';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 
@@ -72,7 +73,7 @@ function AlertsBar({ staff, day }) {
   // all rather than falling back to yellow.
   const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', blue: 'var(--color-accent-bright)' };
   return (
-    <div className="p-3 rounded mb-5 border glass-surface"
+    <div className="p-3 rounded-md mb-5 border glass-surface"
       style={{ borderColor: 'var(--color-border)', minHeight: 72 }}>
       <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
@@ -140,7 +141,7 @@ function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, 
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       title={label}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium select-none transition-all"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs font-medium select-none transition-all"
       style={{
         borderStyle: 'dashed',
         borderColor: isActive ? color : borderColor,
@@ -336,6 +337,27 @@ function TemplateGrid({
   getPersonAvailability, previewInfo, onRemoveFromDay,
 }) {
   const { vrEnabled } = useSettings();
+
+  // Stretch the grid card down to the bottom of the page so it fills the space
+  // instead of stopping at its last row. Measured rather than a fixed calc(),
+  // because what sits above it varies: the alerts box grows with the number of
+  // alerts and the staff pool wraps with the roster. Written straight to the DOM
+  // node (no state), so measuring can never trigger a re-render loop. Only a
+  // minimum — a grid with more rows than fit just grows and the page scrolls.
+  const gridRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    const main = el?.closest('main');
+    if (!el || !main) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+      const padBottom = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+      el.style.minHeight = `${Math.max(0, main.clientHeight - top - padBottom)}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   function posStyle(start, end) {
@@ -352,7 +374,7 @@ function TemplateGrid({
 
   return (
     <>
-    <div className="rounded border overflow-x-auto mb-4 glass-surface"
+    <div ref={gridRef} className="rounded-md border overflow-x-auto glass-surface"
       style={{ borderColor: 'var(--color-border)' }}>
 
       {/* Time header */}
@@ -618,20 +640,6 @@ function TemplateGrid({
         ))
       )}
 
-    </div>
-
-    {/* Legend */}
-    <div className="flex items-center gap-5 px-1 flex-wrap mb-4">
-      {[
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
-        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'rgba(96,165,250,0.18)', border: '1px solid rgba(96,165,250,0.35)' }} />, label: 'Available' },
-      ].map(({ swatch, label }) => (
-        <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          {swatch}{label}
-        </div>
-      ))}
     </div>
 
     </>
@@ -1511,7 +1519,7 @@ export default function WeeklyTemplatesPage() {
         {selectedId && (
           <>
             {/* Template header */}
-            <div className="p-4 rounded border mb-4 glass-surface"
+            <div className="p-4 rounded-md border mb-4 glass-surface"
               style={{ borderColor: 'var(--color-border)' }}>
               <div className="flex items-start gap-3">
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1548,40 +1556,20 @@ export default function WeeklyTemplatesPage() {
                   />
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'flex-start', paddingTop: 4 }}>
-                  <button
+                  <RippleButton
                     onClick={handleSave}
-                    style={{
-                      padding: '7px 18px', borderRadius: 8, border: 'none',
-                      background: justSaved ? '#1a2a1a' : 'var(--color-accent)',
-                      color: justSaved ? '#6ab888' : 'white',
-                      fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                      transition: 'background 0.15s, color 0.15s',
-                    }}
-                    onMouseEnter={e => { if (!justSaved) e.currentTarget.style.opacity = '0.85'; }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                    tone={justSaved ? 'done' : 'accent'}
+                    style={{ padding: '7px 18px', fontWeight: 600, fontSize: 13, transition: 'background 0.15s, color 0.15s' }}
                   >
                     {justSaved ? '✓ Saved' : 'Save'}
-                  </button>
-                  <button
+                  </RippleButton>
+                  <RippleButton
                     onClick={handleDelete}
-                    style={{
-                      padding: '7px 18px', borderRadius: 8,
-                      border: '1px solid var(--color-border)',
-                      background: 'transparent', color: 'var(--color-text-dim)',
-                      fontSize: 13, cursor: 'pointer',
-                      transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.borderColor = 'var(--color-red)';
-                      e.currentTarget.style.color = '#f07070';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.borderColor = 'var(--color-border)';
-                      e.currentTarget.style.color = 'var(--color-text-dim)';
-                    }}
+                    tone="red"
+                    style={{ padding: '7px 18px', fontWeight: 600, fontSize: 13 }}
                   >
                     Delete
-                  </button>
+                  </RippleButton>
                 </div>
               </div>
             </div>
@@ -1613,7 +1601,7 @@ export default function WeeklyTemplatesPage() {
             <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} day={currentDay} />
 
             {/* Staff pool */}
-            <div className="p-3 rounded border mb-4 glass-surface"
+            <div className="p-3 rounded-md border mb-4 glass-surface"
               style={{ borderColor: 'var(--color-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Staff Pool — drag to add
