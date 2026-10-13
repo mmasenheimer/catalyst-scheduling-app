@@ -306,12 +306,6 @@ function AppLayoutInner() {
             <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)' }}>
               Templates
             </span>
-            <RippleButton
-              onClick={() => setGenerateOpen(true)}
-              style={{ padding: '3px 9px', borderRadius: 5, fontSize: 10, fontWeight: 600, textAlign: 'center' }}
-            >
-              ＋ Auto-Generate from Availability
-            </RippleButton>
           </div>
 
           <RippleButton
@@ -320,6 +314,14 @@ function AppLayoutInner() {
             style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 13, marginBottom: 4 }}
           >
             ＋ New Template
+          </RippleButton>
+
+          <RippleButton
+            onClick={() => setGenerateOpen(true)}
+            rippleSize="18em"
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 12, marginBottom: 4, lineHeight: 1.3 }}
+          >
+            ＋ Auto-Generate from Availability
           </RippleButton>
 
           <RippleButton
@@ -373,7 +375,7 @@ function AppLayoutInner() {
               <>
                 {weeklyTpls.length > 0 && (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'white', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>Weekly</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'white', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>Week</div>
                     {weeklyTpls.map(renderCard)}
                   </>
                 )}
