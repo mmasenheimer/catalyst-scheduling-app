@@ -250,7 +250,7 @@ export default function AddEventPage() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="mb-6 p-4 sm:p-5 rounded-xl border glass-surface"
+      <div className="mb-6 p-4 sm:p-5 rounded-xl border glass-surface text-center"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>
           Add Event
@@ -274,7 +274,6 @@ export default function AddEventPage() {
             type="text"
             value={form.name}
             onChange={e => set('name', e.target.value)}
-            placeholder="e.g. Author Reading, Board Game Night"
             className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
             style={inputStyle}
           />
@@ -283,7 +282,7 @@ export default function AddEventPage() {
         {/* Event Type */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Event Type
+            Event Type <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
           <select
             value={form.type}
@@ -303,7 +302,7 @@ export default function AddEventPage() {
         <div className="flex gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-              Start Time
+              Start Time <span style={{ color: 'var(--color-red)' }}>*</span>
             </label>
             <select
               value={form.start}
@@ -318,7 +317,7 @@ export default function AddEventPage() {
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-              End Time
+              End Time <span style={{ color: 'var(--color-red)' }}>*</span>
             </label>
             <select
               value={form.end}
@@ -428,7 +427,7 @@ export default function AddEventPage() {
         {form.days.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
-              Assign Staff
+              Assign Staff <span style={{ color: 'var(--color-red)' }}>*</span>
             </label>
             <p className="text-xs mb-2.5" style={{ color: 'var(--color-text-dim)' }}>
               Showing availability for {formatTime(form.start)} – {formatTime(form.end)}.
@@ -525,7 +524,7 @@ export default function AddEventPage() {
         {/* Staff Needed */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Staff Needed
+            Staff Needed <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
           <input
             type="number"
@@ -533,7 +532,7 @@ export default function AddEventPage() {
             max={8}
             value={form.staffNeeded}
             onChange={e => set('staffNeeded', Number(e.target.value))}
-            className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
+            className="no-spinner w-full px-3 py-2 rounded-lg border text-sm outline-none"
             style={inputStyle}
           />
         </div>
@@ -541,12 +540,11 @@ export default function AddEventPage() {
         {/* Notes */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Other Information
+            Other Information <span style={{ color: 'var(--color-red)' }}>*</span>
           </label>
           <textarea
             value={form.notes}
             onChange={e => set('notes', e.target.value)}
-            placeholder="e.g. Meeting room B, bring supplies…"
             rows={3}
             className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none"
             style={inputStyle}

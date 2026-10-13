@@ -12,6 +12,7 @@ import {
 import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
+import { RippleButton } from '../components/RippleButton';
 
 function fmtT(t) {
   const h   = Math.floor(t);
@@ -190,10 +191,10 @@ function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEv
       </div>
 
       <div style={{ padding: '6px 8px 8px', borderTop: '1px solid var(--color-border)' }}>
-        <button onClick={onNavigate}
-          style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>
+        <RippleButton onClick={onNavigate} rippleSize="18em"
+          style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600 }}>
           Open Daily Schedule →
-        </button>
+        </RippleButton>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { studioHours } from '../../data/mockData';
 import { authApi, availabilityApi } from '../utils/api';
+import { RippleButton } from '../components/RippleButton';
 
 const emptyForm = { name: '', username: '', maxHoursPerWeek: '' };
 
@@ -164,13 +165,9 @@ export default function ManageStaffPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Manage Staff</h2>
-        <button
-          onClick={openForm}
-          className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-85 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white', border: 'none' }}
-        >
+        <RippleButton onClick={openForm} className="px-4 py-2 rounded-lg text-sm font-semibold">
           + Add Employee
-        </button>
+        </RippleButton>
       </div>
 
       {actionError && (

@@ -8,7 +8,7 @@
   --color-surface: #1a1816; /* dark warm charcoal */
   /* --color-surface at reduced opacity, for .glass-surface cards. Same hue, so a
      glass card and an opaque one still read as the same material. */
-  --color-surface-glass: rgba(26, 24, 22, 0.92);
+  --color-surface-glass: rgba(26, 24, 22, 0.95);
   --color-border: #2c2926; /* subtle warm border */
   --color-muted: #3d3935; /* raised muted surface */
   --color-text: #ede9e0; /* warm cream */

@@ -10,7 +10,8 @@ export default function App() {
 
   function handleLoaderDone() {
     setLoaderState('fading');
-    setTimeout(() => setLoaderState('gone'), 400);
+    // Matches CatLoader's 0.3s opacity transition, so it unmounts as the fade ends.
+    setTimeout(() => setLoaderState('gone'), 300);
   }
 
   return (

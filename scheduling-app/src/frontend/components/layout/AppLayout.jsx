@@ -6,6 +6,7 @@ import { NotificationsProvider, useNotifications } from "../../context/Notificat
 import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { SettingsProvider } from "../../context/SettingsContext";
+import { RippleButton } from "../RippleButton";
 import { AppBackdrop } from "../AppBackdrop";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 import { GenerateTemplateModal } from "../GenerateTemplateModal";
@@ -13,7 +14,8 @@ import { WEEK_DAY_NAMES } from "../../utils/scheduleUtils";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
 
 const managerNav = [
-  { to: "/",               label: "Daily Schedule" },
+  // Hidden from the nav for now; the page and its "/" route are left intact.
+  // { to: "/",               label: "Daily Schedule" },
   { to: "/weekly",         label: "Weekly Schedule" },
   { to: "/calendar",       label: "Events by Month" },
   { to: "/templates",      label: "Templates" },
@@ -162,7 +164,6 @@ function AppLayoutInner() {
       style={({ isActive }) => ({
         background:  isActive ? "rgba(176, 80, 48, 0.1)" : "transparent",
         color:       isActive ? "var(--color-text)" : "var(--color-text-dim)",
-        borderLeft: `2px solid ${isActive ? "var(--color-accent)" : "transparent"}`,
       })}
     >
       {label}
@@ -303,43 +304,30 @@ function AppLayoutInner() {
             <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-dim)' }}>
               Templates
             </span>
-            <button
+            <RippleButton
               onClick={() => setApplyTplOpen(true)}
-              style={{ padding: '2px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(176,80,48,0.08)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              tone="green"
+              style={{ padding: '3px 9px', borderRadius: 5, fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}
             >
-              Apply
-            </button>
+              Apply a Template
+            </RippleButton>
           </div>
 
-          <button
+          <RippleButton
             onClick={openNewTpl}
-            style={{
-              width: '100%', padding: '7px 10px', borderRadius: 8, border: 'none',
-              background: 'var(--color-accent)', color: 'white', fontWeight: 600,
-              fontSize: 13, cursor: 'pointer', marginBottom: 4, textAlign: 'center',
-            }}
-            onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            rippleSize="18em"
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 13, marginBottom: 4 }}
           >
             ＋ New Template
-          </button>
+          </RippleButton>
 
-          <button
+          <RippleButton
             onClick={() => setGenerateOpen(true)}
-            style={{
-              width: '100%', padding: '7px 10px', borderRadius: 8,
-              border: '1px solid var(--color-accent)',
-              background: 'transparent', color: 'var(--color-accent)', fontWeight: 600,
-              fontSize: 12, cursor: 'pointer', marginBottom: 4, textAlign: 'center',
-              lineHeight: 1.3,
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(176,80,48,0.08)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            rippleSize="18em"
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 12, marginBottom: 4, lineHeight: 1.3 }}
           >
             ＋ Auto-Generate from Availability
-          </button>
+          </RippleButton>
 
           {(() => {
             const weeklyTpls = templates.filter(t => !t.type || t.type === 'week');
@@ -401,7 +389,7 @@ function AppLayoutInner() {
 
           <div style={{ flex: 1 }} />
 
-          <button
+          <RippleButton
             onClick={async () => {
               if (window.confirm('Delete all templates? This cannot be undone.')) {
                 try {
@@ -412,17 +400,12 @@ function AppLayoutInner() {
                 setSelectedId(null);
               }
             }}
-            style={{
-              width: '100%', padding: '7px 10px', borderRadius: 8,
-              border: '1px solid var(--color-border)',
-              background: 'transparent', color: 'var(--color-text-dim)', fontWeight: 600,
-              fontSize: 12, cursor: 'pointer', marginTop: 8, textAlign: 'center',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-red)'; e.currentTarget.style.color = 'var(--color-red)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-dim)'; }}
+            tone="red"
+            rippleSize="18em"
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 8, fontWeight: 600, fontSize: 12, marginTop: 8 }}
           >
             Delete All Templates
-          </button>
+          </RippleButton>
         </div>
       )}
 

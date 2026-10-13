@@ -3,7 +3,7 @@ import catGif from '../assets/cat-what.gif';
 
 export default function CatLoader({ onDone, fading }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 2400);
+    const t = setTimeout(onDone, 1000);
     return () => clearTimeout(t);
   }, [onDone]);
 
@@ -14,7 +14,8 @@ export default function CatLoader({ onDone, fading }) {
         background: 'var(--color-bg)',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        transition: 'opacity 0.4s ease',
+        // Keep in step with the 300ms timeout in App.jsx that unmounts this.
+        transition: 'opacity 0.3s ease',
         opacity: fading ? 0 : 1,
         pointerEvents: fading ? 'none' : 'auto',
         willChange: 'opacity',

@@ -12,6 +12,7 @@
 // `tone` picks the colour:
 //   accent — the default orange, for ordinary actions.
 //   green  — the finalize actions, which are green by design.
+//   red    — destructive actions, so they read as dangerous before you click.
 //   done    — the muted green of an already-finalized state.
 // The two green tones override --color-accent-ripple locally, so the expanding
 // circle matches the button instead of flashing orange across it.
@@ -24,6 +25,11 @@ const TONES = {
     background: 'var(--color-green)',
     color: 'white',
     '--color-accent-ripple': 'rgba(150, 215, 175, 0.5)',
+  },
+  red: {
+    background: 'var(--color-red)',
+    color: 'white',
+    '--color-accent-ripple': 'rgba(240, 130, 130, 0.5)',
   },
   done: {
     background: '#1a2a1a',
