@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -1352,8 +1352,6 @@ export default function DailySchedulePage() {
     const initialStart    = shift0.start;
     const initialEnd      = shift0.end;
     const otherShifts     = orderedStaff[staffIndex].shifts.filter((_, j) => j !== shiftIndex);
-    const draggedPersonId = orderedStaff[staffIndex].id;
-    const draggedShiftId  = shift0.id;
 
     shiftDragActiveRef.current = true;
     setActiveBar({ type: 'shift', staffIndex, shiftIndex, mode });
@@ -1379,35 +1377,6 @@ export default function DailySchedulePage() {
       document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-
-      const current = orderedStaffRef.current.find(s => s.id === draggedPersonId);
-      if (current) {
-        const finalShift = current.shifts.find(s => s.id === draggedShiftId);
-        const blocks = getAvailability(current.id, currentDow);
-        if (finalShift && isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
-          setAvailWarning({
-            staffName: current.name,
-            onConfirm: () => {
-              setOrderedStaff(prev => sortByShift(prev));
-              setAvailWarning(null);
-            },
-            onCancel: () => {
-              setOrderedStaff(prev => {
-                const pIdx = prev.findIndex(s => s.id === draggedPersonId);
-                if (pIdx === -1) return sortByShift(prev);
-                const next = [...prev];
-                const p = { ...next[pIdx], shifts: [...next[pIdx].shifts] };
-                const sIdx = p.shifts.findIndex(s => s.id === draggedShiftId);
-                if (sIdx !== -1) p.shifts[sIdx] = { ...p.shifts[sIdx], start: initialStart, end: initialEnd };
-                next[pIdx] = p;
-                return sortByShift(next);
-              });
-              setAvailWarning(null);
-            },
-          });
-          return;
-        }
-      }
       setOrderedStaff(prev => sortByShift(prev));
     }
     window.addEventListener('mousemove', onMove);
@@ -1611,38 +1580,6 @@ export default function DailySchedulePage() {
   function handleBarDragEnd() {
     shiftDragActiveRef.current = false;
     setPreviewInfo(null);
-    if (draggingBarInfo?.type === 'shift') {
-      const { personId, shiftId, originalStart, originalEnd } = draggingBarInfo;
-      const current = orderedStaffRef.current.find(s => s.id === personId);
-      if (current) {
-        const finalShift = current.shifts.find(s => s.id === shiftId);
-        const blocks = getAvailability(current.id, currentDow);
-        if (finalShift && isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
-          setDraggingBarInfo(null);
-          setAvailWarning({
-            staffName: current.name,
-            onConfirm: () => {
-              setOrderedStaff(prev => sortByShift(prev));
-              setAvailWarning(null);
-            },
-            onCancel: () => {
-              setOrderedStaff(prev => {
-                const pIdx = prev.findIndex(s => s.id === personId);
-                if (pIdx === -1) return sortByShift(prev);
-                const next = [...prev];
-                const p = { ...next[pIdx], shifts: [...next[pIdx].shifts] };
-                const sIdx = p.shifts.findIndex(s => s.id === shiftId);
-                if (sIdx !== -1) p.shifts[sIdx] = { ...p.shifts[sIdx], start: originalStart, end: originalEnd };
-                next[pIdx] = p;
-                return sortByShift(next);
-              });
-              setAvailWarning(null);
-            },
-          });
-          return;
-        }
-      }
-    }
     setDraggingBarInfo(null);
     setOrderedStaff(prev => sortByShift(prev));
   }
@@ -1915,7 +1852,6 @@ export default function DailySchedulePage() {
 
     if (type === 'shift') {
       const targetPerson = orderedStaff[rowIndex];
-      const blocks = getAvailability(targetPerson.id, currentDow);
       const srcId = orderedStaff[staffIndex].id;
       const tgtId = targetPerson.id;
       const capturedShiftIndex = shiftIndex;
@@ -1936,15 +1872,7 @@ export default function DailySchedulePage() {
           return next;
         });
       };
-      if (isShiftOutsideAvailability(start, end, blocks)) {
-        setAvailWarning({
-          staffName: targetPerson.name,
-          onConfirm: () => { doTransfer(); setAvailWarning(null); },
-          onCancel:  () => setAvailWarning(null),
-        });
-      } else {
-        doTransfer();
-      }
+      doTransfer();
 
     } else if (type === 'desk') {
       const doMove = () => setOrderedStaff(prev => {
@@ -2097,16 +2025,6 @@ export default function DailySchedulePage() {
           return sortByShift(next);
         });
       };
-      const blocks = getAvailability(p.id, currentDow);
-      if (isShiftOutsideAvailability(newStart, newEnd, blocks)) {
-        endDrag();
-        setAvailWarning({
-          staffName: p.name,
-          onConfirm: () => { doPlace(); setAvailWarning(null); },
-          onCancel: () => setAvailWarning(null),
-        });
-        return;
-      }
       doPlace();
     } else if (activeDragType === 'desk') {
       const p = orderedStaff[staffIndex];

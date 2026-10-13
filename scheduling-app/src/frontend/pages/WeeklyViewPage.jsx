@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -479,7 +479,7 @@ const StaffRow = React.memo(function StaffRow({
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, onFinalizedChange, onLoadingChange, onReloadDay, getAvailability }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, onFinalizedChange, onLoadingChange, onReloadDay, onHoursChange, getAvailability }, ref) {
   // NOTE: `availability` is also passed in but deliberately not destructured —
   // nothing in here reads it. It exists so the memo comparator below can detect
   // that a fetch landed; React.memo sees every prop whether destructured or not.
@@ -783,7 +783,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     const sh0 = orderedStaff[si].shifts[shIdx];
     const i0  = sh0.start; const e0 = sh0.end;
     const others = orderedStaff[si].shifts.filter((_,j) => j !== shIdx);
-    const pid  = orderedStaff[si].id; const shid = sh0.id;
     setActiveBar({ type:'shift', staffIndex:si, shiftIndex:shIdx, mode });
     document.body.style.cursor = 'ew-resize'; document.body.style.userSelect = 'none';
     function onMove(me) {
@@ -799,27 +798,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     function onUp() {
       setActiveBar(null); document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
-      const cur = staffRef.current.find(s => s.id === pid);
-      if (cur) {
-        const fs = cur.shifts.find(s => s.id === shid);
-        const blocks = getAvailability(cur.id, dow);
-        if (fs && isShiftOutsideAvailability(fs.start, fs.end, blocks)) {
-          setAvailWarning({
-            staffName: cur.name,
-            onConfirm: () => { setOrderedStaff(p => sortByShift(p)); setAvailWarning(null); },
-            onCancel: () => {
-              setOrderedStaff(prev => {
-                const pIdx = prev.findIndex(s => s.id === pid); if (pIdx===-1) return sortByShift(prev);
-                const next=[...prev]; const pp={...next[pIdx],shifts:[...next[pIdx].shifts]};
-                const sIdx=pp.shifts.findIndex(s=>s.id===shid);
-                if (sIdx!==-1) pp.shifts[sIdx]={...pp.shifts[sIdx],start:i0,end:e0};
-                next[pIdx]=pp; return sortByShift(next);
-              });
-              setAvailWarning(null);
-            },
-          }); return;
-        }
-      }
       setOrderedStaff(p => sortByShift(p));
     }
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
@@ -963,31 +941,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // ── Bar drag end ─────────────────────────────────────────────────────────────
   function handleBarDragEnd() {
     setPreviewNow(null);
-    if (draggingBarInfo?.type === 'shift') {
-      const { personId, shiftId, originalStart, originalEnd } = draggingBarInfo;
-      const cur = staffRef.current.find(s => s.id === personId);
-      if (cur) {
-        const fs = cur.shifts.find(s => s.id === shiftId);
-        const blocks = getAvailability(cur.id, dow);
-        if (fs && isShiftOutsideAvailability(fs.start, fs.end, blocks)) {
-          setDraggingBarInfo(null);
-          setAvailWarning({
-            staffName: cur.name,
-            onConfirm: () => { setOrderedStaff(p => sortByShift(p)); setAvailWarning(null); },
-            onCancel: () => {
-              setOrderedStaff(prev => {
-                const pIdx=prev.findIndex(s=>s.id===personId); if(pIdx===-1) return sortByShift(prev);
-                const next=[...prev]; const pp={...next[pIdx],shifts:[...next[pIdx].shifts]};
-                const sIdx=pp.shifts.findIndex(s=>s.id===shiftId);
-                if(sIdx!==-1) pp.shifts[sIdx]={...pp.shifts[sIdx],start:originalStart,end:originalEnd};
-                next[pIdx]=pp; return sortByShift(next);
-              });
-              setAvailWarning(null);
-            },
-          }); return;
-        }
-      }
-    }
     setDraggingBarInfo(null);
     setOrderedStaff(p => sortByShift(p));
   }
@@ -1160,7 +1113,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     setPreviewNow(null); setDraggingBarInfo(null);
     const { start, end } = preview;
     if (type === 'shift') {
-      const tgt=orderedStaff[rowIdx]; const blocks=getAvailability(tgt.id,dow);
+      const tgt=orderedStaff[rowIdx];
       const srcId=orderedStaff[si].id; const tgtId=tgt.id; const capIdx=shIdx;
       const doTransfer=()=>setOrderedStaff(prev=>{
         const next=[...prev];
@@ -1170,9 +1123,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         const t={...next[tii]}; t.shifts=[...t.shifts,{id:`s${Date.now()}`,start,end}]; t.scheduled=true; next[tii]=t;
         return next;
       });
-      if (isShiftOutsideAvailability(start,end,blocks)) {
-        setAvailWarning({staffName:tgt.name,onConfirm:()=>{doTransfer();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)});
-      } else doTransfer();
+      doTransfer();
     } else if (type === 'desk') {
       const doMove=()=>setOrderedStaff(prev=>{
         const next=[...prev];
@@ -1258,8 +1209,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         const next=[...prev]; const pp={...next[si]}; pp.scheduled=true;
         pp.shifts=[...pp.shifts,{id:`s${Date.now()}`,start:ns,end:ne}]; next[si]=pp; return sortByShift(next);
       });
-      const blocks=getAvailability(p.id,dow);
-      if (isShiftOutsideAvailability(ns,ne,blocks)) { endDrag(); setAvailWarning({staffName:p.name,onConfirm:()=>{doPlace();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)}); return; }
       doPlace();
     } else if (activeDragType === 'desk') {
       const p=orderedStaff[si]; const pEvts=dayEvents.filter(ev=>ev.assignedStaff.includes(p.id));
@@ -1323,6 +1272,27 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const draggingNow    = !!(activeBar || draggingBarInfo || activeDragType);
   if (!draggingNow) alertsRef.current = buildAlerts(orderedStaff.filter(s => s.shifts?.length > 0), dayEvents, dow, { disabledDuties });
   const alerts         = alertsRef.current;
+
+  // Each person's hours on this day, reported up so the weekly over-hours banner
+  // tracks edits as they're made — the page's shared schedule cache is only
+  // refreshed on load and on finalize, never by the autosave. Held while a drag
+  // or resize is in progress, exactly like the alerts strip above, and only sent
+  // when a total actually changed, so an edit that doesn't move anyone's hours
+  // never re-renders the page.
+  const hoursSigRef = useRef('');
+  useEffect(() => {
+    if (draggingNow) return;
+    const hours = {};
+    orderedStaff.forEach(person => {
+      const total = (person.shifts ?? []).reduce((sum, sh) => sum + (sh.end - sh.start), 0);
+      if (total > 0) hours[person.id] = total;
+    });
+    const sig = JSON.stringify(hours);
+    if (sig === hoursSigRef.current) return;
+    hoursSigRef.current = sig;
+    onHoursChange(dateStr, hours);
+  }, [orderedStaff, draggingNow, dateStr, onHoursChange]);
+
   const dayName        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
   const monthDay       = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const scheduledToday = orderedStaff.filter(s => s.shifts?.length > 0);
@@ -1540,6 +1510,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.onFinalizedChange === next.onFinalizedChange &&
          prev.onLoadingChange === next.onLoadingChange &&
          prev.onReloadDay === next.onReloadDay &&
+         prev.onHoursChange === next.onHoursChange &&
          // getAvailability is reference-stable, so this is effectively free;
          // `availability` is the one that actually changes, and it has to be
          // compared or a landed fetch would never redraw the blue bars.
@@ -1550,7 +1521,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyViewPage() {
-  const { events, currentDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, daySchedules, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
+  const { events, currentDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
   const { templates, addTemplate } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);
@@ -1566,6 +1537,14 @@ export default function WeeklyViewPage() {
   const [finalizedMap, setFinalizedMap] = useState({});
   const handleFinalizedChange = useCallback((key, isFinalized) => {
     setFinalizedMap(prev => prev[key] === isFinalized ? prev : { ...prev, [key]: isFinalized });
+  }, []);
+
+  // Each DayEditor reports its staff's hours for its date (via onHoursChange) as
+  // they change, keyed by date. The over-hours banner sums these, so it reflects
+  // what's on screen now rather than what was last loaded or finalized.
+  const [hoursByDay, setHoursByDay] = useState({});
+  const handleHoursChange = useCallback((key, hours) => {
+    setHoursByDay(prev => ({ ...prev, [key]: hours }));
   }, []);
 
   // Each DayEditor reports whether it's still loading its saved schedule from
@@ -1658,28 +1637,22 @@ export default function WeeklyViewPage() {
     const m = new Map(); staff.forEach(s => { if(s.maxHoursPerWeek!=null) m.set(s.id,s.maxHoursPerWeek); }); return m;
   }, [staff]);
 
+  // Live weekly totals, summed from what each day box last reported. Only this
+  // week's dates count — a day from the previous week can linger in hoursByDay
+  // after navigating, but it's never one of weekDays.
   const overHoursAlerts = useMemo(() => {
     const totals = new Map();
     weekDays.forEach(date => {
-      // Real hours only. The cache is populated by each day's fetch as well as
-      // by edits (see reloadFromBackend), so this reflects the week as saved
-      // rather than, as it once did, the hardcoded seed roster.
-      const src = getDaySchedule(toDateStr(date)) ?? getDaySchedule(date.toDateString()) ?? [];
-      src.map(normalizeStaff).forEach(person => {
-        const hrs = (person.shifts??[]).reduce((s,sh)=>s+(sh.end-sh.start),0);
-        if (hrs>0) { const prev=totals.get(person.id)??{name:person.name,total:0}; totals.set(person.id,{name:person.name,total:prev.total+hrs}); }
+      Object.entries(hoursByDay[toDateStr(date)] ?? {}).forEach(([id, hrs]) => {
+        totals.set(Number(id), (totals.get(Number(id)) ?? 0) + hrs);
       });
     });
+    const nameById = new Map(staff.map(s => [s.id, s.name]));
     return [...totals.entries()]
-      .filter(([id,{total}])=>{ const mx=maxHoursById.get(id); return mx!=null&&total>mx; })
-      .map(([id,{name,total}])=>({name,total,max:maxHoursById.get(id)}))
-      .sort((a,b)=>(b.total-b.max)-(a.total-a.max));
-    // `daySchedules` looks redundant here — the body reads through
-    // getDaySchedule, which is reference-stable — and eslint says so. Keep it:
-    // it is the only thing that recomputes these totals when a day's fetch or
-    // edit lands in the cache. Dropping it leaves the banner frozen at whatever
-    // the cache held on first render, which is nothing.
-  }, [weekDays, daySchedules, getDaySchedule, maxHoursById]);
+      .filter(([id, total]) => { const mx = maxHoursById.get(id); return mx != null && total > mx; })
+      .map(([id, total]) => ({ name: nameById.get(id) ?? 'Unknown', total, max: maxHoursById.get(id) }))
+      .sort((a, b) => (b.total - b.max) - (a.total - a.max));
+  }, [weekDays, hoursByDay, staff, maxHoursById]);
 
   function prevWeek() { setWeekStart(d => addDays(d,-7)); }
   function nextWeek() { setWeekStart(d => addDays(d,7)); }
@@ -1817,6 +1790,7 @@ export default function WeeklyViewPage() {
             onFinalizedChange={handleFinalizedChange}
             onLoadingChange={handleLoadingChange}
             onReloadDay={reloadDay}
+            onHoursChange={handleHoursChange}
           />
         ))}
       </div>

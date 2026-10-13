@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isShiftOutsideAvailability,
   shiftsOf,
   deskShiftsOf,
   eventOccursOn,
@@ -30,53 +29,6 @@ import {
 
 const person = (over = {}) => ({ id: 1, name: 'Alex C.', shifts: [], deskShifts: [], ...over });
 const at = (start, end) => ({ start, end });
-
-describe('isShiftOutsideAvailability', () => {
-  // The check used to compare a shift against the earliest start and latest end
-  // across all blocks — the outer envelope — so a shift sitting entirely inside
-  // the gap between two blocks raised no warning at all. Fragmented availability
-  // is the normal case here (students with classes), so it failed precisely
-  // where it was needed.
-  const student = [at(8, 11), at(14, 18.5)]; // class 11-2
-
-  it('flags a shift lying entirely inside the gap', () => {
-    expect(isShiftOutsideAvailability(11.5, 13.5, student)).toBe(true);
-  });
-
-  it('flags a shift spanning the gap', () => {
-    expect(isShiftOutsideAvailability(10, 15, student)).toBe(true);
-  });
-
-  it('flags a shift that starts inside a block and ends in the gap', () => {
-    expect(isShiftOutsideAvailability(10.5, 11.5, student)).toBe(true);
-  });
-
-  it('allows a shift inside either block', () => {
-    expect(isShiftOutsideAvailability(9, 10, student)).toBe(false);
-    expect(isShiftOutsideAvailability(15, 17, student)).toBe(false);
-  });
-
-  it('allows a shift exactly filling a block', () => {
-    expect(isShiftOutsideAvailability(8, 11, student)).toBe(false);
-  });
-
-  it('treats touching blocks as one continuous window', () => {
-    // 8-11 and 11-2 have no gap between them, so 10-12 is inside.
-    expect(isShiftOutsideAvailability(10, 12, [at(8, 11), at(11, 14)])).toBe(false);
-  });
-
-  it('ignores the order blocks arrive in', () => {
-    const reversed = [at(14, 18.5), at(8, 11)];
-    expect(isShiftOutsideAvailability(11.5, 13.5, reversed)).toBe(true);
-    expect(isShiftOutsideAvailability(9, 10, reversed)).toBe(false);
-  });
-
-  it('treats absent or empty availability as outside, without throwing', () => {
-    expect(isShiftOutsideAvailability(9, 10, [])).toBe(true);
-    expect(isShiftOutsideAvailability(9, 10, null)).toBe(true);
-    expect(isShiftOutsideAvailability(9, 10, undefined)).toBe(true);
-  });
-});
 
 describe('shiftsOf / deskShiftsOf', () => {
   // Removing a shift empties `shifts` but leaves the legacy shiftStart/shiftEnd

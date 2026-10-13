@@ -538,39 +538,6 @@ export const WEEK_DAY_NAMES = [
 ];
 
 /**
- * True when any part of a shift falls outside what someone said they can work.
- *
- * Availability arrives as a list of blocks, and a student's day is usually
- * several of them with classes in between. The three editors each carried a
- * copy of this that compared the shift against the earliest start and the
- * latest end — the outer envelope — and so never noticed a shift sitting
- * entirely inside a gap. Somebody free 8–11 and 2–6:30 could be scheduled
- * 11:30–1:30, straight through the class that made the gap, with no warning at
- * all. Since fragmented availability is the normal case here, the check was
- * silently useless exactly when it was needed.
- *
- * Blocks are merged before testing, so availability given as 8–11 and 11–2
- * counts as one continuous 8–2 and a shift spanning the join is fine — there is
- * no real gap there. Touching blocks merge; only a genuine hole is a hole.
- */
-export function isShiftOutsideAvailability(start, end, blocks) {
-  if (!blocks?.length) return true;
-
-  const merged = [...blocks]
-    .sort((a, b) => a.start - b.start)
-    .reduce((acc, b) => {
-      const last = acc[acc.length - 1];
-      if (last && b.start <= last.end) last.end = Math.max(last.end, b.end);
-      else acc.push({ start: b.start, end: b.end });
-      return acc;
-    }, []);
-
-  // The whole shift has to sit inside a single merged window. Straddling two
-  // windows means crossing the gap between them.
-  return !merged.some(w => w.start <= start && w.end >= end);
-}
-
-/**
  * A person's shifts, and their desk turns, for whichever day the record
  * describes. Every reader should go through these rather than touching
  * `shiftStart`/`shiftEnd`/`deskStart`/`deskEnd` itself.

@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, isShiftOutsideAvailability, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -82,52 +82,6 @@ function AlertsBar({ staff, day }) {
           {a.text}
         </div>
       ))}
-    </div>
-  );
-}
-
-function AvailWarningModal({ staffName, onConfirm, onCancel }) {
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onCancel(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[9998] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-sm mx-4 rounded-xl border p-5"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-3 mb-4">
-          <span style={{ fontSize: 22, lineHeight: 1.2 }}>⚠️</span>
-          <div>
-            <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Outside Availability</h3>
-            <p className="text-sm mt-1.5 leading-snug" style={{ color: 'var(--color-text-dim)' }}>
-              This shift falls outside <strong style={{ color: 'var(--color-text)' }}>{staffName}</strong>'s submitted availability for this day.
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
-          >
-            Schedule Anyway
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -673,7 +627,6 @@ export default function WeeklyTemplatesPage() {
   const [contextMenu,   setContextMenu]   = useState(null);
   const [editModal,     setEditModal]     = useState(null);
   const [previewInfo,   setPreviewInfo]   = useState(null);
-  const [availWarning,  setAvailWarning]  = useState(null);
   const [trashOver,     setTrashOver]     = useState(false);
 
   const trashRef = useRef(null);
@@ -964,12 +917,6 @@ export default function WeeklyTemplatesPage() {
           return sortByShift(next);
         });
       }
-      const blocks = getAvailability(p.id, currentDow);
-      if (isShiftOutsideAvailability(newStart, newEnd, blocks)) {
-        endDrag();
-        setAvailWarning({ staffName: p.name, onConfirm: () => { doPlace(); setAvailWarning(null); }, onCancel: () => setAvailWarning(null) });
-        return;
-      }
       doPlace();
     } else if (activeDragType === 'desk') {
       const p = orderedStaff[staffIndex];
@@ -1053,28 +1000,6 @@ export default function WeeklyTemplatesPage() {
       document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      const current = orderedStaffRef.current[staffIndex];
-      const finalShift = current?.shifts[shiftIndex];
-      if (finalShift) {
-        const blocks = getAvailability(current.id, currentDow);
-        if (isShiftOutsideAvailability(finalShift.start, finalShift.end, blocks)) {
-          setAvailWarning({
-            staffName: current.name,
-            onConfirm: () => { setAvailWarning(null); setOrderedStaff(prev => sortByShift(prev)); },
-            onCancel: () => {
-              setAvailWarning(null);
-              setOrderedStaff(prev => {
-                const next = [...prev];
-                const p = { ...next[staffIndex], shifts: [...next[staffIndex].shifts] };
-                p.shifts[shiftIndex] = { ...p.shifts[shiftIndex], start: initialStart, end: initialEnd };
-                next[staffIndex] = p;
-                return sortByShift(next);
-              });
-            },
-          });
-          return;
-        }
-      }
       setOrderedStaff(prev => sortByShift(prev));
     }
     window.addEventListener('mousemove', onMove);
@@ -1185,36 +1110,6 @@ export default function WeeklyTemplatesPage() {
   function handleBarDragEnd() {
     shiftDragActiveRef.current = false;
     setPreviewInfo(null);
-    const info = draggingBarInfo;
-    if (info?.type === 'shift' && info.personId) {
-      const person = orderedStaffRef.current.find(s => s.id === info.personId);
-      const shift  = person?.shifts.find(s => s.id === info.shiftId);
-      if (shift) {
-        const blocks = getAvailability(person.id, currentDow);
-        if (isShiftOutsideAvailability(shift.start, shift.end, blocks)) {
-          setDraggingBarInfo(null);
-          setAvailWarning({
-            staffName: person.name,
-            onConfirm: () => { setAvailWarning(null); setOrderedStaff(prev => sortByShift(prev)); },
-            onCancel: () => {
-              setAvailWarning(null);
-              setOrderedStaff(prev => {
-                const next = [...prev];
-                const pi = next.findIndex(s => s.id === info.personId);
-                if (pi === -1) return prev;
-                const p = { ...next[pi], shifts: [...next[pi].shifts] };
-                const si = p.shifts.findIndex(s => s.id === info.shiftId);
-                if (si === -1) return prev;
-                p.shifts[si] = { ...p.shifts[si], start: info.originalStart, end: info.originalEnd };
-                next[pi] = p;
-                return sortByShift(next);
-              });
-            },
-          });
-          return;
-        }
-      }
-    }
     setDraggingBarInfo(null);
     setOrderedStaff(prev => sortByShift(prev));
   }
@@ -1326,7 +1221,6 @@ export default function WeeklyTemplatesPage() {
     if (type === 'shift') {
       const srcId = orderedStaff[staffIndex].id;
       const tgtId = orderedStaff[rowIndex].id;
-      const targetPerson = orderedStaff[rowIndex];
       const capturedShiftIndex = shiftIndex;
       function doTransfer() {
         setOrderedStaff(prev => {
@@ -1344,11 +1238,6 @@ export default function WeeklyTemplatesPage() {
           next[ti] = tgt;
           return sortByShift(next);
         });
-      }
-      const blocks = getAvailability(targetPerson.id, currentDow);
-      if (isShiftOutsideAvailability(start, end, blocks)) {
-        setAvailWarning({ staffName: targetPerson.name, onConfirm: () => { doTransfer(); setAvailWarning(null); }, onCancel: () => setAvailWarning(null) });
-        return;
       }
       doTransfer();
 
@@ -1772,13 +1661,6 @@ export default function WeeklyTemplatesPage() {
         </div>
       )}
 
-      {availWarning && (
-        <AvailWarningModal
-          staffName={availWarning.staffName}
-          onConfirm={availWarning.onConfirm}
-          onCancel={availWarning.onCancel}
-        />
-      )}
     </div>
   );
 }

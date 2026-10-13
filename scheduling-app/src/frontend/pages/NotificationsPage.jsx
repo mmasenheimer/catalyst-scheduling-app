@@ -291,27 +291,18 @@ export default function NotificationsPage() {
 
       {/* Notification list */}
       <div className="flex flex-col gap-3">
-        {notifications.length === 0 ? (
-          <div
-            className="p-10 rounded-md border text-center glass-surface"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <p style={{ color: 'var(--color-text-dim)' }}>No notifications here.</p>
-          </div>
-        ) : (
-          notifications.map(n => (
-            <NotificationCard
-              key={n.id}
-              notif={n}
-              onDismiss={dismiss}
-              onApprove={handleApprove}
-              onDeny={handleDeny}
-              onWithdraw={handleWithdraw}
-              user={user}
-              request={requestFor(n)}
-            />
-          ))
-        )}
+        {notifications.map(n => (
+          <NotificationCard
+            key={n.id}
+            notif={n}
+            onDismiss={dismiss}
+            onApprove={handleApprove}
+            onDeny={handleDeny}
+            onWithdraw={handleWithdraw}
+            user={user}
+            request={requestFor(n)}
+          />
+        ))}
       </div>
     </div>
   );
