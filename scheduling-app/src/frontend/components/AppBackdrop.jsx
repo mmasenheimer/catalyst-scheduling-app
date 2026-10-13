@@ -30,30 +30,62 @@ function jitter(value, pct) {
   return value * (1 + (Math.random() * 2 - 1) * pct);
 }
 
-/** Perceived brightness of a 0-1 RGB colour (Rec. 709 weights). */
-const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+// Random colours are chosen in OKLCH, a colour space built so that equal
+// lightness values *look* equally bright whatever the hue.
+//
+// An earlier version matched brightness with the Rec. 709 luminance formula
+// instead. That weights blue at about 7%, so to "match" green it pushed the blue
+// channel — and the blue half of every purple — close to full, and saturated blues
+// and purples already look brighter than that formula admits. They came out
+// glaring. Keeping OKLCH lightness and chroma fixed and varying only the hue gives
+// every pick the same visual weight.
 
-/** HSL — hue 0-360, saturation and lightness 0-1 — to 0-1 RGB. */
-function hslToRgb(h, s, l) {
-  const k = (n) => (n + h / 30) % 12;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
-  return [f(0), f(8), f(4)];
+const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const toGamma = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+
+/** Linear sRGB → OKLab [L, a, b]. */
+function linearToOklab([r, g, b]) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+  ];
 }
 
-// The colour every random pick is matched to for brightness: the forest green
+/** OKLab → linear sRGB [r, g, b]; may fall outside 0-1 if out of gamut. */
+function oklabToLinear(L, a, b) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+  ];
+}
+
+// Every random pick shares this colour's lightness and chroma: the forest green
 // (#28764a) the backdrop used before it was randomised.
 const REFERENCE_BASE = [40 / 255, 118 / 255, 74 / 255];
+const [REF_L, REF_A, REF_B] = linearToOklab(REFERENCE_BASE.map(toLinear));
+const REF_CHROMA = Math.hypot(REF_A, REF_B);
 
-// Any hue on the wheel, then rescaled so it reads exactly as bright as the
-// reference. Matching *perceived* brightness is the point: green carries most of
-// it, so an unadjusted random colour would range from barely visible (deep blue)
-// to glaring (lime) even with BRIGHTNESS unchanged. The deepest blues can't fully
-// reach the target without a channel passing 1, so those land slightly dimmer.
+// A random hue at the reference's lightness and chroma. Some hues can't be shown
+// at that chroma on a normal screen, so chroma steps down until the colour fits —
+// those hues come out slightly more muted, never brighter. Yellows in particular
+// read as olive or amber at this darkness; a dark yellow doesn't look yellow.
 function randomBaseColor() {
-  const rgb = hslToRgb(Math.random() * 360, 0.65, 0.5);
-  const scale = luminance(REFERENCE_BASE) / luminance(rgb);
-  return rgb.map((c) => Math.min(1, c * scale));
+  const hue = Math.random() * 2 * Math.PI;
+  let chroma = REF_CHROMA;
+  let rgb = oklabToLinear(REF_L, chroma * Math.cos(hue), chroma * Math.sin(hue));
+  for (let i = 0; i < 60 && rgb.some((c) => c < 0 || c > 1); i++) {
+    chroma *= 0.95;
+    rgb = oklabToLinear(REF_L, chroma * Math.cos(hue), chroma * Math.sin(hue));
+  }
+  return rgb.map((c) => toGamma(Math.min(1, Math.max(0, c))));
 }
 
 const WAVE_BASE = randomBaseColor();

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { formatTime } from '../utils/scheduleUtils';
 import { availabilityApi } from '../utils/api';
+import { RippleButton } from '../components/RippleButton';
 
 // Saturday excluded
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sun'];
@@ -15,6 +16,14 @@ for (let h = 7; h < 20; h++) {
   SLOTS.push(h);
   SLOTS.push(h + 0.5);
 }
+
+// Each row's height, chosen so the grid fills the rest of the window instead of
+// stopping at 26 fixed 18px rows. GRID_CHROME_PX is everything above and around
+// the rows: the page padding, the controls bar and the grid's day-header row.
+// 18px stays as the floor, so a short window scrolls rather than squashing
+// rows too thin to click.
+const GRID_CHROME_PX = 165;
+const ROW_HEIGHT = `max(18px, calc((100vh - ${GRID_CHROME_PX}px) / ${SLOTS.length}))`;
 
 function buildMessage(name, grid, note) {
   const dayRanges = [];
@@ -237,20 +246,20 @@ export default function AvailabilityPage() {
           </button>
         ))}
 
-        <button
+        <RippleButton
           onClick={handleSubmit}
           disabled={saving}
-          className="px-5 py-1.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
-        >{saving ? 'Sending…' : 'Send'}</button>
+          className="px-5 py-1.5 rounded-lg text-sm font-semibold"
+          style={{ opacity: saving ? 0.6 : 1 }}
+        >{saving ? 'Sending…' : 'Send'}</RippleButton>
 
         <div className="flex-1" />
 
-        <button
+        <RippleButton
           onClick={() => setGrid(emptyGrid())}
-          className="text-xs px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-dim)' }}
-        >Clear all</button>
+          tone="red"
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+        >Clear all</RippleButton>
       </div>
 
       {/* Submit error */}
@@ -273,7 +282,7 @@ export default function AvailabilityPage() {
 
       {/* Grid */}
       <div
-        className="rounded-xl border mb-4 glass-surface"
+        className="rounded-xl border glass-surface"
         style={{
           borderColor: 'var(--color-border)',
           userSelect:  'none',
@@ -310,7 +319,7 @@ export default function AvailabilityPage() {
               const isHour = Number.isInteger(t);
               return (
                 <tr key={t} style={{ borderTop: isHour ? '1px solid var(--color-border)' : '1px solid transparent' }}>
-                  <td style={{ padding: '0 8px', height: 18, verticalAlign: 'top', paddingTop: 2 }}>
+                  <td style={{ padding: '0 8px', height: ROW_HEIGHT, verticalAlign: 'top', paddingTop: 2 }}>
                     {isHour && (
                       <span style={{ fontSize: 10, color: 'var(--color-text-dim)', whiteSpace: 'nowrap', lineHeight: 1 }}>
                         {formatTime(t)}
@@ -326,7 +335,7 @@ export default function AvailabilityPage() {
                         onMouseDown={e => { e.preventDefault(); handleCellDown(di, si); }}
                         onMouseEnter={() => handleCellEnter(di, si)}
                         style={{
-                          height: 18,
+                          height: ROW_HEIGHT,
                           cursor: 'crosshair',
                           background:   cellBg(value, isHov, mode),
                           borderLeft:   `1px solid ${cellBorderColor(value)}`,
@@ -343,20 +352,6 @@ export default function AvailabilityPage() {
         </table>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-3 text-xs mt-1" style={{ color: 'var(--color-text-dim)' }}>
-        {[
-          { bg: 'rgba(74,124,94,0.55)',  border: 'rgba(74,124,94,0.7)',  label: 'Available'   },
-          { bg: 'rgba(200,64,64,0.45)',  border: 'rgba(200,64,64,0.65)', label: 'Unavailable' },
-          { bg: 'var(--color-bg)',        border: 'var(--color-border)',  label: 'Not set'     },
-        ].map(({ bg, border, label }) => (
-          <div key={label} className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: bg, border: `1px solid ${border}` }} />
-            {label}
-          </div>
-        ))}
-        <span style={{ opacity: 0.5 }}>· re-click to erase</span>
-      </div>
     </div>
   );
 }
