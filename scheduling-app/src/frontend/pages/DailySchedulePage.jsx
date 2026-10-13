@@ -14,6 +14,7 @@ import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
 import { BarColorPicker } from '../components/BarColorPicker';
+import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
@@ -75,33 +76,31 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
   const onShiftNow  = scheduled.filter(s => s.shifts.some(sh => sh.start <= nowHour && sh.end > nowHour)).length;
   const dateLabel   = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   return (
-    <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+    // Lifted above the cards below it. .glass-surface applies a backdrop-filter,
+    // which makes every glass card its own stacking context — so without this the
+    // bar-colour picker's popover (z-index 9999) is confined to this header and
+    // the alerts card, being later in the DOM, paints straight over it.
+    <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+      style={{ borderColor: 'var(--color-border)', position: 'relative', zIndex: 20 }}>
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Daily Schedule</h2>
-        <button onClick={finalized ? onUnfinalize : onFinalize}
-          className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80"
-          style={finalized
-            ? { background: '#1a2a1a', color: '#6ab888', border: '1px solid #2a4a2a' }
-            : { background: 'var(--color-accent)', color: 'white', border: '1px solid transparent' }}>
+        {/* All three are the same button now — solid accent with the ripple
+            hover — so Apply/Save no longer read as secondary to Finalize. */}
+        <RippleButton
+          onClick={finalized ? onUnfinalize : onFinalize}
+          tone={finalized ? 'done' : 'accent'}
+          className="px-3 py-1 rounded-md text-xs font-semibold"
+        >
           {finalized ? '✓ Finalized' : 'Finalize'}
-        </button>
+        </RippleButton>
         {!finalized && (
-          <button onClick={onApplyTemplate}
-            className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer"
-            style={{ background: 'var(--color-muted)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-accent)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text)'; }}>
+          <RippleButton onClick={onApplyTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
             Apply Template
-          </button>
+          </RippleButton>
         )}
-        <button onClick={onSaveAsTemplate}
-          className="px-3 py-1 rounded-md text-xs font-semibold cursor-pointer"
-          style={{ background: 'var(--color-muted)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-accent)'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text)'; }}>
+        <RippleButton onClick={onSaveAsTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
           Save as Template
-        </button>
+        </RippleButton>
         {/* Recolors every event bar on the schedule — not gated on `finalized`,
             since it's a display preference rather than an edit to the day. */}
         <BarColorPicker align="left" />
@@ -146,8 +145,11 @@ const AlertsBar = memo(function AlertsBar({ staff, events, dow }) {
   // the app's warning palette.
   const dotColor = { understaffed: 'var(--color-green)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', event: 'var(--color-bar-event-dot)', oneOnOne: 'var(--color-bar-oneone-dot)', blue: 'var(--color-accent-bright)' };
   return (
-    <div className="p-3 rounded-xl mb-5 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+    // Trial of the translucent card treatment (.glass-surface in index.css), so
+    // the page backdrop shows through instead of being covered. The background
+    // comes from the class — setting it inline here would override it.
+    <div className="p-3 rounded-xl mb-5 border glass-surface"
+      style={{ borderColor: 'var(--color-border)' }}>
       <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
         <div key={i} className="flex items-center gap-2 py-0.5 text-sm" style={{ color: 'var(--color-text-dim)' }}>
@@ -195,8 +197,8 @@ function ScheduleGrid({
 
   return (
     <>
-    <div className="rounded-xl border overflow-x-auto mb-6"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+    <div className="rounded-xl border overflow-x-auto mb-6 glass-surface"
+      style={{ borderColor: 'var(--color-border)' }}>
 
       {/* Time header */}
       <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 972 }}>
@@ -228,9 +230,6 @@ function ScheduleGrid({
             {/* Name column */}
             <div className="w-48 shrink-0 px-2 py-1.5 text-xs border-r flex items-center gap-1.5"
               style={{ borderColor: 'var(--color-border)' }}>
-              {!finalized && (
-                <span className="text-xs select-none shrink-0" style={{ color: 'var(--color-muted)', lineHeight: 1 }}>⠿</span>
-              )}
               <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                 style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}>
                 {person.name.split(' ').map(n => n[0]).join('')}
@@ -538,21 +537,6 @@ function ScheduleGrid({
           </div>
         );
       })}
-    </div>
-
-    {/* Legend */}
-    <div className="flex items-center gap-5 mt-3 px-1 flex-wrap">
-      {[
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
-        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-oneone)', opacity: 0.85 }} />, label: '1-1' },
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-event)', opacity: 0.9 }} />, label: 'Event' },
-      ].map(({ swatch, label }) => (
-        <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          {swatch}{label}
-        </div>
-      ))}
     </div>
     </>
   );
@@ -1039,8 +1023,8 @@ function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
           const assigned = staff.filter(s => evt.assignedStaff.includes(s.id));
           const filled   = assigned.length >= evt.staffNeeded;
           return (
-            <div key={evt.id} className="p-3 rounded-xl border"
-              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+            <div key={evt.id} className="p-3 rounded-xl border glass-surface"
+              style={{ borderColor: 'var(--color-border)' }}>
               <div className="flex justify-between items-start">
                 <div>
                   <span className="font-semibold">{evt.name}</span>

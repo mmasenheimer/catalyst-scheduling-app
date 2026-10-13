@@ -164,7 +164,8 @@ export default function RequestTimeOffPage() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 p-4 sm:p-5 rounded-xl border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Drop Shift</h2>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
           Select a shift to drop. Requests must be at least 2 weeks out.
@@ -173,8 +174,8 @@ export default function RequestTimeOffPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="p-6 rounded-xl border flex flex-col gap-5"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="p-6 rounded-xl border flex flex-col gap-5 glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         {/* Submitting as */}
         <div

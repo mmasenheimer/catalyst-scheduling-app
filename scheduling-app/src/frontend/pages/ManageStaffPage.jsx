@@ -1,9 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { studioHours } from '../../data/mockData';
-import { authApi } from '../utils/api';
+import { authApi, availabilityApi } from '../utils/api';
 
 const emptyForm = { name: '', username: '', maxHoursPerWeek: '' };
+
+// The date an availability submission landed — day and year, no clock time. What
+// matters to a manager is which term it came from, not what minute it arrived.
+function formatSubmittedAt(value) {
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return null;
+  return when.toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
 
 // 'Jamie T.' → jamie.t  (suggested default username)
 function suggestUsername(name) {
@@ -17,6 +27,25 @@ export default function ManageStaffPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+  // Availability lives in its own collection, so it has to be fetched
+  // separately from the roster. Only submittedAt is used here.
+  const [availabilityRows, setAvailabilityRows] = useState(null);   // null = loading
+  useEffect(() => {
+    let cancelled = false;
+    availabilityApi.getAll()
+      .then(rows => { if (!cancelled) setAvailabilityRows(rows ?? []); })
+      // A failed fetch shows nothing rather than claiming nobody has submitted.
+      .catch(() => { if (!cancelled) setAvailabilityRows([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const submittedByStaffId = useMemo(() => {
+    const map = new Map();
+    (availabilityRows ?? []).forEach(r => {
+      if (r?.staffId != null && r.submittedAt) map.set(r.staffId, r.submittedAt);
+    });
+    return map;
+  }, [availabilityRows]);
   const [resettingId, setResettingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState('');
@@ -132,14 +161,9 @@ export default function ManageStaffPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-        <div>
-          <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Manage Staff</h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-            Add new employees to the roster or remove ones who no longer work here
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}>
+        <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Manage Staff</h2>
         <button
           onClick={openForm}
           className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-85 transition-opacity"
@@ -166,8 +190,8 @@ export default function ManageStaffPage() {
       )}
 
       {/* Staff list */}
-      <div className="rounded-xl border overflow-hidden"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <div className="rounded-xl border overflow-hidden glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}>
         {staff.length === 0 ? (
           <div className="p-6 text-center text-sm" style={{ color: 'var(--color-text-dim)' }}>
             No staff on the roster yet.
@@ -216,6 +240,20 @@ export default function ManageStaffPage() {
                         </button>
                       </div>
                     )}
+                    {/* When this person last sent in their availability. Held
+                        back until the fetch lands, so a slow request doesn't
+                        flash "not submitted" at a roster that has submitted. */}
+                    {availabilityRows !== null && (() => {
+                      const submitted = submittedByStaffId.get(person.id);
+                      const label = submitted ? formatSubmittedAt(submitted) : null;
+                      return (
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
+                          {label
+                            ? <>Availability submitted {label}</>
+                            : <span style={{ opacity: 0.7 }}>No availability submitted</span>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

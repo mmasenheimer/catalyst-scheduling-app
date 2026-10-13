@@ -248,8 +248,8 @@ export default function NotificationsPage() {
     <div>
       {/* Header */}
       <div
-        className="flex justify-between items-center p-5 rounded-xl border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="flex justify-between items-center p-5 rounded-xl border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         <div>
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>
@@ -293,8 +293,8 @@ export default function NotificationsPage() {
       <div className="flex flex-col gap-3">
         {notifications.length === 0 ? (
           <div
-            className="p-10 rounded-xl border text-center"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            className="p-10 rounded-xl border text-center glass-surface"
+            style={{ borderColor: 'var(--color-border)' }}
           >
             <p style={{ color: 'var(--color-text-dim)' }}>No notifications here.</p>
           </div>

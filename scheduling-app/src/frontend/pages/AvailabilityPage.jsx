@@ -172,7 +172,7 @@ export default function AvailabilityPage() {
 
   if (user?.role === 'manager') {
     return (
-      <div className="p-5 rounded-xl border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <div className="p-5 rounded-xl border glass-surface" style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text)' }}>Availability</h2>
         <p className="text-sm" style={{ color: 'var(--color-text-dim)' }}>
           Availability submissions are for staff members. View submitted availability in Notifications.
@@ -185,7 +185,7 @@ export default function AvailabilityPage() {
 
   if (submitted) {
     return (
-      <div className="p-8 rounded-xl border text-center" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <div className="p-8 rounded-xl border text-center glass-surface" style={{ borderColor: 'var(--color-border)' }}>
         <div
           className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold mb-5 mx-auto"
           style={{ border: '2px solid var(--color-accent)', color: 'var(--color-accent-bright)' }}
@@ -273,10 +273,9 @@ export default function AvailabilityPage() {
 
       {/* Grid */}
       <div
-        className="rounded-xl border mb-4"
+        className="rounded-xl border mb-4 glass-surface"
         style={{
           borderColor: 'var(--color-border)',
-          background:  'var(--color-surface)',
           userSelect:  'none',
           WebkitUserSelect: 'none',
           overflowX: 'auto',

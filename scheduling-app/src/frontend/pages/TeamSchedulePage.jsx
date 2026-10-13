@@ -45,7 +45,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
   const hours    = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   return (
-    <div style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, background:'var(--color-surface)', overflow:'hidden' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden' }}>
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
         <span style={{ fontSize:13, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
@@ -217,7 +217,7 @@ export default function TeamSchedulePage() {
           Matching flex on both sides keeps the nav centred without that. */}
       <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:10, marginBottom:14 }}>
         <h2 style={{ flex:'1 1 auto', fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
-          Weekly View
+          Weekly Schedule
         </h2>
 
         <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>

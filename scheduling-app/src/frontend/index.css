@@ -6,6 +6,9 @@
 :root {
   --color-bg: #0d0c0b; /* warm near-black */
   --color-surface: #1a1816; /* dark warm charcoal */
+  /* --color-surface at reduced opacity, for .glass-surface cards. Same hue, so a
+     glass card and an opaque one still read as the same material. */
+  --color-surface-glass: rgba(26, 24, 22, 0.88);
   --color-border: #2c2926; /* subtle warm border */
   --color-muted: #3d3935; /* raised muted surface */
   --color-text: #ede9e0; /* warm cream */
@@ -104,6 +107,53 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* ── Glass surface ────────────────────────────────────────────────────────── */
+/*
+   A translucent --color-surface, for cards that should let the page backdrop show
+   through instead of sitting on it opaquely.
+
+   Opt-in per card: add the class and drop that element's inline
+   `background: var(--color-surface)`, or the inline style wins and nothing
+   changes. Currently used only by the Daily Schedule alerts bar, as a trial.
+
+   The blur is doing real work rather than decoration — the backdrop is dithered,
+   so it carries fine pixel noise that reads as grain behind text at this opacity.
+   Blurring the sample smooths it without lightening the card.
+*/
+.glass-surface {
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(12px) saturate(115%);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+}
+
+/* No backdrop-filter (older Safari, Firefox with it disabled) means the
+   translucency would show raw noise through the text. Fall back to the opaque
+   surface, which is what these cards looked like before. */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .glass-surface {
+    background: var(--color-surface);
+  }
+}
+
+/* ── Page backdrop ────────────────────────────────────────────────────────── */
+/*
+   Host for the dithered wave background (components/AppBackdrop.jsx). Fixed, so
+   it stays put while the content column scrolls, and pointer-events: none so it
+   can never intercept a click or a drag on the schedule above it.
+
+   z-index: -1 puts it above the body background and below all in-flow content.
+   That depends on AppLayout's root not being a stacking context and not painting
+   an opaque background of its own — see the note in AppBackdrop.jsx.
+*/
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
@@ -132,38 +182,10 @@ body {
   background: transparent;
 }
 
-/* ── Light theme ──────────────────────────────────────────────────────────── */
-html.light {
-  --color-bg:           #f5f2ee;
-  --color-surface:      #ffffff;
-  --color-border:       #ddd8d0;
-  --color-muted:        #ede8e2;
-  --color-text:         #1a1614;
-  --color-text-dim:     #6b6158;
-  --color-accent:       #b05030;
-  --color-accent-bright:#c0603a;
-  --color-green:        #3a6b4e;
-  --color-yellow:       #9a6e1a;
-  --color-vr:           #a82b32;
-  --color-red:          #c84040;
-  /* Light theme's accent-bright is closer to the base accent, so the ripple
-     needs more alpha to stay visible against it. */
-  --color-accent-ripple: rgba(216, 118, 74, 0.7);
-}
-
-html.light body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
-}
-
 /* ── Date input calendar icon ─────────────────────────────────────────────── */
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
   cursor: pointer;
-}
-
-html.light input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: none;
 }
 
 /* ── Number input without spinner arrows ──────────────────────────────────── */
@@ -180,37 +202,77 @@ input.no-spinner {
 
 /* ── Loader spin ───────────────────────────────────────────────────────────── */
 @keyframes loader-circle-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Nav arrow hover "poke" ───────────────────────────────────────────────── */
-.arrow-right-icon .arrow-right-line { transform-origin: left center; }
-.arrow-right-icon .arrow-right-head { transform-origin: center; }
-.arrow-right-icon:hover .arrow-right-line { animation: arrow-right-line-poke 0.4s ease-in-out; }
-.arrow-right-icon:hover .arrow-right-head { animation: arrow-right-head-poke 0.4s ease-in-out; }
+.arrow-right-icon .arrow-right-line {
+  transform-origin: left center;
+}
+.arrow-right-icon .arrow-right-head {
+  transform-origin: center;
+}
+.arrow-right-icon:hover .arrow-right-line {
+  animation: arrow-right-line-poke 0.4s ease-in-out;
+}
+.arrow-right-icon:hover .arrow-right-head {
+  animation: arrow-right-head-poke 0.4s ease-in-out;
+}
 
 @keyframes arrow-right-line-poke {
-  0%, 100% { transform: scaleX(1); }
-  50%      { transform: scaleX(0.64); }
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.64);
+  }
 }
 @keyframes arrow-right-head-poke {
-  0%, 100% { transform: translateX(0); }
-  50%      { transform: translateX(-3px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-3px);
+  }
 }
 
-.arrow-left-icon .arrow-left-line { transform-origin: right center; }
-.arrow-left-icon .arrow-left-head { transform-origin: center; }
-.arrow-left-icon:hover .arrow-left-line { animation: arrow-left-line-poke 0.4s ease-in-out; }
-.arrow-left-icon:hover .arrow-left-head { animation: arrow-left-head-poke 0.4s ease-in-out; }
+.arrow-left-icon .arrow-left-line {
+  transform-origin: right center;
+}
+.arrow-left-icon .arrow-left-head {
+  transform-origin: center;
+}
+.arrow-left-icon:hover .arrow-left-line {
+  animation: arrow-left-line-poke 0.4s ease-in-out;
+}
+.arrow-left-icon:hover .arrow-left-head {
+  animation: arrow-left-head-poke 0.4s ease-in-out;
+}
 
 @keyframes arrow-left-line-poke {
-  0%, 100% { transform: scaleX(1); }
-  50%      { transform: scaleX(0.64); }
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.64);
+  }
 }
 @keyframes arrow-left-head-poke {
-  0%, 100% { transform: translateX(0); }
-  50%      { transform: translateX(3px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
 }
 
 /* ── Delete icon hover "lid pop" ──────────────────────────────────────────── */
@@ -219,54 +281,53 @@ input.no-spinner {
 .delete-icon-line {
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.delete-icon:hover .delete-icon-lid  { transform: translateY(-1.1px); }
-.delete-icon:hover .delete-icon-body { transform: translateY(1px); }
-.delete-icon:hover .delete-icon-line { transform: translateY(0.5px); }
+.delete-icon:hover .delete-icon-lid {
+  transform: translateY(-1.1px);
+}
+.delete-icon:hover .delete-icon-body {
+  transform: translateY(1px);
+}
+.delete-icon:hover .delete-icon-line {
+  transform: translateY(0.5px);
+}
 
 /* ── Calendar-days icon hover "dot flicker" ──────────────────────────────── */
 @keyframes cal-dot-flicker {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
-.calendar-days-icon:hover circle.cal-dot { animation: cal-dot-flicker 0.4s ease-in-out; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(1) { animation-delay: 0s; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(2) { animation-delay: 0.1s; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(3) { animation-delay: 0.2s; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(4) { animation-delay: 0.3s; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(5) { animation-delay: 0.4s; }
-.calendar-days-icon:hover circle.cal-dot:nth-of-type(6) { animation-delay: 0.5s; }
+.calendar-days-icon:hover circle.cal-dot {
+  animation: cal-dot-flicker 0.4s ease-in-out;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(1) {
+  animation-delay: 0s;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(2) {
+  animation-delay: 0.1s;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(3) {
+  animation-delay: 0.2s;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(4) {
+  animation-delay: 0.3s;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(5) {
+  animation-delay: 0.4s;
+}
+.calendar-days-icon:hover circle.cal-dot:nth-of-type(6) {
+  animation-delay: 0.5s;
+}
 
 /* ── Custom date-input calendar icon overlay ─────────────────────────────── */
 input.date-input-custom::-webkit-calendar-picker-indicator {
   opacity: 0;
   pointer-events: none;
 }
-
-/* ── Sun icon hover "ray fade-in" ─────────────────────────────────────────── */
-@keyframes sun-ray-fade-in {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
-}
-.sun-medium-icon:hover .sun-ray { animation: sun-ray-fade-in 0.3s ease-in-out; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(1) { animation-delay: 0.1s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(2) { animation-delay: 0.2s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(3) { animation-delay: 0.3s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(4) { animation-delay: 0.4s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(5) { animation-delay: 0.5s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(6) { animation-delay: 0.6s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(7) { animation-delay: 0.7s; }
-.sun-medium-icon:hover .sun-ray:nth-of-type(8) { animation-delay: 0.8s; }
-
-/* ── Moon icon hover "wiggle" ─────────────────────────────────────────────── */
-@keyframes moon-wiggle {
-  0%   { transform: rotate(0deg); }
-  20%  { transform: rotate(-10deg); }
-  40%  { transform: rotate(10deg); }
-  60%  { transform: rotate(-5deg); }
-  80%  { transform: rotate(5deg); }
-  100% { transform: rotate(0deg); }
-}
-.moon-icon:hover { animation: moon-wiggle 1.2s ease-in-out; transform-origin: center; }
 
 /* ── Ripple button (login / logout) ───────────────────────────────────────── */
 /*

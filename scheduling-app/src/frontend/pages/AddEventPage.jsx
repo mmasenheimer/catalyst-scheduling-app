@@ -250,9 +250,10 @@ export default function AddEventPage() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 p-4 sm:p-5 rounded-xl border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>
-          Add Special Event
+          Add Event
         </h2>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
           Create a new event. Assign staff from the Daily Schedule view after saving.
@@ -261,8 +262,8 @@ export default function AddEventPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="p-6 rounded-xl border flex flex-col gap-5"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="p-6 rounded-xl border flex flex-col gap-5 glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         {/* Event Name */}
         <div>
@@ -540,7 +541,7 @@ export default function AddEventPage() {
         {/* Notes */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Location / Notes
+            Other Information
           </label>
           <textarea
             value={form.notes}

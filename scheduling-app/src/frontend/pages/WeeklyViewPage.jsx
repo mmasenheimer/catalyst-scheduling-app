@@ -14,6 +14,7 @@ import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
 import { BarColorPicker } from '../components/BarColorPicker';
 import { VrToggle } from '../components/VrToggle';
+import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
@@ -303,55 +304,6 @@ function AvailWarningModal({ staffName, title, message, confirmLabel='Schedule A
   );
 }
 
-function SaveAsDayTemplateModal({ date, staff, onSave, onClose }) {
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [nameError, setNameError] = useState('');
-  useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  async function handleSave() {
-    const trimmed = name.trim();
-    if (!trimmed) { setNameError('Template name is required.'); return; }
-    // A duplicate name isn't rejected — addTemplate numbers the copy.
-    try {
-      await onSave({ type: 'day', name: trimmed, description: desc.trim(), staff: staff.filter(s => s.shifts?.length > 0) });
-      onClose();
-    } catch (err) {
-      setNameError(err.message || 'Failed to save template.');
-    }
-  }
-  const ti = { width:'100%', padding:'8px 10px', borderRadius:7, fontSize:13, background:'var(--color-muted)', border:'1px solid var(--color-border)', color:'var(--color-text)', outline:'none', boxSizing:'border-box' };
-  return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center" style={{ background:'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="w-full max-w-sm mx-4 rounded-xl border p-5" style={{ background:'var(--color-surface)', borderColor:'var(--color-border)', boxShadow:'0 8px 32px rgba(0,0,0,0.5)' }} onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-base font-bold" style={{ color:'var(--color-text)' }}>Save as Daily Template</h3>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--color-text-dim)', cursor:'pointer', fontSize:18 }}>✕</button>
-        </div>
-        <p className="text-xs mb-4" style={{ color:'var(--color-text-dim)' }}>
-          Saving {staff.filter(s=>s.shifts?.length>0).length} scheduled staff for <strong style={{ color:'var(--color-text)' }}>{date.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</strong>
-        </p>
-        <div className="mb-3">
-          <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--color-text-dim)', marginBottom:5 }}>Template Name *</label>
-          <input autoFocus value={name} onChange={e=>{setName(e.target.value);setNameError('');}} onKeyDown={e=>e.key==='Enter'&&handleSave()} placeholder="e.g. Busy Day" style={{...ti, border:`1px solid ${nameError?'var(--color-red)':'var(--color-border)'}`}}/>
-          {nameError && <div style={{ fontSize:11, color:'var(--color-red)', marginTop:4 }}>{nameError}</div>}
-        </div>
-        <div className="mb-5">
-          <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--color-text-dim)', marginBottom:5 }}>Description (optional)</label>
-          <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Optional notes" style={ti}/>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, cursor:'pointer', background:'var(--color-muted)', color:'var(--color-text-dim)', border:'1px solid var(--color-border)' }}>Cancel</button>
-          <button onClick={handleSave} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', background:'var(--color-accent)', color:'white', border:'none' }}>Save Template</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── StaffRow ────────────────────────────────────────────────────────────────────
 // One timeline row, memoized so a shift resize (which only mutates ONE person's
 // object) re-renders just that row instead of all 15. Handlers are reached through
@@ -386,7 +338,6 @@ const StaffRow = React.memo(function StaffRow({
     <div style={{ display:'flex', borderBottom: !isLast ? '1px solid var(--color-border)' : 'none', opacity: person.shifts.length>0 ? 1 : 0.38, transition:'opacity 0.15s' }}>
       {/* Name */}
       <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
-        {!finalized && <span style={{fontSize:10,color:'var(--color-muted)',lineHeight:1,flexShrink:0}}>⠿</span>}
         <div style={{ width:18, height:18, borderRadius:'50%', background:'var(--color-muted)', color:'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
           {person.name.split(' ').map(n=>n[0]).join('')}
         </div>
@@ -528,7 +479,7 @@ const StaffRow = React.memo(function StaffRow({
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, addTemplate, onFinalizedChange, onLoadingChange, onReloadDay, getAvailability }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, onFinalizedChange, onLoadingChange, onReloadDay, getAvailability }, ref) {
   // NOTE: `availability` is also passed in but deliberately not destructured —
   // nothing in here reads it. It exists so the memo comparator below can detect
   // that a fetch landed; React.memo sees every prop whether destructured or not.
@@ -562,7 +513,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const [trashOver,      setTrashOver]      = useState(false);
   const [previewInfo,    setPreviewInfo]    = useState(null);
   const [applyTplOpen,   setApplyTplOpen]   = useState(false);
-  const [saveTplOpen,    setSaveTplOpen]    = useState(false);
   const [finalizeWarn,   setFinalizeWarn]   = useState(null);   // alert list
   const [now,            setNow]            = useState(() => new Date());
 
@@ -1390,31 +1340,33 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   };
 
   return (
-    <div style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, background:'var(--color-surface)', overflow:'hidden', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 10px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:13, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
-          {isToday && <span style={{ fontSize:9, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'1px 5px', borderRadius:4 }}>Today</span>}
-          <button onClick={finalized ? handleUnfinalize : ()=>{
-              const issues=buildAlerts(orderedStaff.filter(s=>s.shifts?.length>0),dayEvents,dow,{ disabledDuties }).filter(a=>a.type!=='blue');
-              if(issues.length>0){setFinalizeWarn(issues);}else{commitFinalize();}
-            }}
-            style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:'none', ...(finalized?{background:'#1a2a1a',color:'#6ab888'}:{background:'var(--color-accent)',color:'white'}) }}>
-            {finalized?'✓ Finalized':'Finalize'}
-          </button>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+          <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
+          {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
         </div>
-        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+        <div style={{ display:'flex', gap:12, alignItems:'center' }}>
           {isToday && (
-            <div style={{ display:'flex', gap:10, fontSize:11, color:'var(--color-text-dim)' }}>
+            <div style={{ display:'flex', gap:12, fontSize:12, color:'var(--color-text-dim)' }}>
               <span><strong style={{ color:'var(--color-accent-bright)' }}>{scheduledToday.length}</strong> on shift today</span>
               <span><strong style={{ color:'var(--color-accent-bright)' }}>{onShiftNow}</strong> on shift now</span>
             </div>
           )}
-          <button onClick={()=>setSaveTplOpen(true)}
-            style={{ padding:'2px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', background:'transparent', color:'var(--color-accent)', border:'1px solid var(--color-accent)' }}
-            onMouseEnter={e=>e.currentTarget.style.background='rgba(176,80,48,0.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Save as Daily Template</button>
+          {/* Green rather than the accent, matching Finalize All in the page
+              header — the two do the same thing at different scopes. */}
+          <RippleButton
+            onClick={finalized ? handleUnfinalize : ()=>{
+              const issues=buildAlerts(orderedStaff.filter(s=>s.shifts?.length>0),dayEvents,dow,{ disabledDuties }).filter(a=>a.type!=='blue');
+              if(issues.length>0){setFinalizeWarn(issues);}else{commitFinalize();}
+            }}
+            tone={finalized ? 'done' : 'green'}
+            rippleSize="11em"
+            style={{ padding:'4px 13px', borderRadius:7, fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
+            {finalized?'✓ Finalized':'Finalize'}
+          </RippleButton>
         </div>
       </div>
 
@@ -1544,16 +1496,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       </div>
       {/* end time header + staff rows wrapper */}
 
-      {/* Legend */}
-      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
-        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-bar-desk)',opacity:0.75,label:'Desk'},...(vrEnabled?[{color:'var(--color-bar-vr)',opacity:0.75,label:'VR'}]:[]),{color:'var(--color-bar-oneone)',opacity:0.85,label:'1-1'},{color:'var(--color-bar-event)',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
-          <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'var(--color-text-dim)' }}>
-            <div style={{ width:18, height:7, borderRadius:2, background:color, opacity }}/>
-            {label}
-          </div>
-        ))}
-      </div>
-
       <DayEventsList events={dayEvents} staff={orderedStaff} onDelete={handleDeleteEvent} />
 
       {/* Modals */}
@@ -1561,7 +1503,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {availWarning && <AvailWarningModal staffName={availWarning.staffName} title={availWarning.title} message={availWarning.message} confirmLabel={availWarning.confirmLabel} onConfirm={availWarning.onConfirm} onCancel={availWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
-      {saveTplOpen && <SaveAsDayTemplateModal date={date} staff={orderedStaff} onSave={addTemplate} onClose={()=>setSaveTplOpen(false)}/>}
       {finalizeWarn && (
         <AvailWarningModal
           title="Schedule Has Issues"
@@ -1596,7 +1537,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          prev.unassignStaffFromEvent === next.unassignStaffFromEvent &&
          prev.updateEvent === next.updateEvent &&
          prev.removeEvent === next.removeEvent &&
-         prev.addTemplate === next.addTemplate &&
          prev.onFinalizedChange === next.onFinalizedChange &&
          prev.onLoadingChange === next.onLoadingChange &&
          prev.onReloadDay === next.onReloadDay &&
@@ -1792,7 +1732,8 @@ export default function WeeklyViewPage() {
     return `${s} – ${e}`;
   })();
 
-  const navBtn = { padding:'4px 12px', borderRadius:6, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, cursor:'pointer' };
+  // Used by the two week-nav arrows only.
+  const navBtn = { padding:'7px 15px', borderRadius:7, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, cursor:'pointer' };
   const ti = { width:'100%', padding:'8px 10px', borderRadius:7, fontSize:13, background:'var(--color-muted)', color:'var(--color-text)', outline:'none', boxSizing:'border-box' };
 
   return (
@@ -1805,35 +1746,40 @@ export default function WeeklyViewPage() {
           simply printed over the title and arrows.
           The two side regions share flex:1, which keeps the nav optically centred
           when there's room without needing absolute positioning to do it. */}
-      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:10, marginBottom:14 }}>
-        <h2 style={{ flex:'1 1 auto', fontSize:18, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
-          Weekly View
+      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:14, marginBottom:22, paddingTop:4 }}>
+        <h2 style={{ flex:'1 1 auto', fontSize:22, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
+          Weekly Schedule
         </h2>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
-          <button onClick={prevWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={16} /></button>
+          <button onClick={prevWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowLeftIcon size={19} /></button>
           <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text)', minWidth:190, textAlign:'center' }}>{weekLabel}</span>
-          <button onClick={nextWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={16} /></button>
+          <button onClick={nextWeek} style={{ ...navBtn, display:'flex', alignItems:'center', justifyContent:'center' }}><ArrowRightIcon size={19} /></button>
         </div>
-        <div style={{ flex:'1 1 auto', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
+        <div style={{ flex:'1 1 auto', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', justifyContent:'flex-end' }}>
           {/* Studio-wide switch for the VR post, and the bar color picker. Both
               are settings rather than edits to the schedule, so neither is gated
               on whether the week is finalized. */}
-          <VrToggle />
           <BarColorPicker />
-          <button onClick={()=>setApplyTplOpen(true)} style={{ padding:'6px 14px', borderRadius:8, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--color-accent)';e.currentTarget.style.color='var(--color-accent)';}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--color-border)';e.currentTarget.style.color='var(--color-text)';}}>
+          <VrToggle />
+          {/* The same accent button with the ripple hover as the Daily header's,
+              so the two pages' action rows match. */}
+          <RippleButton onClick={()=>setApplyTplOpen(true)}
+            style={{ padding:'6px 14px', borderRadius:8, fontSize:13, fontWeight:600, whiteSpace:'nowrap' }}>
             Apply Template
-          </button>
-          <button onClick={()=>{setTplName('');setTplDesc('');setNameError('');setSaveModal(true);}} style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'var(--color-accent)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
-            onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+          </RippleButton>
+          <RippleButton onClick={()=>{setTplName('');setTplDesc('');setNameError('');setSaveModal(true);}}
+            rippleSize="20em"
+            style={{ padding:'6px 14px', borderRadius:8, fontSize:13, fontWeight:600, whiteSpace:'nowrap' }}>
             Save as Weekly Template
-          </button>
-          <button onClick={handleFinalizeAll}
-            style={{ padding:'6px 14px', borderRadius:8, border:'none', fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', ...(weekFinalized ? { background:'#1a2a1a', color:'#6ab888' } : { background:'var(--color-green)', color:'white' }) }}
-            onMouseEnter={e=>e.currentTarget.style.opacity='0.85'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+          </RippleButton>
+          {/* Separates the template actions from finalizing, which is the one
+              action here that publishes the week. */}
+          <div aria-hidden="true" style={{ width:1, height:22, background:'#fff', flexShrink:0 }} />
+          <RippleButton onClick={handleFinalizeAll}
+            tone={weekFinalized ? 'done' : 'green'}
+            style={{ padding:'6px 14px', borderRadius:8, fontSize:13, fontWeight:600, whiteSpace:'nowrap' }}>
             {weekFinalized ? '✓ All Finalized' : 'Finalize All'}
-          </button>
+          </RippleButton>
         </div>
       </div>
 
@@ -1868,7 +1814,6 @@ export default function WeeklyViewPage() {
             updateEvent={updateEvent}
             removeEvent={removeEvent}
             templates={templates}
-            addTemplate={addTemplate}
             onFinalizedChange={handleFinalizedChange}
             onLoadingChange={handleLoadingChange}
             onReloadDay={reloadDay}

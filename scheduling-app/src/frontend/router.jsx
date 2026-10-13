@@ -13,7 +13,6 @@ import NotFoundPage from './pages/NotFoundPage';
 import ShiftRequestPage from './pages/ShiftRequestPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
-import AvailabilityManagerPage from './pages/AvailabilityManagerPage';
 import ManageStaffPage from './pages/ManageStaffPage';
 import WeeklyViewPage from './pages/WeeklyViewPage';
 import TeamSchedulePage from './pages/TeamSchedulePage';
@@ -39,7 +38,6 @@ export const router = createBrowserRouter([
       { path: 'request-time-off', element: <ProtectedRoute employeeOnly><RequestTimeOffPage /></ProtectedRoute> },
       { path: 'shift-requests',   element: <ProtectedRoute employeeOnly><ShiftRequestPage /></ProtectedRoute> },
       { path: 'availability',     element: <ProtectedRoute employeeOnly><AvailabilityPage /></ProtectedRoute> },
-      { path: 'staff-availability',  element: <ProtectedRoute managerOnly><AvailabilityManagerPage /></ProtectedRoute> },
       { path: 'manage-staff',        element: <ProtectedRoute managerOnly><ManageStaffPage /></ProtectedRoute> },
       { path: 'notifications',    element: <NotificationsPage /> },
     ],

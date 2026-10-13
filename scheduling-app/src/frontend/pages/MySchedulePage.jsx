@@ -57,8 +57,8 @@ function WeekHeader({ me, weekDays, onPrev, onNext, shiftsCount, hoursCount, eve
 
   return (
     <div
-      className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-5 rounded-xl mb-6 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      className="flex flex-wrap justify-between items-center gap-4 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+      style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="flex items-center gap-3">
         <div
@@ -119,8 +119,8 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
   return (
     <>
       <div
-        className="rounded-xl border overflow-x-auto mb-4"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="rounded-xl border overflow-x-auto mb-4 glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 900 }}>
           <div
@@ -322,8 +322,8 @@ function MyEventsPanel({ me, weekDays, events }) {
         {myEvents.map((evt, i) => (
           <div
             key={i}
-            className="p-4 rounded-xl border flex justify-between items-start"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            className="p-4 rounded-xl border flex justify-between items-start glass-surface"
+            style={{ borderColor: 'var(--color-border)' }}
           >
             <div>
               <div className="font-semibold" style={{ color: 'var(--color-text)' }}>{evt.name}</div>
@@ -375,8 +375,8 @@ export default function MySchedulePage() {
     return (
       <div className="max-w-xl mx-auto">
         <div
-          className="p-6 rounded-xl border text-center"
-          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+          className="p-6 rounded-xl border text-center glass-surface"
+          style={{ borderColor: 'var(--color-border)' }}
         >
           <p className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Manager Account</p>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>

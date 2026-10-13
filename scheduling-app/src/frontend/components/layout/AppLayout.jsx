@@ -6,44 +6,26 @@ import { NotificationsProvider, useNotifications } from "../../context/Notificat
 import { RequestsProvider } from "../../context/RequestsContext";
 import { TemplatesProvider, useTemplates } from "../../context/TemplatesContext";
 import { SettingsProvider } from "../../context/SettingsContext";
+import { AppBackdrop } from "../AppBackdrop";
 import { ApplyTemplateCalendarModal } from "../ApplyTemplateCalendarModal";
 import { GenerateTemplateModal } from "../GenerateTemplateModal";
 import { WEEK_DAY_NAMES } from "../../utils/scheduleUtils";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
-import { SunMediumIcon } from "../SunMediumIcon";
-import { MoonIcon } from "../MoonIcon";
-
-function useTheme() {
-  const [light, setLight] = useState(() => localStorage.getItem("theme") === "light");
-
-  useEffect(() => {
-    if (light) {
-      document.documentElement.classList.add("light");
-      localStorage.setItem("theme", "light");
-    } else {
-      document.documentElement.classList.remove("light");
-      localStorage.setItem("theme", "dark");
-    }
-  }, [light]);
-
-  return [light, () => setLight(v => !v)];
-}
 
 const managerNav = [
   { to: "/",               label: "Daily Schedule" },
-  { to: "/weekly",         label: "Weekly View" },
-  { to: "/calendar",       label: "Event Calendar" },
+  { to: "/weekly",         label: "Weekly Schedule" },
+  { to: "/calendar",       label: "Events by Month" },
   { to: "/templates",      label: "Templates" },
   { to: "/add-event",      label: "Add Event" },
-  { to: "/staff-availability", label: "Staff Availability" },
   { to: "/manage-staff",       label: "Manage Staff" },
   { to: "/notifications",      label: "Notifications" },
 ];
 
 const employeeNav = [
   { to: "/my-schedule",       label: "My Schedule" },
-  { to: "/team-schedule",     label: "Weekly View" },
-  { to: "/calendar",          label: "Event Calendar" },
+  { to: "/team-schedule",     label: "Weekly Schedule" },
+  { to: "/calendar",          label: "Events by Month" },
   { to: "/shift-requests",    label: "Shift Requests" },
   { to: "/request-time-off",  label: "Drop Shift" },
   { to: "/availability",      label: "Availability" },
@@ -86,7 +68,6 @@ function AppLayoutInner() {
   const [now, setNow]     = useState(new Date());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { unreadCount }   = useNotifications();
-  const [isLight, toggleTheme] = useTheme();
   const { templates, selectedId, setSelectedId, requestSelect, addTemplate, removeAllTemplates } = useTemplates();
   const { staff, saveDaySchedule, weeklyViewLoading, setWeeklyViewLoading, teamScheduleLoading, setTeamScheduleLoading } = useScheduleContext();
   const isTemplates = location.pathname === '/templates';
@@ -224,26 +205,20 @@ function AppLayoutInner() {
           <span className="ripple-gradient" />
           <span className="ripple-label">Log out</span>
         </button>
-        <button
-          onClick={toggleTheme}
-          title={isLight ? "Switch to dark mode" : "Switch to light mode"}
-          className="flex items-center justify-center rounded cursor-pointer hover:opacity-80 transition-opacity"
-          style={{
-            width: 30, height: 26,
-            background: "var(--color-muted)",
-            border: "1px solid var(--color-border)",
-            color: "var(--color-text-dim)",
-            flexShrink: 0,
-          }}
-        >
-          {isLight ? <MoonIcon size={15} color="white" /> : <SunMediumIcon size={16} color="white" />}
-        </button>
       </div>
     </div>
   );
 
   return (
-    <div className="flex min-h-screen" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
+    // No background of its own: an opaque one here would cover the dithered
+    // backdrop below, which paints at z-index -1. `body` still carries
+    // --color-bg (index.css), so the flat colour remains the fallback whenever
+    // the backdrop doesn't render — no WebGL, or its chunk still loading.
+    <div className="flex min-h-screen" style={{ color: "var(--color-text)" }}>
+
+      {/* Dithered wave behind everything. Only the gaps between the opaque
+          surface cards show it; nothing above becomes transparent. */}
+      <AppBackdrop />
 
       {/* Mobile backdrop */}
       {drawerOpen && (
@@ -266,6 +241,9 @@ function AppLayoutInner() {
           drawerOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
         ].join(" ")}
+        // Deliberately opaque, unlike the content cards: the nav is the one
+        // surface that's on screen on every page, so it stays a solid edge for
+        // the page to sit against rather than another thing to see through.
         style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
       >
         {/* Mobile drawer header */}
@@ -314,6 +292,8 @@ function AppLayoutInner() {
           style={{
             width: 200,
             borderRight: '1px solid var(--color-border)',
+            // Opaque for the same reason as the nav beside it — the two left
+            // columns read as one solid edge.
             background: 'var(--color-surface)',
             padding: '12px 10px',
             gap: 6,
@@ -468,8 +448,8 @@ function AppLayoutInner() {
 
         {/* Mobile top bar */}
         <header
-          className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b"
-          style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}
+          className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b glass-surface"
+          style={{ borderColor: "var(--color-border)" }}
         >
           <button
             onClick={() => setDrawerOpen(true)}

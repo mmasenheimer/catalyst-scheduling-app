@@ -7,7 +7,6 @@ import {
   getEventsForDate,
   toDateStr,
   buildSavedScheduleMap,
-  staffForDateFromSaved,
   personForDate,
 } from '../utils/scheduleUtils';
 import { schedulesApi } from '../utils/api';
@@ -200,7 +199,7 @@ function EventsPopover({ date, events, x, cellTop, cellBottom, onClose, onEditEv
   );
 }
 
-function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts, myDeskShifts, staffCount, events, isManager, onOverflowClick }) {
+function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts, myDeskShifts, events, onOverflowClick }) {
   const dateEvents = getEventsForDate(date, events);
   const shown = dateEvents.slice(0, 2);
   const overflow = dateEvents.length - shown.length;
@@ -301,17 +300,6 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts,
         )}
       </div>
 
-      {/* Staff count pill — manager only */}
-      {isManager && staffCount > 0 && isCurrentMonth && (
-        <div className="mt-1.5">
-          <span
-            className="text-xs px-1.5 py-0.5 rounded"
-            style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}
-          >
-            {staffCount} staff
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -353,12 +341,6 @@ export default function CalendarPage() {
     return () => { cancelled = true; };
   }, [cells]);
 
-  // Saved schedule for the date if there is one, otherwise the day's template —
-  // the same resolution the manager's own views use.
-  const rosterFor = useMemo(
-    () => (date) => staffForDateFromSaved(date, savedByDate, staff),
-    [savedByDate, staff],
-  );
   const myDayOn = useMemo(
     () => (date) => personForDate(date, savedByDate, staff, me?.id),
     [savedByDate, staff, me?.id],
@@ -406,11 +388,6 @@ export default function CalendarPage() {
 
   const monthCells = cells.filter(c => c.current);
 
-  const avgStaffThisMonth = Math.round(
-    monthCells.reduce((sum, c) => sum + rosterFor(c.date).filter(p => p.shifts.length > 0).length, 0) /
-    monthCells.length
-  );
-
   // Days actually worked and the real length of those shifts, rather than
   // "template days × default shift length".
   const myShiftsThisMonth = me
@@ -430,12 +407,12 @@ export default function CalendarPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="flex items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         {/* Left: title */}
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Calendar</h2>
+          <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Events by Month</h2>
           <p className="text-sm mt-1 hidden sm:block" style={{ color: 'var(--color-text-dim)' }}>
             {user?.role === 'manager' ? 'Click any day to see events and open the daily schedule' : 'Click any day to view your schedule for that week'}
           </p>
@@ -465,8 +442,10 @@ export default function CalendarPage() {
         {/* Right: stats + today */}
         <div className="flex-1 flex items-center justify-end gap-3 sm:gap-6 sm:pr-8">
           {[
+            // A manager now sees only the event count; Shifts/Hours stay for
+            // employees, for whom they're about their own month.
             ...(user?.role === 'manager'
-              ? [{ label: 'Avg Staff', value: avgStaffThisMonth }]
+              ? []
               : [{ label: 'Shifts', value: myShiftsThisMonth }, { label: 'Hours', value: myHoursThisMonth }]
             ),
             { label: 'Events', value: totalEventsThisMonth },
@@ -490,8 +469,16 @@ export default function CalendarPage() {
 
       {/* Calendar grid */}
       <div
-        className="rounded-xl border overflow-hidden"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="rounded-xl border overflow-hidden glass-surface"
+        style={{
+          borderColor: 'var(--color-border)',
+          // Fills the rest of the page rather than stopping at the cells'
+          // natural height. minHeight, not height, so a short viewport still
+          // gets the 110px row floor below and scrolls instead of squashing.
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 'calc(100vh - 200px)',
+        }}
       >
         {/* Day-of-week header row */}
         <div
@@ -513,7 +500,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Day cells */}
-        <div className="grid grid-cols-7">
+        <div className="grid grid-cols-7" style={{ flex: 1, gridAutoRows: 'minmax(110px, 1fr)' }}>
           {cells.map(({ date, current }, i) => {
             const mine = me ? myDayOn(date) : null;
             return (
@@ -526,9 +513,7 @@ export default function CalendarPage() {
                 onClick={e => handleDayClick(e, date)}
                 myShifts={mine?.shifts ?? []}
                 myDeskShifts={mine?.deskShifts ?? []}
-                staffCount={isManager ? rosterFor(date).filter(p => p.shifts.length > 0).length : 0}
                 events={visibleEvents}
-                isManager={isManager}
                 onOverflowClick={handleOverflowClick}
               />
             );
@@ -556,27 +541,6 @@ export default function CalendarPage() {
           onClose={() => setEditingEvt(null)}
         />
       )}
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-3 px-1">
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span className="w-5 h-2.5 rounded-sm" style={{ background: 'var(--color-green)', opacity: 0.7 }} />
-          Shift
-        </div>
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span className="w-5 h-2.5 rounded-sm" style={{ background: '#7c5cbf', opacity: 0.8 }} />
-          Event
-        </div>
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-          <span
-            className="w-4 h-4 rounded-full flex items-center justify-center font-bold"
-            style={{ background: 'var(--color-accent)', color: 'white', fontSize: 8 }}
-          >
-            {today.getDate()}
-          </span>
-          Today
-        </div>
-      </div>
     </div>
   );
 }

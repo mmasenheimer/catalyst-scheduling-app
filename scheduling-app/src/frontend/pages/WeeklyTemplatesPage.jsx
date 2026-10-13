@@ -72,8 +72,8 @@ function AlertsBar({ staff, day }) {
   // all rather than falling back to yellow.
   const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', blue: 'var(--color-accent-bright)' };
   return (
-    <div className="p-3 rounded-xl mb-5 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', minHeight: 72 }}>
+    <div className="p-3 rounded-xl mb-5 border glass-surface"
+      style={{ borderColor: 'var(--color-border)', minHeight: 72 }}>
       <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
         <div key={i} className="flex items-center gap-2 py-0.5 text-sm" style={{ color: 'var(--color-text-dim)' }}>
@@ -352,8 +352,8 @@ function TemplateGrid({
 
   return (
     <>
-    <div className="rounded-xl border overflow-x-auto mb-4"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+    <div className="rounded-xl border overflow-x-auto mb-4 glass-surface"
+      style={{ borderColor: 'var(--color-border)' }}>
 
       {/* Time header */}
       <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 972 }}>
@@ -1506,35 +1506,13 @@ export default function WeeklyTemplatesPage() {
 
       {/* ── Main area ───────────────────────────────────────────────────────── */}
       <div>
-        {!selectedId ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            minHeight: 'calc(100vh - 120px)',
-          }}>
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              padding: '56px 72px', gap: 12,
-              border: '1px solid var(--color-border)', borderRadius: 14,
-              background: 'var(--color-surface)',
-            }}>
-              {templates.length === 0 ? (
-                <>
-                  <span style={{ fontSize: 28 }}>📋</span>
-                  <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-accent)' }}>Nothing here… yet.</span>
-                </>
-              ) : (
-              <>
-                <span style={{ fontSize: 32 }}>🗂️</span>
-                <span style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-accent)' }}>Select a template to get started.</span>
-              </>
-              )}
-            </div>
-          </div>
-        ) : (
+        {/* Nothing is rendered until a template is picked from the sidebar — the
+            placeholder panel that used to sit here was removed. */}
+        {selectedId && (
           <>
             {/* Template header */}
-            <div className="p-4 rounded-xl border mb-4"
-              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-xl border mb-4 glass-surface"
+              style={{ borderColor: 'var(--color-border)' }}>
               <div className="flex items-start gap-3">
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
@@ -1635,8 +1613,8 @@ export default function WeeklyTemplatesPage() {
             <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} day={currentDay} />
 
             {/* Staff pool */}
-            <div className="p-3 rounded-xl border mb-4"
-              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+            <div className="p-3 rounded-xl border mb-4 glass-surface"
+              style={{ borderColor: 'var(--color-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Staff Pool — drag to add
               </div>

@@ -416,8 +416,8 @@ function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCa
 function SuccessState({ request, onReset }) {
   return (
     <div
-      className="p-5 rounded-xl border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+      className="p-5 rounded-xl border glass-surface"
+      style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="text-center py-6">
         <div
@@ -471,9 +471,8 @@ function SectionHeading({ title, sub }) {
 function EmptyState({ text }) {
   return (
     <div
-      className="px-4 py-3 rounded-xl border text-sm"
+      className="px-4 py-3 rounded-xl border text-sm glass-surface"
       style={{
-        background: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
         color: 'var(--color-text-dim)',
       }}
@@ -520,8 +519,8 @@ export default function ShiftRequestPage() {
     return (
       <div>
         <div
-          className="flex items-center p-5 rounded-xl border mb-4"
-          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+          className="flex items-center p-5 rounded-xl border mb-4 glass-surface"
+          style={{ borderColor: 'var(--color-border)' }}
         >
           <div>
             <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Shift Requests</h2>
@@ -611,8 +610,8 @@ export default function ShiftRequestPage() {
     <div>
       {/* Page header */}
       <div
-        className="flex justify-between items-start p-5 rounded-xl mb-6 border"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        className="flex justify-between items-start p-5 rounded-xl mb-6 border glass-surface"
+        style={{ borderColor: 'var(--color-border)' }}
       >
         <div>
           <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Shift Requests</h2>
@@ -633,8 +632,8 @@ export default function ShiftRequestPage() {
         <>
           {/* Tabs */}
           <div
-            className="flex rounded-lg p-1 mb-6 w-fit border"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            className="flex rounded-lg p-1 mb-6 w-fit border glass-surface"
+            style={{ borderColor: 'var(--color-border)' }}
           >
             {[
               { key: 'cover', label: 'Request Cover' },
