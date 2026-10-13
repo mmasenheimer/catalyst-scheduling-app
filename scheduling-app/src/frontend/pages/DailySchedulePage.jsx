@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, isShiftOutsideAvailability, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
@@ -1006,64 +1005,6 @@ function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule
   );
 }
 
-// ── Events panel ───────────────────────────────────────────────────────────────
-
-function EventsPanel({ events, staff, onAddEvent, onDeleteEvent }) {
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-base font-semibold mt-2" style={{ color: 'var(--color-text)' }}>Special Events</h3>
-        <button onClick={onAddEvent} className="px-4 py-1.5 rounded-md text-sm font-medium cursor-pointer"
-          style={{ background: 'var(--color-accent)', color: 'white' }}>
-          + Add Event
-        </button>
-      </div>
-      <div className="grid gap-2">
-        {events.map(evt => {
-          const assigned = staff.filter(s => evt.assignedStaff.includes(s.id));
-          const filled   = assigned.length >= evt.staffNeeded;
-          return (
-            <div key={evt.id} className="p-3 rounded-xl border glass-surface"
-              style={{ borderColor: 'var(--color-border)' }}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="font-semibold">{evt.name}</span>
-                  <span className="ml-2 text-xs px-2 py-0.5 rounded"
-                    style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}>{evt.type}</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs px-2 py-0.5 rounded font-medium"
-                    style={{ background: filled ? '#1a2a1a' : '#2a1010', color: filled ? '#6ab888' : '#f07070' }}>
-                    {assigned.length}/{evt.staffNeeded} staff
-                  </span>
-                  <button onClick={() => onDeleteEvent(evt)}
-                    title="Delete event"
-                    className="text-xs px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity flex items-center"
-                    style={{ background: 'transparent', color: 'var(--color-red)', border: '1px solid var(--color-red)' }}>
-                    <DeleteIcon size={13} />
-                  </button>
-                </div>
-              </div>
-              <div className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-                {formatTime(evt.start)} – {formatTime(evt.end)}
-              </div>
-              {evt.notes && <div className="text-xs mt-1" style={{ color: 'var(--color-text-dim)' }}>{evt.notes}</div>}
-              {assigned.length > 0 && (
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {assigned.map(s => (
-                    <span key={s.id} className="text-xs px-2 py-0.5 rounded"
-                      style={{ background: 'var(--color-muted)', color: 'var(--color-text)' }}>{s.name}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function DailySchedulePage() {
@@ -1072,7 +1013,6 @@ export default function DailySchedulePage() {
   // lands, and it's already part of `schedule` so this page re-renders with it.
   const { getAvailability } = schedule;
   const { templates, addTemplate } = useTemplates();
-  const navigate = useNavigate();
 
   const trashRef = useRef(null);
 
@@ -2285,14 +2225,6 @@ export default function DailySchedulePage() {
 
   const trashActive = trashHtmlOver;
 
-  async function handleDeleteEvent(evt) {
-    try {
-      await schedule.removeEvent(evt.id);
-    } catch (err) {
-      console.warn('Failed to delete event:', err.message);
-    }
-  }
-
   async function doFinalize() {
     const date = toDateStr(schedule.currentDate);
     try {
@@ -2533,7 +2465,6 @@ export default function DailySchedulePage() {
         onBarContextMenu={handleBarContextMenu}
         getPersonAvailability={id => getAvailability(id, currentDow)}
       />
-      <EventsPanel staff={orderedStaff} events={todayEvents} onAddEvent={() => navigate('/add-event')} onDeleteEvent={handleDeleteEvent} />
 
       {contextMenu && (
         <ContextMenu

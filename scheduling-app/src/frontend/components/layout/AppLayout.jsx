@@ -291,7 +291,9 @@ function AppLayoutInner() {
         <div
           className="hidden lg:flex flex-col shrink-0 overflow-y-auto"
           style={{
-            width: 200,
+            // Template names and descriptions are single-line with an ellipsis,
+            // so this width is how much of each you get to read.
+            width: 260,
             borderRight: '1px solid var(--color-border)',
             // Opaque for the same reason as the nav beside it — the two left
             // columns read as one solid edge.

@@ -12,6 +12,7 @@ import { schedulesApi } from '../utils/api';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 import { DateInput } from '../components/DateInput';
 import { RangeCalendar } from '../components/RangeCalendar';
+import { RippleButton } from '../components/RippleButton';
 
 
 function formatDateLabel(dateStr) {
@@ -346,15 +347,15 @@ export default function AddEventPage() {
               style={inputStyle}
               wrapperClassName="flex-1"
             />
-            <button
+            <RippleButton
               type="button"
               onClick={addDate}
               disabled={!dateInput}
-              className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
-              style={{ background: 'var(--color-accent)', color: 'white', opacity: dateInput ? 1 : 0.45 }}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ opacity: dateInput ? 1 : 0.45 }}
             >
               Add
-            </button>
+            </RippleButton>
           </div>
           {form.days.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-3">
@@ -564,14 +565,15 @@ export default function AddEventPage() {
           >
             Cancel
           </button>
-          <button
+          <RippleButton
             type="submit"
             disabled={saving}
-            className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
+            rippleSize="22em"
+            className="flex-1 py-2 rounded-lg text-sm font-semibold"
+            style={{ opacity: saving ? 0.6 : 1 }}
           >
             {saving ? 'Adding…' : 'Add Event'}
-          </button>
+          </RippleButton>
         </div>
       </form>
     </div>
