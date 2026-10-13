@@ -162,7 +162,7 @@ export default function ManageStaffPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded mb-6 border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Manage Staff</h2>
         <RippleButton onClick={openForm} className="px-4 py-2 rounded-lg text-sm font-semibold">
@@ -187,7 +187,7 @@ export default function ManageStaffPage() {
       )}
 
       {/* Staff list */}
-      <div className="rounded-xl border overflow-hidden glass-surface"
+      <div className="rounded border overflow-hidden glass-surface"
         style={{ borderColor: 'var(--color-border)' }}>
         {staff.length === 0 ? (
           <div className="p-6 text-center text-sm" style={{ color: 'var(--color-text-dim)' }}>

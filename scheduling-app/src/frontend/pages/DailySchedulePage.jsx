@@ -79,7 +79,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
     // which makes every glass card its own stacking context — so without this the
     // bar-colour picker's popover (z-index 9999) is confined to this header and
     // the alerts card, being later in the DOM, paints straight over it.
-    <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded-xl mb-6 border glass-surface"
+    <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 rounded mb-6 border glass-surface"
       style={{ borderColor: 'var(--color-border)', position: 'relative', zIndex: 20 }}>
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Daily Schedule</h2>
@@ -147,7 +147,7 @@ const AlertsBar = memo(function AlertsBar({ staff, events, dow }) {
     // Trial of the translucent card treatment (.glass-surface in index.css), so
     // the page backdrop shows through instead of being covered. The background
     // comes from the class — setting it inline here would override it.
-    <div className="p-3 rounded-xl mb-5 border glass-surface"
+    <div className="p-3 rounded mb-5 border glass-surface"
       style={{ borderColor: 'var(--color-border)' }}>
       <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
@@ -196,7 +196,7 @@ function ScheduleGrid({
 
   return (
     <>
-    <div className="rounded-xl border overflow-x-auto mb-6 glass-surface"
+    <div className="rounded border overflow-x-auto mb-6 glass-surface"
       style={{ borderColor: 'var(--color-border)' }}>
 
       {/* Time header */}

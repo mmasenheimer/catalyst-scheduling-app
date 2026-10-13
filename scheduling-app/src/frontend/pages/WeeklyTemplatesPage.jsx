@@ -72,7 +72,7 @@ function AlertsBar({ staff, day }) {
   // all rather than falling back to yellow.
   const dotColor = { red: 'var(--color-red)', yellow: 'var(--color-bar-desk-dot)', vr: 'var(--color-bar-vr-dot)', blue: 'var(--color-accent-bright)' };
   return (
-    <div className="p-3 rounded-xl mb-5 border glass-surface"
+    <div className="p-3 rounded mb-5 border glass-surface"
       style={{ borderColor: 'var(--color-border)', minHeight: 72 }}>
       <h3 className="text-sm font-semibold mb-1.5" style={{ color: 'var(--color-yellow)' }}>Alerts</h3>
       {alerts.map((a, i) => (
@@ -352,7 +352,7 @@ function TemplateGrid({
 
   return (
     <>
-    <div className="rounded-xl border overflow-x-auto mb-4 glass-surface"
+    <div className="rounded border overflow-x-auto mb-4 glass-surface"
       style={{ borderColor: 'var(--color-border)' }}>
 
       {/* Time header */}
@@ -1511,7 +1511,7 @@ export default function WeeklyTemplatesPage() {
         {selectedId && (
           <>
             {/* Template header */}
-            <div className="p-4 rounded-xl border mb-4 glass-surface"
+            <div className="p-4 rounded border mb-4 glass-surface"
               style={{ borderColor: 'var(--color-border)' }}>
               <div className="flex items-start gap-3">
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1613,7 +1613,7 @@ export default function WeeklyTemplatesPage() {
             <AlertsBar staff={orderedStaff.filter(s => s.shifts?.length > 0)} day={currentDay} />
 
             {/* Staff pool */}
-            <div className="p-3 rounded-xl border mb-4 glass-surface"
+            <div className="p-3 rounded border mb-4 glass-surface"
               style={{ borderColor: 'var(--color-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Staff Pool — drag to add

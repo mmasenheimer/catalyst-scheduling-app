@@ -1340,7 +1340,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   };
 
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:10, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:4, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>

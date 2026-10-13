@@ -102,8 +102,14 @@ const WAVE_COLOR = WAVE_BASE.map((c) => c * BRIGHTNESS);
 
 // The wave's shape, varied by up to ±6% per load — enough that no two visits look
 // identical, small enough that it's always recognisably the same backdrop.
+//
+// These four are the live values — they're passed to <Dither> explicitly, so the
+// defaults written in Dither.jsx's own signature never apply to this backdrop.
+// Tune here.
 const WAVE_AMPLITUDE = jitter(0.6, 0.06);
 const WAVE_FREQUENCY = jitter(7, 0.06);
+const WAVE_SPEED     = jitter(0.002, 0.06);
+const WAVE_SCALE     = jitter(2.5, 0.06);
 
 /** True when the viewer has asked their OS to keep animation to a minimum. */
 function usePrefersReducedMotion() {
@@ -159,10 +165,10 @@ export function AppBackdrop() {
           colorNum={27.2}
           waveAmplitude={WAVE_AMPLITUDE}
           waveFrequency={WAVE_FREQUENCY}
-          waveSpeed={0.002}
+          waveSpeed={WAVE_SPEED}
           // Zooms the noise field out for more, smaller waves. 1 is the
           // un-zoomed field; 3-4 gets busy.
-          waveScale={2.5}
+          waveScale={WAVE_SCALE}
         />
       </Suspense>
     </div>

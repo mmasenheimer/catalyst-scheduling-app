@@ -342,7 +342,6 @@ function AppLayoutInner() {
                   onClick={() => requestSelect(tpl.id)}
                   style={{
                     padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                    borderLeft: `3px solid ${isSelected ? 'var(--color-accent)' : '#2a6b65'}`,
                     background: isSelected ? 'rgba(176,80,48,0.08)' : 'rgba(77,182,172,0.08)',
                     transition: 'background 0.12s',
                   }}
