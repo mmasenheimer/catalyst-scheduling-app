@@ -32,7 +32,7 @@ const WAVE_BASE = [40 / 255, 118 / 255, 74 / 255];
 // the colour it's given *is* the ceiling — nothing else caps the brightness.
 // Scaling all three channels by the same factor dims the field without shifting
 // its hue.
-const BRIGHTNESS = 0.4;
+const BRIGHTNESS = 0.5;
 
 const WAVE_COLOR = WAVE_BASE.map((c) => c * BRIGHTNESS);
 
