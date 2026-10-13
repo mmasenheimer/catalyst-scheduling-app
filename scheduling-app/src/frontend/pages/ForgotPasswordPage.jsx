@@ -35,8 +35,8 @@ export default function ForgotPasswordPage() {
         </div>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-dim)' }}>
           Ask your manager to reset it. They'll generate a new temporary password
-          for you from the Manage Staff page — sign in with it, and you'll be asked
-          to choose a new password of your own.
+          for you, sign in with it, and you'll be asked to choose a new password
+          of your own.
         </p>
 
         <div className="mt-6 text-center">

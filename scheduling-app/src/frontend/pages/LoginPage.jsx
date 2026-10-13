@@ -68,7 +68,7 @@ export default function LoginPage() {
             CATalyst Studios
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-            Team Management System
+            Scheduling Management System
           </p>
         </div>
 

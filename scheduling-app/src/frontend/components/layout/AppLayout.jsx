@@ -268,7 +268,7 @@ function AppLayoutInner() {
           style={{ background: "none", border: "none" }}
         >
           <h1 className="text-lg font-bold" style={{ color: "var(--color-text)" }}>CATalyst studios</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-dim)" }}>Team Management</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-dim)" }}>Scheduling Management</p>
           <p className="text-xs mt-1.5 font-mono tabular-nums" style={{ color: "var(--color-accent-bright)" }}>
             {now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
           </p>
