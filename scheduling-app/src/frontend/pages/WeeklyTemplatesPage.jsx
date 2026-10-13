@@ -630,9 +630,7 @@ export default function WeeklyTemplatesPage() {
   const [trashOver,     setTrashOver]     = useState(false);
 
   const trashRef = useRef(null);
-  const orderedStaffRef    = useRef(orderedStaff);
   const shiftDragActiveRef = useRef(false);
-  useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
 
   const currentDow = DAY_DOW[currentDay] ?? 1;
 

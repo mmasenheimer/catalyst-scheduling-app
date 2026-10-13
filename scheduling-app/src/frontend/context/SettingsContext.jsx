@@ -15,9 +15,6 @@ const SettingsContext = createContext(null);
 
 export function SettingsProvider({ children }) {
   const [vrEnabled, setVrEnabled] = useState(true);
-  // Distinguishes "not fetched yet" from "fetched, and VR is on" for anything
-  // that would rather wait than guess.
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +22,7 @@ export function SettingsProvider({ children }) {
       .then(s => { if (!cancelled) setVrEnabled(s.vrEnabled !== false); })
       // Unreachable backend leaves the optimistic default in place: a studio that
       // uses VR keeps working, rather than the whole post vanishing on a blip.
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoaded(true); });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -52,7 +48,7 @@ export function SettingsProvider({ children }) {
   }, []);
 
   return (
-    <SettingsContext.Provider value={{ vrEnabled, setVrEnabled: setVr, settingsLoaded: loaded }}>
+    <SettingsContext.Provider value={{ vrEnabled, setVrEnabled: setVr }}>
       {children}
     </SettingsContext.Provider>
   );
@@ -66,6 +62,5 @@ export function useSettings() {
   return useContext(SettingsContext) ?? {
     vrEnabled: true,
     setVrEnabled: () => false,
-    settingsLoaded: false,
   };
 }

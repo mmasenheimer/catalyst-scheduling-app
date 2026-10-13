@@ -277,7 +277,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
   );
 }
 
-function AvailWarningModal({ staffName, title, message, confirmLabel='Schedule Anyway', onConfirm, onCancel }) {
+function WarningModal({ title, message, confirmLabel, onConfirm, onCancel }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', onKey);
@@ -289,9 +289,9 @@ function AvailWarningModal({ staffName, title, message, confirmLabel='Schedule A
         <div className="flex items-start gap-3 mb-4">
           <span style={{ fontSize:22, lineHeight:1.2 }}>⚠️</span>
           <div>
-            <h3 className="text-base font-bold" style={{ color:'var(--color-text)' }}>{title ?? 'Outside Availability'}</h3>
+            <h3 className="text-base font-bold" style={{ color:'var(--color-text)' }}>{title}</h3>
             <p className="text-sm mt-1.5 leading-snug" style={{ color:'var(--color-text-dim)' }}>
-              {message ?? <><strong style={{ color:'var(--color-text)' }}>{staffName}</strong>'s shift falls outside their submitted availability.</>}
+              {message}
             </p>
           </div>
         </div>
@@ -509,7 +509,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   useDragAutoScroll(Boolean(activeDragType || draggingBarInfo));
   const [contextMenu,    setContextMenu]    = useState(null);
   const [editModal,      setEditModal]      = useState(null);
-  const [availWarning,   setAvailWarning]   = useState(null);
+  const [pendingWarning,   setPendingWarning]   = useState(null);
   const [trashOver,      setTrashOver]      = useState(false);
   const [previewInfo,    setPreviewInfo]    = useState(null);
   const [applyTplOpen,   setApplyTplOpen]   = useState(false);
@@ -523,7 +523,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     return () => clearInterval(id);
   }, [isToday]);
 
-  const staffRef = useRef(orderedStaff);
   const trashRef = useRef(null);
   const handlersRef = useRef(null);
   const alertsRef = useRef([]);   // holds the last non-drag alerts so the strip doesn't flicker/shift mid-drag
@@ -553,7 +552,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     return () => window.removeEventListener('resize', onResize);
   }, []);
   useEffect(() => () => { if (previewRafRef.current) cancelAnimationFrame(previewRafRef.current); }, []);
-  useEffect(() => { staffRef.current = orderedStaff; }, [orderedStaff]);
 
   // Skips the change-detector's next pass right after a load/finalize, so
   // restoring saved data isn't mistaken for an edit that should unfinalize the day.
@@ -1133,7 +1131,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       });
       const conflict=orderedStaff.find((s,ii)=>ii!==rowIdx&&ii!==si&&s.deskShifts?.some(d=>start<d.end&&end>d.start));
       if (conflict) {
-        setAvailWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)});
+        setPendingWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setPendingWarning(null);},onCancel:()=>setPendingWarning(null)});
       } else doMove();
     } else if (type === 'vr') {
       const doMove=()=>setOrderedStaff(prev=>{
@@ -1144,7 +1142,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       });
       const conflict=orderedStaff.find((s,ii)=>ii!==rowIdx&&ii!==si&&s.vrShifts?.some(v=>start<v.end&&end>v.start));
       if (conflict) {
-        setAvailWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)});
+        setPendingWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(start)}–${formatTime(end)}. Move anyway?`,confirmLabel:'Move Anyway',onConfirm:()=>{doMove();setPendingWarning(null);},onCancel:()=>setPendingWarning(null)});
       } else doMove();
     } else if (type === 'oneOnOne') {
       // No cross-person conflict prompt: a 1-1 isn't a post only one person can
@@ -1184,15 +1182,14 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     };
     if (!isCovered) {
       const hasPartial=person.shifts.some(s=>s.start<=evt.end&&s.end>=evt.start);
-      setAvailWarning({
-        staffName:person.name,
+      setPendingWarning({
         title:hasPartial?'Shift Doesn\'t Cover Event':'No Shift During Event',
         message:hasPartial
           ?<><strong style={{color:'var(--color-text)'}}>{person.name}</strong>'s shift doesn't fully cover <em>{evt.name}</em>. It will be extended.</>
           :<><strong style={{color:'var(--color-text)'}}>{person.name}</strong> has no shift during <em>{evt.name}</em>. A new shift will be created.</>,
         confirmLabel:hasPartial?'Assign & Extend Shift':'Assign & Create Shift',
-        onConfirm:()=>{doAssign();setAvailWarning(null);},
-        onCancel:()=>setAvailWarning(null),
+        onConfirm:()=>{doAssign();setPendingWarning(null);},
+        onCancel:()=>setPendingWarning(null),
       });
     } else doAssign();
   }
@@ -1222,7 +1219,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           pp.deskShifts=[...pp.deskShifts,{id:`d${Date.now()}`,start:ns,end:ne}]; next[si]=pp; return next;
         });
         const conflict=orderedStaff.find((s,ii)=>ii!==si&&s.deskShifts?.some(d=>ns<d.end&&ne>d.start));
-        if (conflict) { endDrag(); setAvailWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)}); return; }
+        if (conflict) { endDrag(); setPendingWarning({title:'Desk Conflict',message:`${conflict.name} is already on desk ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setPendingWarning(null);},onCancel:()=>setPendingWarning(null)}); return; }
         doPlace();
       }
     } else if (activeDragType === 'vr') {
@@ -1239,7 +1236,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           pp.vrShifts=[...pp.vrShifts,{id:`v${Date.now()}`,start:ns,end:ne}]; next[si]=pp; return next;
         });
         const conflict=orderedStaff.find((s,ii)=>ii!==si&&s.vrShifts?.some(v=>ns<v.end&&ne>v.start));
-        if (conflict) { endDrag(); setAvailWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setAvailWarning(null);},onCancel:()=>setAvailWarning(null)}); return; }
+        if (conflict) { endDrag(); setPendingWarning({title:'VR Conflict',message:`${conflict.name} is already on VR ${formatTime(ns)}–${formatTime(ne)}. Place anyway?`,confirmLabel:'Place Anyway',onConfirm:()=>{doPlace();setPendingWarning(null);},onCancel:()=>setPendingWarning(null)}); return; }
         doPlace();
       }
     } else if (activeDragType === 'oneOnOne') {
@@ -1471,10 +1468,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {/* Modals */}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onEdit={handleContextMenuEdit} onDelete={handleContextMenuDelete} onClose={()=>setContextMenu(null)}/>}
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
-      {availWarning && <AvailWarningModal staffName={availWarning.staffName} title={availWarning.title} message={availWarning.message} confirmLabel={availWarning.confirmLabel} onConfirm={availWarning.onConfirm} onCancel={availWarning.onCancel}/>}
+      {pendingWarning && <WarningModal title={pendingWarning.title} message={pendingWarning.message} confirmLabel={pendingWarning.confirmLabel} onConfirm={pendingWarning.onConfirm} onCancel={pendingWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
       {finalizeWarn && (
-        <AvailWarningModal
+        <WarningModal
           title="Schedule Has Issues"
           message={
             <div>
@@ -1823,7 +1820,7 @@ export default function WeeklyViewPage() {
       )}
 
       {finalizeAllWarn && (
-        <AvailWarningModal
+        <WarningModal
           title="Some Days Have Issues"
           message={
             <div>
@@ -1837,7 +1834,7 @@ export default function WeeklyViewPage() {
                     <ul style={{ listStyle:'none', padding:0, display:'flex', flexDirection:'column', gap:3 }}>
                       {d.issues.map((a,j) => (
                         <li key={j} style={{ display:'flex', alignItems:'flex-start', gap:6, fontSize:12 }}>
-                          <span style={{ width:7, height:7, borderRadius:'50%', background:a.type==='red'?'var(--color-red)':a.type==='vr'?'var(--color-vr)':'var(--color-yellow)', flexShrink:0, marginTop:4 }}/>
+                          <span style={{ width:7, height:7, borderRadius:'50%', background:a.type==='understaffed'?'var(--color-green)':a.type==='event'?'var(--color-bar-event-dot)':a.type==='vr'?'var(--color-bar-vr-dot)':a.type==='oneOnOne'?'var(--color-bar-oneone-dot)':'var(--color-bar-desk-dot)', flexShrink:0, marginTop:4 }}/>
                           <span style={{ color:'var(--color-text-dim)' }}>{a.text}</span>
                         </li>
                       ))}

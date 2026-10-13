@@ -161,7 +161,6 @@ export function AppBackdrop() {
           // pattern is the background, the movement is the part that's optional.
           disableAnimation={reducedMotion}
           enableMouseInteraction={false}
-          mouseRadius={0.6}
           colorNum={27.2}
           waveAmplitude={WAVE_AMPLITUDE}
           waveFrequency={WAVE_FREQUENCY}

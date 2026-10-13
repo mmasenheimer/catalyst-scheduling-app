@@ -9,12 +9,10 @@ const TYPE_CONFIG = {
   // Losing a shift is a different kind of news from having one moved — red
   // rather than amber, because it's something taken away rather than adjusted.
   shift_removed: { label: 'Dropped Shift', dot: '#c84040', bg: 'rgba(200, 64, 64, 0.12)',   border: 'rgba(200, 64, 64, 0.3)'   },
-  new_event:     { label: 'Event',         dot: '#6a9fd8', bg: 'rgba(106, 159, 216, 0.12)', border: 'rgba(106, 159, 216, 0.3)' },
   // Purple, matching how event bars are drawn in the schedule editors. Losing one
   // is muted rather than alarming — it's work taken off your plate, not a problem.
   event_assigned:  { label: 'Event Assigned', dot: '#a080e0', bg: 'rgba(124, 92, 191, 0.14)', border: 'rgba(124, 92, 191, 0.35)' },
   event_unassigned:{ label: 'Event Removed',  dot: 'var(--color-text-dim)', bg: 'var(--color-muted)', border: 'var(--color-border)' },
-  alert:         { label: 'Alert',         dot: '#c84040', bg: 'rgba(200, 64, 64, 0.12)',   border: 'rgba(200, 64, 64, 0.3)'   },
   approval:      { label: 'Approval',      dot: '#4a7c5e', bg: 'rgba(74, 124, 94, 0.12)',   border: 'rgba(74, 124, 94, 0.3)'   },
   availability:  { label: 'Availability',  dot: '#7ab0d8', bg: 'rgba(122, 176, 216, 0.12)', border: 'rgba(122, 176, 216, 0.3)' },
 };

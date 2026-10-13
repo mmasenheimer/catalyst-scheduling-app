@@ -407,7 +407,7 @@ export function getTarget(hour, dow = 1) {
  * COVERAGE_DUTY_KINDS); the per-person structural checks still apply, because a
  * 1-1 stranded outside its shift is wrong for the same reason a desk turn is.
  */
-export const DUTIES = {
+const DUTIES = {
   desk: {
     field: 'deskShifts',
     legacyStart: 'deskStart',
@@ -498,26 +498,6 @@ export function getDutyWindow(kind, dow = 1) {
 export function isDutyRequired(kind, hour, dow = 1, slot = 0.5) {
   const w = getDutyWindow(kind, dow);
   return w != null && hour < w.end && hour + slot > w.start;
-}
-
-/** The hours the front desk needs manning on this weekday, or null if none. */
-export function getDeskWindow(dow = 1) {
-  return getDutyWindow('desk', dow);
-}
-
-/** Does the half-hour slot starting at `hour` need someone on the desk? */
-export function isDeskRequired(hour, dow = 1, slot = 0.5) {
-  return isDutyRequired('desk', hour, dow, slot);
-}
-
-/** The hours the VR studio needs manning on this weekday, or null if none. */
-export function getVrWindow(dow = 1) {
-  return getDutyWindow('vr', dow);
-}
-
-/** Does the half-hour slot starting at `hour` need someone in the VR studio? */
-export function isVrRequired(hour, dow = 1, slot = 0.5) {
-  return isDutyRequired('vr', hour, dow, slot);
 }
 
 /**
@@ -622,10 +602,6 @@ export function orphanedDeskTurns(person) {
   return orphanedDutyTurns(person, 'desk');
 }
 
-export function orphanedVrTurns(person) {
-  return orphanedDutyTurns(person, 'vr');
-}
-
 /**
  * The range a desk turn may be dragged or resized within.
  *
@@ -671,7 +647,7 @@ function orphanedDutyAlerts(person, kind) {
 }
 
 /** Return list of conflicts for a person's duty assignments vs events */
-export function checkDutyConflicts(person, events, kind) {
+function checkDutyConflicts(person, events, kind) {
   const { label } = DUTIES[kind];
   const turns = dutyShiftsOf(person, kind);
   const conflicts = [];
@@ -685,14 +661,6 @@ export function checkDutyConflicts(person, events, kind) {
   return conflicts;
 }
 
-export function checkDeskConflicts(person, events) {
-  return checkDutyConflicts(person, events, 'desk');
-}
-
-export function checkVrConflicts(person, events) {
-  return checkDutyConflicts(person, events, 'vr');
-}
-
 /**
  * Desk and VR turns that overlap each other.
  *
@@ -704,7 +672,7 @@ export function checkVrConflicts(person, events) {
  * Reported rather than auto-repaired, matching how orphaned turns are handled:
  * the manager put both there, and choosing which one to drop is their call.
  */
-export function checkDutyOverlap(person) {
+function checkDutyOverlap(person) {
   const desks = dutyShiftsOf(person, 'desk');
   const vrs = dutyShiftsOf(person, 'vr');
   const conflicts = [];

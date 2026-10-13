@@ -60,7 +60,6 @@
   --color-bar-desk-fill: hsl(var(--bar-desk-hue) 70% 44% / 0.25);
   --color-bar-desk-fill-soft: hsl(var(--bar-desk-hue) 70% 44% / 0.2);
   --color-bar-desk-fill-strong: hsl(var(--bar-desk-hue) 70% 44% / 0.5);
-  --color-bar-desk-border: hsl(var(--bar-desk-hue) 70% 62% / 0.35);
 
   --color-bar-vr: hsl(var(--bar-vr-hue) 70% 44%);
   --color-bar-vr-bright: hsl(var(--bar-vr-hue) 70% 62%);
@@ -68,7 +67,6 @@
   --color-bar-vr-fill: hsl(var(--bar-vr-hue) 70% 44% / 0.25);
   --color-bar-vr-fill-soft: hsl(var(--bar-vr-hue) 70% 44% / 0.2);
   --color-bar-vr-fill-strong: hsl(var(--bar-vr-hue) 70% 44% / 0.5);
-  --color-bar-vr-border: hsl(var(--bar-vr-hue) 70% 62% / 0.35);
 
   --color-bar-event: hsl(var(--bar-event-hue) 70% 44%);
   --color-bar-event-bright: hsl(var(--bar-event-hue) 70% 62%);
@@ -84,7 +82,6 @@
   --color-bar-oneone-fill: hsl(var(--bar-oneone-hue) 70% 44% / 0.25);
   --color-bar-oneone-fill-soft: hsl(var(--bar-oneone-hue) 70% 44% / 0.2);
   --color-bar-oneone-fill-strong: hsl(var(--bar-oneone-hue) 70% 44% / 0.5);
-  --color-bar-oneone-border: hsl(var(--bar-oneone-hue) 70% 62% / 0.35);
 
   /* Label text printed on any bar. Explicit rather than inherited: these spans
      used to fall back to --color-text, which is near-black in light theme and so

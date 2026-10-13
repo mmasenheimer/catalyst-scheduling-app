@@ -108,7 +108,6 @@ export const authApi = {
 
 export const staffApi = {
   getAll: () => request("/staff"),
-  getOne: (id) => request(`/staff/${id}`),
   create: (body) =>
     request("/staff", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>

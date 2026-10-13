@@ -955,9 +955,9 @@ function SaveAsDayTemplateModal({ currentDate, staff, onSave, onClose }) {
   );
 }
 
-// ── Availability warning modal ─────────────────────────────────────────────────
+// ── Warning modal ──────────────────────────────────────────────────────────────
 
-function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule Anyway', onConfirm, onCancel }) {
+function WarningModal({ title, message, confirmLabel, onConfirm, onCancel }) {
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onCancel(); }
     window.addEventListener('keydown', onKey);
@@ -979,10 +979,10 @@ function AvailWarningModal({ staffName, title, message, confirmLabel = 'Schedule
           <span style={{ fontSize: 22, lineHeight: 1.2 }}>⚠️</span>
           <div>
             <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>
-              {title ?? 'Outside Availability'}
+              {title}
             </h3>
             <p className="text-sm mt-1.5 leading-snug" style={{ color: 'var(--color-text-dim)' }}>
-              {message ?? <>This shift falls outside <strong style={{ color: 'var(--color-text)' }}>{staffName}</strong>'s submitted availability for today.</>}
+              {message}
             </p>
           </div>
         </div>
@@ -1050,7 +1050,7 @@ export default function DailySchedulePage() {
   useDragAutoScroll(Boolean(activeDragType || draggingBarInfo));
   const [contextMenu,     setContextMenu]      = useState(null);   // { x, y, target }
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
-  const [availWarning,    setAvailWarning]     = useState(null);   // { staffName, onConfirm, onCancel }
+  const [pendingWarning,    setPendingWarning]     = useState(null);   // { title, message, confirmLabel, onConfirm, onCancel }
   const [applyTplOpen,    setApplyTplOpen]     = useState(false);
   const [saveTplOpen,     setSaveTplOpen]      = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
@@ -1060,9 +1060,7 @@ export default function DailySchedulePage() {
   const alertsStaffRef  = useRef([]);
   const alertsEventsRef = useRef([]);
 
-  const orderedStaffRef    = useRef(orderedStaff);
   const shiftDragActiveRef = useRef(false);
-  useEffect(() => { orderedStaffRef.current = orderedStaff; }, [orderedStaff]);
 
   // Timeline row rects only change when the layout actually changes (window
   // resize), not on every dragover tick — caching avoids forcing a synchronous
@@ -1889,12 +1887,12 @@ export default function DailySchedulePage() {
         i !== rowIndex && i !== staffIndex && s.deskShifts?.some(d => start < d.end && end > d.start)
       );
       if (conflict) {
-        setAvailWarning({
+        setPendingWarning({
           title: 'Desk Conflict',
           message: `${conflict.name} is already on desk ${formatTime(start)}–${formatTime(end)}. Move anyway?`,
           confirmLabel: 'Move Anyway',
-          onConfirm: () => { doMove(); setAvailWarning(null); },
-          onCancel:  () => setAvailWarning(null),
+          onConfirm: () => { doMove(); setPendingWarning(null); },
+          onCancel:  () => setPendingWarning(null),
         });
       } else {
         doMove();
@@ -1915,12 +1913,12 @@ export default function DailySchedulePage() {
         i !== rowIndex && i !== staffIndex && s.vrShifts?.some(v => start < v.end && end > v.start)
       );
       if (conflict) {
-        setAvailWarning({
+        setPendingWarning({
           title: 'VR Conflict',
           message: `${conflict.name} is already on VR ${formatTime(start)}–${formatTime(end)}. Move anyway?`,
           confirmLabel: 'Move Anyway',
-          onConfirm: () => { doMove(); setAvailWarning(null); },
-          onCancel:  () => setAvailWarning(null),
+          onConfirm: () => { doMove(); setPendingWarning(null); },
+          onCancel:  () => setPendingWarning(null),
         });
       } else {
         doMove();
@@ -1986,15 +1984,14 @@ export default function DailySchedulePage() {
 
     if (!isCovered) {
       const hasPartialShift = person.shifts.some(s => s.start <= evt.end && s.end >= evt.start);
-      setAvailWarning({
-        staffName:    person.name,
+      setPendingWarning({
         title:        hasPartialShift ? 'Shift Doesn\'t Cover Event' : 'No Shift During Event',
         message:      hasPartialShift
           ? <><strong style={{ color: 'var(--color-text)' }}>{person.name}</strong>'s shift doesn't fully cover <em>{evt.name}</em> ({formatTime(evt.start)}–{formatTime(evt.end)}). Their shift will be extended to cover it.</>
           : <><strong style={{ color: 'var(--color-text)' }}>{person.name}</strong> has no shift during <em>{evt.name}</em> ({formatTime(evt.start)}–{formatTime(evt.end)}). A new shift will be created.</>,
         confirmLabel: hasPartialShift ? 'Assign & Extend Shift' : 'Assign & Create Shift',
-        onConfirm: () => { doAssign(); setAvailWarning(null); },
-        onCancel:  () => setAvailWarning(null),
+        onConfirm: () => { doAssign(); setPendingWarning(null); },
+        onCancel:  () => setPendingWarning(null),
       });
     } else {
       doAssign();
@@ -2054,12 +2051,12 @@ export default function DailySchedulePage() {
         );
         if (conflict) {
           endDrag();
-          setAvailWarning({
+          setPendingWarning({
             title: 'Desk Conflict',
             message: `${conflict.name} is already on desk ${formatTime(newStart)}–${formatTime(newEnd)}. Place anyway?`,
             confirmLabel: 'Place Anyway',
-            onConfirm: () => { doPlace(); setAvailWarning(null); },
-            onCancel:  () => setAvailWarning(null),
+            onConfirm: () => { doPlace(); setPendingWarning(null); },
+            onCancel:  () => setPendingWarning(null),
           });
           return;
         }
@@ -2094,12 +2091,12 @@ export default function DailySchedulePage() {
         );
         if (conflict) {
           endDrag();
-          setAvailWarning({
+          setPendingWarning({
             title: 'VR Conflict',
             message: `${conflict.name} is already on VR ${formatTime(newStart)}–${formatTime(newEnd)}. Place anyway?`,
             confirmLabel: 'Place Anyway',
-            onConfirm: () => { doPlace(); setAvailWarning(null); },
-            onCancel:  () => setAvailWarning(null),
+            onConfirm: () => { doPlace(); setPendingWarning(null); },
+            onCancel:  () => setPendingWarning(null),
           });
           return;
         }
@@ -2422,18 +2419,17 @@ export default function DailySchedulePage() {
           onClose={() => setSaveTplOpen(false)}
         />
       )}
-      {availWarning && (
-        <AvailWarningModal
-          staffName={availWarning.staffName}
-          title={availWarning.title}
-          message={availWarning.message}
-          confirmLabel={availWarning.confirmLabel}
-          onConfirm={availWarning.onConfirm}
-          onCancel={availWarning.onCancel}
+      {pendingWarning && (
+        <WarningModal
+          title={pendingWarning.title}
+          message={pendingWarning.message}
+          confirmLabel={pendingWarning.confirmLabel}
+          onConfirm={pendingWarning.onConfirm}
+          onCancel={pendingWarning.onCancel}
         />
       )}
       {finalizeWarning && (
-        <AvailWarningModal
+        <WarningModal
           title="Schedule Has Issues"
           message={
             <div>

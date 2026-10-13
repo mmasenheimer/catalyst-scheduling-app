@@ -13,7 +13,7 @@ const TemplatesContext = createContext(null);
  * Blank            → left blank; the editor creates unnamed drafts and names
  *                    them on save.
  */
-export function uniqueTemplateName(desired, templates) {
+function uniqueTemplateName(desired, templates) {
   const wanted = String(desired ?? '').trim();
   if (!wanted) return wanted;
 

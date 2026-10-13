@@ -33,7 +33,7 @@ export const BAR_KINDS = [
 ];
 
 /** Defaults as a plain map, matching the :root values in index.css. */
-export const DEFAULT_HUES = Object.fromEntries(BAR_KINDS.map(k => [k.id, k.defaultHue]));
+const DEFAULT_HUES = Object.fromEntries(BAR_KINDS.map(k => [k.id, k.defaultHue]));
 
 // Kept in step with the fixed saturation/lightness in index.css, so the picker's
 // swatches match what the grid actually draws.
@@ -63,7 +63,7 @@ export const HUE_PRESETS = [
   { hue: 292, label: 'Magenta' },
 ];
 
-export function normalizeHue(value, fallback) {
+function normalizeHue(value, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return ((n % 360) + 360) % 360;
@@ -113,10 +113,10 @@ function paint(hues) {
 // element before the first schedule paints rather than a frame after it.
 paint(current);
 
-export function getBarHues() { return current; }
+function getBarHues() { return current; }
 
 /** The hue in effect for one kind, chosen or default. */
-export function hueFor(kind) {
+function hueFor(kind) {
   return current[kind] ?? DEFAULT_HUES[kind];
 }
 
@@ -133,7 +133,7 @@ function commit(next) {
  * Sends only the kind that changed, so a second tab's picker can't have its
  * choices clobbered by this one posting a whole palette.
  */
-export function setBarHue(kind, hue) {
+function setBarHue(kind, hue) {
   // `in`, not truthiness: hue 0 is a valid default (pure red) and would fail a
   // truthy check.
   if (!(kind in DEFAULT_HUES)) return;

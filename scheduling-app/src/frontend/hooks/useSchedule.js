@@ -164,23 +164,6 @@ export function useSchedule() {
     eventsApi.update(eventId, { assignedStaff }).catch(() => {});
   }, []);
 
-  // VR twin of updateStaffDesk. Both write the legacy scalars on the Staff
-  // document; the live model is the per-day vrShifts array.
-  const updateStaffVr = useCallback((staffId, vrStart, vrEnd) => {
-    setStaff(prev =>
-      prev.map(s => s.id === staffId ? { ...s, vrStart, vrEnd } : s)
-    );
-    staffApi.update(staffId, { vrStart, vrEnd }).catch(() => {});
-  }, [setStaff]);
-
-  const updateStaffDesk = useCallback((staffId, deskStart, deskEnd) => {
-    setStaff(prev =>
-      prev.map(s => s.id === staffId ? { ...s, deskStart, deskEnd } : s)
-    );
-    // Persist to API — add more fields to the body as your schema grows
-    staffApi.update(staffId, { deskStart, deskEnd }).catch(() => {});
-  }, []);
-
   const updateStaffMaxHours = useCallback((staffId, maxHoursPerWeek) => {
     setStaff(prev =>
       prev.map(s => s.id === staffId ? { ...s, maxHoursPerWeek } : s)
@@ -236,15 +219,12 @@ export function useSchedule() {
     // both — see the comment where they're defined.
     availability,
     getAvailability,
-    reloadAvailability: loadAvailability,
     currentDate,
     addEvent,
     updateEvent,
     removeEvent,
     assignStaffToEvent,
     unassignStaffFromEvent,
-    updateStaffDesk,
-    updateStaffVr,
     updateStaffMaxHours,
     addStaff,
     removeStaff,
