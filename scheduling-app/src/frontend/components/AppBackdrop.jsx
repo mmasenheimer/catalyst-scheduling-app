@@ -20,19 +20,21 @@ import { Suspense, lazy, useEffect, useState } from "react";
 // To remove the feature: see the header of Dither.jsx.
 const Dither = lazy(() => import("./Dither"));
 
-// The app's accent orange, --color-accent / #b05030, as the shader wants it:
-// 0-1 per channel.
-const ACCENT = [176 / 255, 80 / 255, 48 / 255];
+// The wave's hue: a forest green, #28764a, as the shader wants it — 0-1 per
+// channel. Chosen so that at the same BRIGHTNESS it reads about as bright as the
+// orange it replaced did (green dominates perceived luminance, so a pure green
+// here would have come out noticeably brighter).
+const WAVE_BASE = [40 / 255, 118 / 255, 74 / 255];
 
-// How bright the backdrop is allowed to get, 0 = invisible, 1 = full accent.
+// How bright the backdrop is allowed to get, 0 = invisible, 1 = full base colour.
 //
 // This is the dimmer knob. The shader mixes up from black toward waveColor, so
 // the colour it's given *is* the ceiling — nothing else caps the brightness.
 // Scaling all three channels by the same factor dims the field without shifting
-// the hue off the accent.
+// its hue.
 const BRIGHTNESS = 0.4;
 
-const WAVE_COLOR = ACCENT.map((c) => c * BRIGHTNESS);
+const WAVE_COLOR = WAVE_BASE.map((c) => c * BRIGHTNESS);
 
 /** True when the viewer has asked their OS to keep animation to a minimum. */
 function usePrefersReducedMotion() {
