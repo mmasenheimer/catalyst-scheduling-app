@@ -122,7 +122,6 @@ const COLLECTIONS = [
 
   await mongoose.connect(uri);
   const client2 = mongoose.connection.getClient();
-  const live2 = client2.db(DB_NAME);
   const scratch2 = client2.db(SCRATCH);
 
   console.log("\ncollection        live   restored");

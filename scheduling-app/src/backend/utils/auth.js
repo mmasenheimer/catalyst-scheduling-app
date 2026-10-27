@@ -55,11 +55,9 @@ function verifyPassword(plain, hash) {
 function signToken(user) {
   return jwt.sign(
     {
+      // Identity only. Role, staffId and the rest are read from the database on
+      // every request (middleware/auth.js), so the token doesn't carry them.
       sub: String(user._id),
-      role: user.role,
-      staffId: user.staffId ?? null,
-      username: user.username,
-      name: user.name,
       // Session generation — compared against the account's current
       // tokenVersion on every request so old tokens die on a password change.
       tv: user.tokenVersion ?? 0,

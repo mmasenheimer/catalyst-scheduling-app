@@ -51,9 +51,9 @@ router.get("/", async (req, res) => {
 //   • employees may address the manager and nobody else
 //   • only a manager may address individuals or broadcast to everyone
 const ALLOWED_TYPES = new Set([
-  "coverage", "shift_change", "shift_removed", "new_event",
+  "coverage", "shift_change", "shift_removed",
   "event_assigned", "event_unassigned",
-  "alert", "approval", "availability",
+  "approval", "availability",
 ]);
 const MAX_TITLE = 120;
 const MAX_MESSAGE = 2000;

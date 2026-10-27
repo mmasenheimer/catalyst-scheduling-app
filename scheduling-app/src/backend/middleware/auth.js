@@ -36,7 +36,7 @@ async function requireAuth(req, res, next) {
     // immediately, instead of leaving it usable until the token expires.
     // (Costs one indexed _id lookup per authenticated request.)
     const user = await User.findById(payload.sub)
-      .select("role staffId username name mustChangePassword tokenVersion")
+      .select("role staffId name mustChangePassword tokenVersion")
       .lean();
 
     if (!user) return res.status(401).json({ error: "Account no longer exists" });
@@ -54,7 +54,6 @@ async function requireAuth(req, res, next) {
       id: String(user._id),
       role: user.role,
       staffId: user.staffId ?? null,
-      username: user.username,
       name: user.name,
       mustChangePassword: !!user.mustChangePassword,
     };

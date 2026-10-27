@@ -56,11 +56,8 @@ const perAccountLoginLimiter = rateLimit({
   message: { error: "Too many failed attempts for this account. Try again in a few minutes." },
 });
 
-// Then a looser per-IP cap, to stop one source hammering many accounts.
-//
-// NOTE: behind a reverse proxy every request appears to come from the proxy's
-// IP. Set `app.set("trust proxy", 1)` when deploying behind nginx so this keys
-// off the real client address.
+// Then a looser per-IP cap, to stop one source hammering many accounts. Keys off
+// the real client address only with TRUST_PROXY=1 behind nginx (see above).
 const perIpLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,

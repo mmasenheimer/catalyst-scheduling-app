@@ -33,19 +33,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/staff/:id
-// Fetches a single person by id
-
-router.get("/:id", async (req, res) => {
-  try {
-    const person = await Staff.findById(req.params.id);
-    if (!person) return res.status(404).json({ error: "Not found" });
-    res.json(person);
-  } catch (err) {
-    sendWriteError(res, err);
-  }
-});
-
 // PATCH /api/staff/:id
 // This updates specidic fields on a staff member - shift times, desk/VR times, or weekly hour limit
 

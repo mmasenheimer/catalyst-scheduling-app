@@ -93,7 +93,7 @@ async function notifyRequestSubmitted(request) {
  * in that case, since they'd already agreed to something that's now off.
  */
 async function notifyRequestWithdrawn(request, previousStatus) {
-  const { type, staffName, targetName, targetStaffId, dayLabel } = request;
+  const { type, staffName, targetStaffId, dayLabel } = request;
   const label = TYPE_LABEL[type] ?? type;
 
   if (previousStatus === "pending_peer") {

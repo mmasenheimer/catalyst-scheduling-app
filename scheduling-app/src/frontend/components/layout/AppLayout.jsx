@@ -14,8 +14,7 @@ import { WEEK_DAY_NAMES } from "../../utils/scheduleUtils";
 import { LoaderCircleIcon } from "../LoaderCircleIcon";
 
 const managerNav = [
-  // Hidden from the nav for now; the page and its "/" route are left intact.
-  // { to: "/",               label: "Daily Schedule" },
+  { to: "/",               label: "Daily Schedule" },
   { to: "/weekly",         label: "Weekly Schedule" },
   { to: "/calendar",       label: "Events by Month" },
   { to: "/templates",      label: "Templates" },

@@ -37,6 +37,3 @@ process.on('unhandledRejection', (err) => {
     console.error(`[slack] failed to start: ${err.message} — REST API is still running.`);
   }
 })();
-
-// Register Slack event listeners by importing them above once you have them.
-// e.g.  app.message('hello', async ({ message, say }) => { ... });

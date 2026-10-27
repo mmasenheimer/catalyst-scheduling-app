@@ -388,5 +388,4 @@ module.exports = {
   validateAssignedStaff,
   validateTemplateDays,
   validateTemplateShape,
-  MAX_NOTE_LENGTH,
 };

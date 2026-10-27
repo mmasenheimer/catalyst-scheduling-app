@@ -70,4 +70,4 @@ async function createWithNextId(Model, data, attempts = 5) {
   throw new Error("createWithNextId: exhausted retries");
 }
 
-module.exports = { createWithNextId, nextId, resyncCounter };
+module.exports = { createWithNextId };
