@@ -4,7 +4,7 @@ const User = require("../models/User");
 const {
   verifyPassword, signToken, hashPassword, generateTempPassword,
 } = require("../utils/auth");
-const { requireAuth, requireManager } = require("../middleware/auth");
+const { requireAuth, requireManager, requireOwner } = require("../middleware/auth");
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -65,10 +65,24 @@ router.post("/provision", requireAuth, requireManager, async (req, res) => {
     if (/\s/.test(username)) {
       return res.status(400).json({ error: "Username can't contain spaces" });
     }
+    if (role !== "employee" && role !== "manager") {
+      return res.status(400).json({ error: "Role must be employee or manager" });
+    }
+    if (role === "manager" && !req.user.owner) {
+      return res.status(403).json({ error: "Only the owner can create manager accounts" });
+    }
 
     const existing = await User.findOne({ username });
     if (existing && !existing.mustChangePassword) {
       return res.status(409).json({ error: "That username is already taken by an active account" });
+    }
+    // Re-provisioning replaces the password, so a pending manager account is the
+    // owner's to redo, and the owner's own account is nobody's.
+    if (existing?.owner) {
+      return res.status(409).json({ error: "That username is already taken by an active account" });
+    }
+    if (existing?.role === "manager" && !req.user.owner) {
+      return res.status(403).json({ error: "Only the owner can change a manager account" });
     }
 
     // Don't let a second account attach to a staff member who already has one —
@@ -143,6 +157,15 @@ router.post("/reset", requireAuth, requireManager, async (req, res) => {
         error: "Use Change Password to change your own — a reset would sign you out first.",
       });
     }
+    // Managers reset employees; only the owner resets managers. The owner's own
+    // account can't be reset from the app at all — `npm run reset:manager` on the
+    // server is the way back in if the owner is locked out.
+    if (user.owner) {
+      return res.status(403).json({ error: "The owner account can't be reset from the app" });
+    }
+    if (user.role === "manager" && !req.user.owner) {
+      return res.status(403).json({ error: "Only the owner can reset a manager's password" });
+    }
 
     const tempPassword = generateTempPassword();
     user.passwordHash = await hashPassword(tempPassword);
@@ -157,6 +180,40 @@ router.post("/reset", requireAuth, requireManager, async (req, res) => {
   } catch (err) {
     console.error("Reset failed:", err.message);
     res.status(500).json({ error: "Could not reset the password" });
+  }
+});
+
+// GET /api/auth/managers  (owner only) → every manager account, owner first.
+router.get("/managers", requireAuth, requireOwner, async (req, res) => {
+  try {
+    const managers = await User.find({ role: "manager" })
+      .select("username name owner mustChangePassword createdAt")
+      .sort({ owner: -1, username: 1 });
+    res.json(managers);
+  } catch (err) {
+    console.error("List managers failed:", err.message);
+    res.status(500).json({ error: "Could not load managers" });
+  }
+});
+
+// DELETE /api/auth/managers/:id  (owner only)
+// Removes a manager's login. Their sessions die with the account, since every
+// request re-checks that the account still exists.
+router.delete("/managers/:id", requireAuth, requireOwner, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user || user.role !== "manager") {
+      return res.status(404).json({ error: "No manager account with that id" });
+    }
+    if (user.owner) {
+      return res.status(403).json({ error: "The owner account can't be removed from the app" });
+    }
+    await user.deleteOne();
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.name === "CastError") return res.status(404).json({ error: "No manager account with that id" });
+    console.error("Remove manager failed:", err.message);
+    res.status(500).json({ error: "Could not remove the manager" });
   }
 });
 

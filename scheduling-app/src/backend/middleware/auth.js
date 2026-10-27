@@ -36,7 +36,7 @@ async function requireAuth(req, res, next) {
     // immediately, instead of leaving it usable until the token expires.
     // (Costs one indexed _id lookup per authenticated request.)
     const user = await User.findById(payload.sub)
-      .select("role staffId name mustChangePassword tokenVersion")
+      .select("role owner staffId name mustChangePassword tokenVersion")
       .lean();
 
     if (!user) return res.status(401).json({ error: "Account no longer exists" });
@@ -53,6 +53,7 @@ async function requireAuth(req, res, next) {
     req.user = {
       id: String(user._id),
       role: user.role,
+      owner: user.role === "manager" && !!user.owner,
       staffId: user.staffId ?? null,
       name: user.name,
       mustChangePassword: !!user.mustChangePassword,
@@ -91,4 +92,12 @@ function requireManager(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireManager };
+// Must be used after requireAuth. Managing manager accounts is the owner's alone.
+function requireOwner(req, res, next) {
+  if (!req.user?.owner) {
+    return res.status(403).json({ error: "Only the owner can manage manager accounts" });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireManager, requireOwner };

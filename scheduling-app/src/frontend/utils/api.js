@@ -101,10 +101,15 @@ export const authApi = {
   // Manager-only: reset an existing employee's password, returns a new { tempPassword }.
   resetPassword: (staffId) =>
     request("/auth/reset", { method: "POST", body: JSON.stringify({ staffId }) }),
+  // Owner-only: the manager accounts, and resetting or removing one of them.
+  listManagers: () => request("/auth/managers"),
+  resetManagerPassword: (username) =>
+    request("/auth/reset", { method: "POST", body: JSON.stringify({ username }) }),
+  removeManager: (id) => request(`/auth/managers/${id}`, { method: "DELETE" }),
 };
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
-// Routes: GET /api/staff  GET /api/staff/:id  PATCH /api/staff/:id
+// Routes: GET /api/staff  PATCH /api/staff/:id
 
 export const staffApi = {
   getAll: () => request("/staff"),

@@ -3,6 +3,8 @@ import { useScheduleContext } from '../context/ScheduleContext';
 import { studioHours } from '../../data/mockData';
 import { authApi, availabilityApi } from '../utils/api';
 import { RippleButton } from '../components/RippleButton';
+import { ManagersPanel } from '../components/ManagersPanel';
+import { useAuth } from '../context/AuthContext';
 
 const emptyForm = { name: '', username: '', maxHoursPerWeek: '' };
 
@@ -23,6 +25,7 @@ function suggestUsername(name) {
 
 export default function ManageStaffPage() {
   const { staff, addStaff, removeStaff, updateStaffMaxHours } = useScheduleContext();
+  const { user } = useAuth();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -88,7 +91,7 @@ export default function ManageStaffPage() {
       const account = await authApi.provision({ username, name, staffId: created.id, role: 'employee' });
       setFormOpen(false);
       setCopied(false);
-      setInviteResult({ name, username: account.username, tempPassword: account.tempPassword });
+      setInviteResult({ title: `${name} is on the roster`, username: account.username, tempPassword: account.tempPassword });
     } catch (err) {
       setError(err.message || 'Failed to add staff member.');
     } finally {
@@ -110,7 +113,7 @@ export default function ManageStaffPage() {
     try {
       const account = await authApi.resetPassword(person.id);
       setCopied(false);
-      setInviteResult({ name: person.name, username: account.username, tempPassword: account.tempPassword });
+      setInviteResult({ title: `New password for ${person.name}`, username: account.username, tempPassword: account.tempPassword });
     } catch (err) {
       setActionError(`Couldn't reset ${person.name}'s password — ${err.message}`);
     } finally {
@@ -278,6 +281,11 @@ export default function ManageStaffPage() {
         )}
       </div>
 
+      {/* The owner also manages the manager accounts. */}
+      {user?.owner && (
+        <ManagersPanel onCredentials={result => { setCopied(false); setInviteResult(result); }} />
+      )}
+
       {/* Add employee modal */}
       {formOpen && (
         <div
@@ -339,7 +347,7 @@ export default function ManageStaffPage() {
         </div>
       )}
 
-      {/* Login credentials — shown once after adding an employee */}
+      {/* Login credentials — shown once after adding someone or resetting a password */}
       {inviteResult && (
         <div
           className="fixed inset-0 z-[9998] flex items-center justify-center"
@@ -352,7 +360,7 @@ export default function ManageStaffPage() {
             onClick={e => e.stopPropagation()}
           >
             <h3 className="text-base font-bold mb-1" style={{ color: 'var(--color-text)' }}>
-              {inviteResult.name} is on the roster
+              {inviteResult.title}
             </h3>
             <p className="text-xs mb-4" style={{ color: 'var(--color-text-dim)' }}>
               Give them these login details. On first sign-in they'll be asked to
@@ -387,8 +395,8 @@ export default function ManageStaffPage() {
             </div>
 
             <div className="text-xs mb-4" style={{ color: 'var(--color-text-dim)' }}>
-              This temporary password is shown only once. If it's lost, re-add the
-              employee to generate a new one.
+              This temporary password is shown only once. If it's lost, use Reset
+              Password to generate a new one.
             </div>
 
             <div className="flex justify-end">

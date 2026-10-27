@@ -11,6 +11,7 @@
     "seed:users": "node seedUsers.js",
     "seed:availability": "node seedAvailability.js",
     "reset:manager": "node resetManager.js",
+    "make:owner": "node makeOwner.js",
     "migrate:notif-ttl": "node migrateNotificationTtl.js",
     "backup": "node backup.js",
     "backup:verify": "node verifyBackup.js"

@@ -16,6 +16,13 @@ const userSchema = new Schema(
     name: { type: String, required: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ["manager", "employee"], default: "employee" },
+    // The owner is a manager who can also manage the other managers — create,
+    // reset and remove their accounts. It's where the chain of authority ends:
+    // nothing in the app can grant or remove it, only `npm run make:owner` on
+    // the server, so a manager can never promote themselves or lock out the
+    // owner. Always paired with role: "manager", so every manager-only check
+    // already lets the owner through.
+    owner: { type: Boolean, default: false },
     staffId: { type: Number, default: null },
     // Set on manager-provisioned accounts; cleared once the user sets their own
     // password on first login. Gates the app until they do.

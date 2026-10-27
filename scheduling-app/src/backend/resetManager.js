@@ -5,10 +5,10 @@ require('dotenv').config();
 //
 // Managers are the one account class with no `staffId`, and the in-app reset is
 // keyed on that — so a manager who has completed setup and then forgotten their
-// password cannot be recovered through the application. With a second manager
-// present, POST /api/auth/reset can now do it by username. This script is for
-// the case that has no in-app answer at all: the *only* manager is locked out,
-// so there is nobody left to press the button.
+// password cannot be recovered through the application. The owner can reset any
+// other manager by username (POST /api/auth/reset). This script is for the case
+// that has no in-app answer at all: the owner — or the only manager — is locked
+// out, so there is nobody left to press the button.
 //
 // Deliberately a script rather than an endpoint. It requires shell access to the
 // server and the database credentials, which is the right bar for something that
