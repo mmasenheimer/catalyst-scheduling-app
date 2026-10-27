@@ -226,6 +226,36 @@ export function removeShiftAndSweep(person, shiftIndex, assignedEvents = [], rem
 }
 
 /**
+ * Drop the duty turns a shift resize left stranded.
+ *
+ * Called when a resize ends, with the shift's extent from before the drag. Any
+ * desk, VR or 1-1 turn that sat on that shift and is no longer fully inside one
+ * of the person's shifts is removed — shrinking 9–5 to 9–12 takes a 3–4 desk
+ * turn with it. Turns that never touched the resized shift are left alone, so a
+ * resize can't silently clear something elsewhere in the day.
+ *
+ * Returns the same object when nothing was removed, so memoized rows don't
+ * re-render for a resize that didn't strand anything.
+ */
+export function sweepDutiesAfterResize(person, originalShift) {
+  const shifts = shiftsOf(person);
+  const touched = t => t.start < originalShift.end && t.end > originalShift.start;
+  const covered = t => shifts.some(sh => sh.start <= t.start && sh.end >= t.end);
+  const keep = t => !touched(t) || covered(t);
+
+  // Only fields the record already has — template rows carry no 1-1s, and
+  // shouldn't gain an empty list they never had.
+  let next = person;
+  for (const field of ['deskShifts', 'vrShifts', 'oneOnOnes']) {
+    const list = person[field];
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter(keep);
+    if (kept.length !== list.length) next = { ...next, [field]: kept };
+  }
+  return next;
+}
+
+/**
  * Row order for a day: earliest shift first, anyone unscheduled at the bottom.
  *
  * Four pages each declare an identical private copy of this (DailySchedulePage,
@@ -582,14 +612,11 @@ export function getStaffCount(staff, hour) {
  * grid renders as though the desk were staffed.
  *
  * Creating and resizing a desk turn are both already constrained to a host
- * shift, and deleting a shift sweeps up the turns sitting on it
- * (orphanedByShiftRemoval). The gap is *editing* a shift: dragging its edge
- * leaves the desk turns where they are, so shrinking 9–5 to 9–12 strands a 3–4
- * desk turn with nothing to notice it.
- *
- * Reported rather than auto-repaired on purpose. Deleting the turn would be
- * surprising for a 30-minute nudge, and moving it into the shortened shift means
- * guessing where the manager wanted it.
+ * shift, deleting a shift sweeps up the turns sitting on it
+ * (orphanedByShiftRemoval), and resizing a shift — by drag or in the edit
+ * modal — drops any turn it no longer covers (sweepDutiesAfterResize). What's
+ * left for this to catch is a turn stranded some other way, such as older
+ * saved data.
  */
 export function orphanedDutyTurns(person, kind) {
   const shifts = shiftsOf(person);

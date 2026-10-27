@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, sweepDutiesAfterResize, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -998,7 +998,12 @@ export default function WeeklyTemplatesPage() {
       document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      setOrderedStaff(prev => sortByShift(prev));
+      // Desk/VR/1-1 time the shift no longer covers goes with it.
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        next[staffIndex] = sweepDutiesAfterResize(next[staffIndex], { start: initialStart, end: initialEnd });
+        return sortByShift(next);
+      });
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -1313,8 +1318,9 @@ export default function WeeklyTemplatesPage() {
       setOrderedStaff(prev => {
         const next = [...prev];
         const p = { ...next[t.staffIndex], shifts: [...next[t.staffIndex].shifts] };
-        p.shifts[t.shiftIndex] = { ...p.shifts[t.shiftIndex], start: data.shiftStart, end: data.shiftEnd };
-        next[t.staffIndex] = p;
+        const before = p.shifts[t.shiftIndex];
+        p.shifts[t.shiftIndex] = { ...before, start: data.shiftStart, end: data.shiftEnd };
+        next[t.staffIndex] = sweepDutiesAfterResize(p, before);
         return sortByShift(next);
       });
     } else if (t.type === 'desk') {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -796,7 +796,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     function onUp() {
       setActiveBar(null); document.body.style.cursor = document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
-      setOrderedStaff(p => sortByShift(p));
+      // Desk/VR/1-1 time the shift no longer covers goes with it.
+      setOrderedStaff(p => { const next=[...p]; next[si]=sweepDutiesAfterResize(next[si], { start:i0, end:e0 }); return sortByShift(next); });
     }
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   }
@@ -991,8 +992,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     if (t.type === 'shift') {
       setOrderedStaff(prev => {
         const next=[...prev]; const p={...next[t.staffIndex],shifts:[...next[t.staffIndex].shifts]};
-        p.shifts[t.shiftIndex]={...p.shifts[t.shiftIndex],start:data.shiftStart,end:data.shiftEnd};
-        next[t.staffIndex]=p; return sortByShift(next);
+        const before=p.shifts[t.shiftIndex];
+        p.shifts[t.shiftIndex]={...before,start:data.shiftStart,end:data.shiftEnd};
+        next[t.staffIndex]=sweepDutiesAfterResize(p, before); return sortByShift(next);
       });
     } else if (t.type === 'vr') {
       setOrderedStaff(prev => {

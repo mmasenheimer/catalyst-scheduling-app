@@ -18,6 +18,7 @@ import {
   activeDutyKinds,
   buildTemplateAlerts,
   removeShiftAndSweep,
+  sweepDutiesAfterResize,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -397,5 +398,57 @@ describe('removeShiftAndSweep', () => {
   it('is a no-op on an index that isn\'t there', () => {
     const p = loaded();
     expect(removeShiftAndSweep(p, 4, []).person).toBe(p);
+  });
+});
+
+describe('sweepDutiesAfterResize', () => {
+  const person = (shift, extra = {}) => ({
+    id: 1, name: 'A', scheduled: true,
+    shifts: [shift],
+    deskShifts: [], vrShifts: [], oneOnOnes: [],
+    ...extra,
+  });
+
+  it('drops a desk turn the shortened shift no longer covers', () => {
+    const p = person({ id: 's', start: 9, end: 12 }, { deskShifts: [{ id: 'd', start: 15, end: 16 }] });
+    expect(sweepDutiesAfterResize(p, { start: 9, end: 17 }).deskShifts).toEqual([]);
+  });
+
+  it('drops a turn the new end cuts through, not just ones fully outside', () => {
+    const p = person({ id: 's', start: 9, end: 15.5 }, { deskShifts: [{ id: 'd', start: 15, end: 16 }] });
+    expect(sweepDutiesAfterResize(p, { start: 9, end: 17 }).deskShifts).toEqual([]);
+  });
+
+  it('sweeps VR and 1-1 turns the same way', () => {
+    const p = person({ id: 's', start: 9, end: 12 }, {
+      vrShifts: [{ id: 'v', start: 13, end: 14 }],
+      oneOnOnes: [{ id: 'o', start: 14, end: 15 }],
+    });
+    const out = sweepDutiesAfterResize(p, { start: 9, end: 17 });
+    expect(out.vrShifts).toEqual([]);
+    expect(out.oneOnOnes).toEqual([]);
+  });
+
+  it('keeps turns the resized shift still covers', () => {
+    const desk = { id: 'd', start: 10, end: 11 };
+    const p = person({ id: 's', start: 9, end: 12 }, { deskShifts: [desk] });
+    expect(sweepDutiesAfterResize(p, { start: 9, end: 17 })).toBe(p);
+  });
+
+  it('leaves turns that never sat on the resized shift alone', () => {
+    // An already-stranded turn elsewhere in the day isn't this resize's to clear.
+    const stray = { id: 'd', start: 18, end: 19 };
+    const p = person({ id: 's', start: 9, end: 12 }, { deskShifts: [stray] });
+    expect(sweepDutiesAfterResize(p, { start: 9, end: 17 }).deskShifts).toEqual([stray]);
+  });
+
+  it('keeps a turn another shift of theirs covers', () => {
+    const p = { ...person({ id: 's', start: 9, end: 12 }), shifts: [{ id: 's', start: 9, end: 12 }, { id: 't', start: 13, end: 17 }], deskShifts: [{ id: 'd', start: 14, end: 15 }] };
+    expect(sweepDutiesAfterResize(p, { start: 9, end: 15 }).deskShifts).toHaveLength(1);
+  });
+
+  it('does not add duty lists a record never had', () => {
+    const p = { id: 1, shifts: [{ start: 9, end: 12 }], deskShifts: [{ id: 'd', start: 15, end: 16 }] };
+    expect('oneOnOnes' in sweepDutiesAfterResize(p, { start: 9, end: 17 })).toBe(false);
   });
 });
