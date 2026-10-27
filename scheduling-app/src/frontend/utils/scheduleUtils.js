@@ -256,6 +256,44 @@ export function sweepDutiesAfterResize(person, originalShift) {
 }
 
 /**
+ * Empty a day: every shift, desk, VR and 1-1 turn goes, and staff come off the
+ * day's one-off events so those show up again as unfilled, ready to drag back in.
+ *
+ * Repeating and multi-day events are the exception. Their `assignedStaff` is one
+ * list shared by every date they occur on, so taking someone off here would take
+ * them off every other date too — far more than clearing one day should touch.
+ * Those assignments stay, and the people on them keep a shift covering just the
+ * event, which is what the save path would put back anyway.
+ *
+ * Returns the cleared rows plus the ids of the one-off events whose staff list
+ * the caller must empty — assignment lives on the Event document, so only the
+ * caller can finish that. Emptied in one write per event rather than one
+ * unassign per person: successive unassigns in the same tick each read the
+ * event before the previous one landed, and the last write puts the others back.
+ */
+export function clearDaySchedule(staffList, eventsOnDate = []) {
+  const isOneOff = evt => !evt.repeating && (evt.days?.length ?? 0) <= 1;
+
+  const clearEventIds = eventsOnDate
+    .filter(evt => isOneOff(evt) && (evt.assignedStaff ?? []).length > 0)
+    .map(evt => evt.id);
+
+  const cleared = staffList.map(person => {
+    const out = { ...person, shifts: [], scheduled: false };
+    // Only fields the row already has — template rows carry no 1-1s.
+    for (const field of ['deskShifts', 'vrShifts', 'oneOnOnes']) {
+      if (Array.isArray(person[field])) out[field] = [];
+    }
+    return out;
+  });
+
+  return {
+    staff: stretchShiftsToCoverEvents(cleared, eventsOnDate.filter(evt => !isOneOff(evt))),
+    clearEventIds,
+  };
+}
+
+/**
  * Row order for a day: earliest shift first, anyone unscheduled at the bottom.
  *
  * Four pages each declare an identical private copy of this (DailySchedulePage,

@@ -19,6 +19,7 @@ import {
   buildTemplateAlerts,
   removeShiftAndSweep,
   sweepDutiesAfterResize,
+  clearDaySchedule,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -450,5 +451,56 @@ describe('sweepDutiesAfterResize', () => {
   it('does not add duty lists a record never had', () => {
     const p = { id: 1, shifts: [{ start: 9, end: 12 }], deskShifts: [{ id: 'd', start: 15, end: 16 }] };
     expect('oneOnOnes' in sweepDutiesAfterResize(p, { start: 9, end: 17 })).toBe(false);
+  });
+});
+
+describe('clearDaySchedule', () => {
+  const row = (id, extra = {}) => ({
+    id, name: `P${id}`, scheduled: true,
+    shifts: [{ id: `s${id}`, start: 9, end: 17 }],
+    deskShifts: [{ id: `d${id}`, start: 10, end: 11 }],
+    vrShifts: [{ id: `v${id}`, start: 12, end: 13 }],
+    oneOnOnes: [{ id: `o${id}`, start: 14, end: 15 }],
+    ...extra,
+  });
+  const oneOff = { id: 1, start: 10, end: 11, days: ['2026-10-27'], repeating: false, assignedStaff: [1, 2] };
+  const weekly = { id: 2, start: 15, end: 16, days: ['2026-10-06'], repeating: true, assignedStaff: [2] };
+  const multiDay = { id: 3, start: 13, end: 14, days: ['2026-10-27', '2026-10-28'], repeating: false, assignedStaff: [1] };
+
+  it('empties every shift and duty when there are no events', () => {
+    const { staff, clearEventIds } = clearDaySchedule([row(1), row(2)], []);
+    staff.forEach(p => {
+      expect(p.shifts).toEqual([]);
+      expect(p.deskShifts).toEqual([]);
+      expect(p.vrShifts).toEqual([]);
+      expect(p.oneOnOnes).toEqual([]);
+      expect(p.scheduled).toBe(false);
+    });
+    expect(clearEventIds).toEqual([]);
+  });
+
+  it('empties the staff list of one-off events', () => {
+    const { clearEventIds } = clearDaySchedule([row(1), row(2)], [oneOff]);
+    expect(clearEventIds).toEqual([1]);
+  });
+
+  it('skips one-off events nobody is on', () => {
+    const { clearEventIds } = clearDaySchedule([row(1)], [{ ...oneOff, assignedStaff: [] }]);
+    expect(clearEventIds).toEqual([]);
+  });
+
+  it('keeps repeating and multi-day assignments, with a shift covering just the event', () => {
+    const { staff, clearEventIds } = clearDaySchedule([row(1), row(2)], [weekly, multiDay]);
+    expect(clearEventIds).toEqual([]);
+    const [p1, p2] = staff;
+    expect(p1.shifts).toEqual([expect.objectContaining({ start: 13, end: 14 })]);
+    expect(p2.shifts).toEqual([expect.objectContaining({ start: 15, end: 16 })]);
+    // Duties still go, even for people who keep an event shift.
+    expect(p1.deskShifts).toEqual([]);
+  });
+
+  it('does not add duty lists a row never had', () => {
+    const { staff } = clearDaySchedule([{ id: 1, shifts: [{ start: 9, end: 12 }], deskShifts: [] }], []);
+    expect('oneOnOnes' in staff[0]).toBe(false);
   });
 });

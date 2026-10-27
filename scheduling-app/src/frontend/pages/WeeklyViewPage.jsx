@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -514,6 +514,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const [previewInfo,    setPreviewInfo]    = useState(null);
   const [applyTplOpen,   setApplyTplOpen]   = useState(false);
   const [finalizeWarn,   setFinalizeWarn]   = useState(null);   // alert list
+  const [clearConfirm,   setClearConfirm]   = useState(false);
   const [now,            setNow]            = useState(() => new Date());
 
   // Only today's box needs a live clock for "on shift now" — the other 6 don't tick.
@@ -944,6 +945,15 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     setOrderedStaff(p => sortByShift(p));
   }
 
+  // ── Clear day ───────────────────────────────────────────────────────────────
+  // Saves through the normal auto-save, so it's version-checked like any edit.
+  function confirmClearDay() {
+    setClearConfirm(false);
+    const { staff, clearEventIds } = clearDaySchedule(orderedStaff, dayEvents);
+    setOrderedStaff(sortByShift(staff));
+    clearEventIds.forEach(id => updateEvent(id, { assignedStaff: [] }));
+  }
+
   // ── Context menu ────────────────────────────────────────────────────────────
   function handleBarContextMenu(e, target) { setContextMenu({ x:e.clientX, y:e.clientY, target }); }
   function handleContextMenuDelete() {
@@ -1324,6 +1334,17 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
               <span><strong style={{ color:'var(--color-accent-bright)' }}>{onShiftNow}</strong> on shift now</span>
             </div>
           )}
+          {!finalized && (
+            <RippleButton
+              onClick={() => setClearConfirm(true)}
+              disabled={scheduledToday.length === 0 && !dayEvents.some(ev => ev.assignedStaff.length > 0)}
+              tone="red"
+              rippleSize="11em"
+              style={{ padding:'4px 13px', borderRadius:7, fontSize:12, fontWeight:600, whiteSpace:'nowrap',
+                opacity: scheduledToday.length === 0 && !dayEvents.some(ev => ev.assignedStaff.length > 0) ? 0.5 : 1 }}>
+              Clear Day
+            </RippleButton>
+          )}
           {/* Green rather than the accent, matching Finalize All in the page
               header — the two do the same thing at different scopes. */}
           <RippleButton
@@ -1472,6 +1493,15 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {pendingWarning && <WarningModal title={pendingWarning.title} message={pendingWarning.message} confirmLabel={pendingWarning.confirmLabel} onConfirm={pendingWarning.onConfirm} onCancel={pendingWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
+      {clearConfirm && (
+        <WarningModal
+          title={`Clear ${dayName}?`}
+          message="Removes every shift, desk, VR and 1-1 for this day and takes staff off its one-off events. People on repeating or multi-day events keep those."
+          confirmLabel="Clear Day"
+          onConfirm={confirmClearDay}
+          onCancel={() => setClearConfirm(false)}
+        />
+      )}
       {finalizeWarn && (
         <WarningModal
           title="Schedule Has Issues"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -63,7 +63,7 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
 
 // ── Stats header ───────────────────────────────────────────────────────────────
 
-function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate }) {
+function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate, onClearDay }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
@@ -74,6 +74,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
   const nowHour     = now.getHours() + now.getMinutes() / 60;
   const onShiftNow  = scheduled.filter(s => s.shifts.some(sh => sh.start <= nowHour && sh.end > nowHour)).length;
   const dateLabel   = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const canClear    = scheduled.length > 0 || events.some(ev => ev.assignedStaff.length > 0);
   return (
     // Lifted above the cards below it. .glass-surface applies a backdrop-filter,
     // which makes every glass card its own stacking context — so without this the
@@ -95,6 +96,17 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
         {!finalized && (
           <RippleButton onClick={onApplyTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
             Apply Template
+          </RippleButton>
+        )}
+        {!finalized && (
+          <RippleButton
+            onClick={onClearDay}
+            disabled={!canClear}
+            tone="red"
+            className="px-3 py-1 rounded-md text-xs font-semibold"
+            style={{ opacity: canClear ? 1 : 0.5 }}
+          >
+            Clear Day
           </RippleButton>
         )}
         <RippleButton onClick={onSaveAsTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
@@ -1053,6 +1065,7 @@ export default function DailySchedulePage() {
   const [pendingWarning,    setPendingWarning]     = useState(null);   // { title, message, confirmLabel, onConfirm, onCancel }
   const [applyTplOpen,    setApplyTplOpen]     = useState(false);
   const [saveTplOpen,     setSaveTplOpen]      = useState(false);
+  const [clearConfirm,    setClearConfirm]     = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
@@ -2225,6 +2238,7 @@ export default function DailySchedulePage() {
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={handleUnfinalize}
         onApplyTemplate={() => setApplyTplOpen(true)}
         onSaveAsTemplate={() => setSaveTplOpen(true)}
+        onClearDay={() => setClearConfirm(true)}
       />
       {(() => {
         // Hold the alert inputs steady while a drag/resize is in progress so the
@@ -2432,6 +2446,21 @@ export default function DailySchedulePage() {
           confirmLabel={pendingWarning.confirmLabel}
           onConfirm={pendingWarning.onConfirm}
           onCancel={pendingWarning.onCancel}
+        />
+      )}
+      {clearConfirm && (
+        <WarningModal
+          title="Clear this day?"
+          message="Removes every shift, desk, VR and 1-1 for this day and takes staff off its one-off events. People on repeating or multi-day events keep those."
+          confirmLabel="Clear Day"
+          onConfirm={() => {
+            setClearConfirm(false);
+            // Saves through the normal auto-save, so it's version-checked like any edit.
+            const { staff: cleared, clearEventIds } = clearDaySchedule(orderedStaff, todayEvents);
+            setOrderedStaff(sortByShift(cleared));
+            clearEventIds.forEach(id => schedule.updateEvent(id, { assignedStaff: [] }));
+          }}
+          onCancel={() => setClearConfirm(false)}
         />
       )}
       {finalizeWarning && (
