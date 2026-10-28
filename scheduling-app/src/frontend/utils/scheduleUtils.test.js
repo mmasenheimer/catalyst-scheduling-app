@@ -20,6 +20,9 @@ import {
   removeShiftAndSweep,
   sweepDutiesAfterResize,
   clearDaySchedule,
+  editStampOf,
+  describeEditStamp,
+  formatEditTime,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -502,5 +505,44 @@ describe('clearDaySchedule', () => {
   it('does not add duty lists a row never had', () => {
     const { staff } = clearDaySchedule([{ id: 1, shifts: [{ start: 9, end: 12 }], deskShifts: [] }], []);
     expect('oneOnOnes' in staff[0]).toBe(false);
+  });
+});
+
+describe('edit stamps', () => {
+  const now = new Date(2026, 9, 28, 16, 0);           // Oct 28 2026, 4:00 PM
+  const today = new Date(2026, 9, 28, 15, 42).toISOString();
+  const earlier = new Date(2026, 9, 20, 9, 10).toISOString();
+  const lastYear = new Date(2025, 9, 20, 9, 10).toISOString();
+
+  it('formats today as a time, this year with the date, older with the year', () => {
+    expect(formatEditTime(today, now)).toBe('3:42 PM');
+    expect(formatEditTime(earlier, now)).toBe('Oct 20, 9:10 AM');
+    expect(formatEditTime(lastYear, now)).toBe('Oct 20, 2025');
+  });
+
+  it('reads the names out of a saved day', () => {
+    expect(editStampOf({ lastEditedBy: { id: 'a', name: 'Jamie' }, lastEditedAt: today })).toEqual({
+      lastEditedBy: 'Jamie', lastEditedAt: today, lastEditSource: null, finalizedBy: null, finalizedAt: null,
+    });
+    expect(editStampOf(null)).toBe(null);
+  });
+
+  it('shows who finalized a finalized day, and who edited a draft', () => {
+    const stamp = { lastEditedBy: 'Jamie', lastEditedAt: today, finalizedBy: 'Michael', finalizedAt: earlier };
+    expect(describeEditStamp(stamp, true, now)).toBe('Finalized by Michael · Oct 20, 9:10 AM');
+    expect(describeEditStamp(stamp, false, now)).toBe('Edited by Jamie · 3:42 PM');
+  });
+
+  it('falls back to the last edit when a finalized day has no finalizer recorded', () => {
+    expect(describeEditStamp({ lastEditedBy: 'Jamie', lastEditedAt: today }, true, now)).toBe('Edited by Jamie · 3:42 PM');
+  });
+
+  it('marks saves that came from approving a request', () => {
+    expect(describeEditStamp({ lastEditedBy: 'Jamie', lastEditedAt: today, lastEditSource: 'request' }, false, now))
+      .toBe('Edited by Jamie · 3:42 PM (approved request)');
+  });
+
+  it('shows nothing for days saved before stamping existed', () => {
+    expect(describeEditStamp(editStampOf({ version: 3 }), true, now)).toBe(null);
   });
 });

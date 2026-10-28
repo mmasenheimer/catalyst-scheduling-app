@@ -59,6 +59,9 @@ async function request(path, options = {}) {
     // is to warn and offer a reload rather than to retry or report an error.
     err.status = res.status;
     if (detail?.currentVersion != null) err.currentVersion = detail.currentVersion;
+    // Who won a schedule save race, so the editor can name them.
+    if (detail?.lastEditedBy) err.lastEditedBy = detail.lastEditedBy;
+    if (detail?.lastEditedAt) err.lastEditedAt = detail.lastEditedAt;
     throw err;
   }
   return res.json();

@@ -964,3 +964,47 @@ export function buildTemplateAlerts(staff, dow = null, { disabledDuties } = {}) 
   }
   return alerts;
 }
+
+/**
+ * The who-and-when fields of a saved day, as returned by the schedules API.
+ * Null for a day that has never been saved.
+ */
+export function editStampOf(saved) {
+  if (!saved) return null;
+  return {
+    lastEditedBy:   saved.lastEditedBy?.name ?? null,
+    lastEditedAt:   saved.lastEditedAt ?? null,
+    lastEditSource: saved.lastEditSource ?? null,
+    finalizedBy:    saved.finalizedBy?.name ?? null,
+    finalizedAt:    saved.finalizedAt ?? null,
+  };
+}
+
+/** "3:42 PM" today, "Oct 28, 3:42 PM" this year, "Oct 28, 2025" before that. */
+export function formatEditTime(value, now = new Date()) {
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return '';
+  const time = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (when.toDateString() === now.toDateString()) return time;
+  if (when.getFullYear() === now.getFullYear()) {
+    return `${when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
+  }
+  return when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * The one-line stamp shown on a day: who finalized it when it's finalized,
+ * otherwise who last edited it. Null when there's nothing recorded — days saved
+ * before stamping existed show nothing until their next save.
+ */
+export function describeEditStamp(stamp, finalized, now = new Date()) {
+  if (!stamp) return null;
+  if (finalized && stamp.finalizedBy) {
+    return `Finalized by ${stamp.finalizedBy} · ${formatEditTime(stamp.finalizedAt, now)}`;
+  }
+  if (stamp.lastEditedBy) {
+    const via = stamp.lastEditSource === 'request' ? ' (approved request)' : '';
+    return `Edited by ${stamp.lastEditedBy} · ${formatEditTime(stamp.lastEditedAt, now)}${via}`;
+  }
+  return null;
+}

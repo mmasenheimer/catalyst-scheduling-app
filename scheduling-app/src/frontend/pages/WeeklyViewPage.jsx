@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -514,7 +514,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   const [previewInfo,    setPreviewInfo]    = useState(null);
   const [applyTplOpen,   setApplyTplOpen]   = useState(false);
   const [finalizeWarn,   setFinalizeWarn]   = useState(null);   // alert list
-  const [clearConfirm,   setClearConfirm]   = useState(false);
   const [now,            setNow]            = useState(() => new Date());
 
   // Only today's box needs a live clock for "on shift now" — the other 6 don't tick.
@@ -566,11 +565,18 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // one field. In a ref because the debounced auto-save must read the current
   // value, not one captured when its timer was set.
   const versionRef = useRef(0);
+  // { by, at } of whoever saved this day first; false when there's no conflict.
   const [conflict, setConflict] = useState(false);
+  // Who last edited / finalized this day, as the server stamped it.
+  const [stamp, setStamp] = useState(null);
+  function adoptSaved(saved) {
+    versionRef.current = saved.version ?? versionRef.current + 1;
+    setStamp(editStampOf(saved));
+  }
 
   // Stale copy: retrying can't help, so report it once and stop.
   const handleSaveError = useCallback((err) => {
-    if (isConflict(err)) setConflict(true);
+    if (isConflict(err)) setConflict({ by: err.lastEditedBy ?? null, at: err.lastEditedAt ?? null });
     else console.warn(`Schedule save failed (${dateStr}):`, err.message);
   }, [dateStr]);
 
@@ -588,6 +594,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         setOrderedStaff(sortByShift(mergeStaffOverrides(allStaff, saved.staff)));
         setFinalized(saved.finalized ?? true);
         versionRef.current = saved.version ?? 0;
+        setStamp(editStampOf(saved));
         setConflict(false);
         justLoadedRef.current = true;
 
@@ -609,6 +616,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         // as empty.
         // Version 0 means "expect no saved row", which is exactly the 404 case.
         versionRef.current = 0;
+        setStamp(null);
         setConflict(false);
       })
       .finally(() => onLoadingChange(dateStr, false));
@@ -637,7 +645,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           staff: staffForSave(), events: dayEvents, finalized: false,
           expectedVersion: versionRef.current,
         })
-        .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
+        .then(saved => { adoptSaved(saved); })
         .catch(handleSaveError);
     }, 600);
   }, [orderedStaff, dayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -663,7 +671,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         staff, events: dayEvents, finalized: true,
         expectedVersion: versionRef.current,
       })
-      .then(saved => { versionRef.current = saved.version ?? versionRef.current + 1; })
+      .then(saved => { adoptSaved(saved); })
       .catch(handleSaveError);
     // This save itself shouldn't be mistaken for the next edit by the auto-unfinalize watcher.
     justLoadedRef.current = true;
@@ -677,7 +685,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         staff: staffForSave(), events: dayEvents, finalized: false,
         expectedVersion: versionRef.current,
       });
-      versionRef.current = saved.version ?? versionRef.current + 1;
+      adoptSaved(saved);
     } catch (err) {
       console.warn('Schedule save failed — unfinalized locally only:', err.message);
     }
@@ -947,8 +955,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
 
   // ── Clear day ───────────────────────────────────────────────────────────────
   // Saves through the normal auto-save, so it's version-checked like any edit.
-  function confirmClearDay() {
-    setClearConfirm(false);
+  function clearDay() {
     const { staff, clearEventIds } = clearDaySchedule(orderedStaff, dayEvents);
     setOrderedStaff(sortByShift(staff));
     clearEventIds.forEach(id => updateEvent(id, { assignedStaff: [] }));
@@ -1326,6 +1333,9 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         <div style={{ display:'flex', alignItems:'center', gap:9 }}>
           <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
           {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
+          {describeEditStamp(stamp, finalized) && (
+            <span style={{ fontSize:11, color:'var(--color-text-dim)' }}>{describeEditStamp(stamp, finalized)}</span>
+          )}
         </div>
         <div style={{ display:'flex', gap:12, alignItems:'center' }}>
           {isToday && (
@@ -1336,7 +1346,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           )}
           {!finalized && (
             <RippleButton
-              onClick={() => setClearConfirm(true)}
+              onClick={clearDay}
               disabled={scheduledToday.length === 0 && !dayEvents.some(ev => ev.assignedStaff.length > 0)}
               tone="red"
               rippleSize="11em"
@@ -1366,7 +1376,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {conflict && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'6px 10px', borderBottom:'1px solid var(--color-red)', background:'rgba(200,64,64,0.12)' }}>
           <span style={{ fontSize:11, color:'#f07070' }}>
-            <strong>Changed elsewhere.</strong> Edits to this day aren&apos;t saving — reload to pick up the newer version.
+            <strong>{conflict.by ? `Changed by ${conflict.by}${conflict.at ? ` at ${formatEditTime(conflict.at)}` : ''}.` : 'Changed elsewhere.'}</strong> Edits to this day aren&apos;t saving — reload to pick up the newer version.
           </span>
           <button
             onClick={() => reloadFromBackend().then(() => setConflict(false))}
@@ -1493,15 +1503,6 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
       {editModal && <EditModal target={editModal} orderedStaff={orderedStaff} dayEvents={dayEvents} onSave={handleEditSave} onClose={()=>setEditModal(null)}/>}
       {pendingWarning && <WarningModal title={pendingWarning.title} message={pendingWarning.message} confirmLabel={pendingWarning.confirmLabel} onConfirm={pendingWarning.onConfirm} onCancel={pendingWarning.onCancel}/>}
       {applyTplOpen && <ApplyTemplateCalendarModal templates={templates} allStaff={allStaff} saveDaySchedule={saveDaySchedule} onClose={()=>setApplyTplOpen(false)} onApplyStaff={(newStaff,ds)=>{if(newStaff) onReloadDay(ds);}}/>}
-      {clearConfirm && (
-        <WarningModal
-          title={`Clear ${dayName}?`}
-          message="Removes every shift, desk, VR and 1-1 for this day and takes staff off its one-off events. People on repeating or multi-day events keep those."
-          confirmLabel="Clear Day"
-          onConfirm={confirmClearDay}
-          onCancel={() => setClearConfirm(false)}
-        />
-      )}
       {finalizeWarn && (
         <WarningModal
           title="Schedule Has Issues"

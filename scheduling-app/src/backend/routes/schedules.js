@@ -92,6 +92,17 @@ async function notifyScheduleChanges(date, beforeStaff, afterStaff) {
   }
 }
 
+// A lost save race: the current version, plus who got there first so the losing
+// editor can say more than "changed elsewhere".
+function conflictBody(current) {
+  return {
+    error: "This day was changed by someone else while you were editing.",
+    currentVersion: current?.version ?? 0,
+    lastEditedBy: current?.lastEditedBy?.name ?? null,
+    lastEditedAt: current?.lastEditedAt ?? null,
+  };
+}
+
 // GET /api/schedules?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Bulk-fetch saved schedules across a date range, so a view spanning many days
 // (a month calendar, a week strip) needs one request instead of one per day.
@@ -143,7 +154,7 @@ router.get("/:date", async (req, res) => {
 
 router.put("/:date", requireManager, async (req, res) => {
   try {
-    const { staff, events, finalized, suppressNotify, expectedVersion } = req.body;
+    const { staff, events, finalized, suppressNotify, expectedVersion, source } = req.body;
     const date = req.params.date;
 
     // Validate before anything else touches the database. `staff` is Mixed, so
@@ -164,10 +175,21 @@ router.put("/:date", requireManager, async (req, res) => {
     // Read the previously published snapshot before we overwrite it.
     const previous = await Schedule.findOne({ date }).lean();
 
+    const now = new Date();
+    const editor = { id: req.user.id, name: req.user.name };
     const update = {
-      $set: { staff, events, finalized: isPublishing, finalizedAt: new Date() },
+      $set: {
+        staff, events, finalized: isPublishing,
+        lastEditedBy: editor,
+        lastEditedAt: now,
+        lastEditSource: source === "request" ? "request" : null,
+      },
       $inc: { version: 1 },
     };
+    if (isPublishing) {
+      update.$set.finalizedBy = editor;
+      update.$set.finalizedAt = now;
+    }
     // Publishing sets the new baseline that future changes are measured against.
     //
     // Not when the caller suppressed notifications, though. `suppressNotify` means
@@ -212,22 +234,16 @@ router.put("/:date", requireManager, async (req, res) => {
       // expect — the same lost race as the null case below, reached by a
       // different route, so it gets the same answer.
       if (err?.code === 11000 && checkVersion) {
-        const now = await Schedule.findOne({ date }).lean();
-        return res.status(409).json({
-          error: "This day was changed by someone else while you were editing.",
-          currentVersion: now?.version ?? 0,
-        });
+        const current = await Schedule.findOne({ date }).lean();
+        return res.status(409).json(conflictBody(current));
       }
       throw err;
     }
 
     if (!schedule) {
       // The date exists but at a different version — somebody saved in between.
-      const now = await Schedule.findOne({ date }).lean();
-      return res.status(409).json({
-        error: "This day was changed by someone else while you were editing.",
-        currentVersion: now?.version ?? 0,
-      });
+      const current = await Schedule.findOne({ date }).lean();
+      return res.status(409).json(conflictBody(current));
     }
 
     // Tell affected employees what changed about *their* shifts. Only fires on

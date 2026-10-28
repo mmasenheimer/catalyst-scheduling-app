@@ -42,6 +42,8 @@ uniform vec3 waveColor;
 uniform vec2 mousePos;
 uniform int enableMouseInteraction;
 uniform float mouseRadius;
+// Where in the (endless) noise field to start reading.
+uniform vec2 seed;
 
 vec4 mod289(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
 vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -102,7 +104,7 @@ void main() {
   uv.x *= resolution.x / resolution.y;
   // waveScale zooms the noise field out: more, smaller waves over the same area,
   // leaving waveFrequency / waveAmplitude / waveSpeed to mean what they always did.
-  float f = pattern(uv * waveScale);
+  float f = pattern(uv * waveScale + seed);
   if (enableMouseInteraction == 1) {
     vec2 mouseNDC = (mousePos / resolution - 0.5) * vec2(1.0, -1.0);
     mouseNDC.x *= resolution.x / resolution.y;
@@ -193,6 +195,7 @@ function DitheredWaves({
   disableAnimation,
   enableMouseInteraction,
   mouseRadius,
+  seed,
 }) {
   const mesh = useRef(null);
   const material = useRef(null);
@@ -219,6 +222,7 @@ function DitheredWaves({
     mousePos: new THREE.Uniform(new THREE.Vector2(0, 0)),
     enableMouseInteraction: new THREE.Uniform(enableMouseInteraction ? 1 : 0),
     mouseRadius: new THREE.Uniform(mouseRadius),
+    seed: new THREE.Uniform(new THREE.Vector2(seed[0], seed[1])),
   }));
 
   useEffect(() => {
@@ -313,6 +317,8 @@ export default function Dither({
   disableAnimation = false,
   enableMouseInteraction = true,
   mouseRadius = 1,
+  // Offset into the noise field. [0, 0] reproduces the original pattern.
+  seed = [0, 0],
 }) {
   return (
     <Canvas
@@ -332,6 +338,7 @@ export default function Dither({
         disableAnimation={disableAnimation}
         enableMouseInteraction={enableMouseInteraction}
         mouseRadius={mouseRadius}
+        seed={seed}
       />
     </Canvas>
   );

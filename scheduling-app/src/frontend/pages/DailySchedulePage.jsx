@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -63,7 +63,7 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
 
 // ── Stats header ───────────────────────────────────────────────────────────────
 
-function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate, onClearDay }) {
+function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate, onClearDay, stampText }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
@@ -117,6 +117,9 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
         <BarColorPicker align="left" />
       </div>
       <div className="flex items-center gap-2">
+        {stampText && (
+          <span className="text-xs mr-2" style={{ color: 'var(--color-text-dim)' }}>{stampText}</span>
+        )}
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
           style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}><ArrowLeftIcon size={16} /></button>
         <span className="text-sm font-medium min-w-36 sm:min-w-48 text-center">{dateLabel}</span>
@@ -1065,7 +1068,6 @@ export default function DailySchedulePage() {
   const [pendingWarning,    setPendingWarning]     = useState(null);   // { title, message, confirmLabel, onConfirm, onCancel }
   const [applyTplOpen,    setApplyTplOpen]     = useState(false);
   const [saveTplOpen,     setSaveTplOpen]      = useState(false);
-  const [clearConfirm,    setClearConfirm]     = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
@@ -1113,7 +1115,10 @@ export default function DailySchedulePage() {
   // merging. Held in a ref so the debounced auto-save always reads the current
   // value rather than one captured when the timer was set.
   const versionRef = useRef(0);
+  // { by, at } of whoever saved this day first; false when there's no conflict.
   const [conflict, setConflict] = useState(false);
+  // Who last edited / finalized the day on screen, as the server stamped it.
+  const [stamp, setStamp] = useState(null);
 
   // The date currently on screen. Unlike the effect closures this is always
   // up to date, which is what lets a save that resolves after the manager has
@@ -1128,7 +1133,7 @@ export default function DailySchedulePage() {
   // A conflict isn't recoverable by retrying: this editor's copy of the day is
   // stale, so every subsequent save would fail the same way. Say so once and stop.
   function handleSaveError(err) {
-    if (isConflict(err)) setConflict(true);
+    if (isConflict(err)) setConflict({ by: err.lastEditedBy ?? null, at: err.lastEditedAt ?? null });
     else console.warn('Schedule save failed:', err.message);
   }
 
@@ -1147,6 +1152,7 @@ export default function DailySchedulePage() {
       .then(saved => {
         if (currentDateStrRef.current === forDate) {
           versionRef.current = saved.version ?? expectedVersion + 1;
+          setStamp(editStampOf(saved));
         }
       })
       .catch(err => {
@@ -1172,6 +1178,7 @@ export default function DailySchedulePage() {
         setOrderedStaff(sortByShift(mergeStaffOverrides(schedule.staff, saved.staff).map(normalizeStaff)));
         setFinalized(saved.finalized ?? true);
         versionRef.current = saved.version ?? 0;
+        setStamp(editStampOf(saved));
         setConflict(false);
         justLoadedRef.current = true;
       })
@@ -1188,6 +1195,7 @@ export default function DailySchedulePage() {
         }
         // No saved row for this day yet — version 0 means "expect it absent".
         versionRef.current = 0;
+        setStamp(null);
         setConflict(false);
         setFinalized(true);
         justLoadedRef.current = true;
@@ -2167,6 +2175,7 @@ export default function DailySchedulePage() {
         expectedVersion: versionRef.current,
       });
       versionRef.current = saved.version ?? versionRef.current + 1;
+      if (currentDateStrRef.current === date) setStamp(editStampOf(saved));
     } catch (err) {
       handleSaveError(err);
       if (isConflict(err)) return; // don't claim it's published when it isn't
@@ -2186,6 +2195,7 @@ export default function DailySchedulePage() {
         expectedVersion: versionRef.current,
       });
       versionRef.current = saved.version ?? versionRef.current + 1;
+      if (currentDateStrRef.current === date) setStamp(editStampOf(saved));
     } catch (err) {
       handleSaveError(err);
       if (!isConflict(err)) console.warn('Schedule save failed — unfinalized locally only:', err.message);
@@ -2215,7 +2225,9 @@ export default function DailySchedulePage() {
         >
           <div>
             <p className="text-sm font-semibold" style={{ color: '#f07070' }}>
-              This day was changed somewhere else
+              {conflict.by
+                ? `This day was changed by ${conflict.by}${conflict.at ? ` at ${formatEditTime(conflict.at)}` : ''}`
+                : 'This day was changed somewhere else'}
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
               Your edits since then aren&apos;t being saved. Reload to pick up the newer version —
@@ -2238,7 +2250,13 @@ export default function DailySchedulePage() {
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={handleUnfinalize}
         onApplyTemplate={() => setApplyTplOpen(true)}
         onSaveAsTemplate={() => setSaveTplOpen(true)}
-        onClearDay={() => setClearConfirm(true)}
+        stampText={describeEditStamp(stamp, finalized)}
+        onClearDay={() => {
+          // Saves through the normal auto-save, so it's version-checked like any edit.
+          const { staff: cleared, clearEventIds } = clearDaySchedule(orderedStaff, todayEvents);
+          setOrderedStaff(sortByShift(cleared));
+          clearEventIds.forEach(id => schedule.updateEvent(id, { assignedStaff: [] }));
+        }}
       />
       {(() => {
         // Hold the alert inputs steady while a drag/resize is in progress so the
@@ -2446,21 +2464,6 @@ export default function DailySchedulePage() {
           confirmLabel={pendingWarning.confirmLabel}
           onConfirm={pendingWarning.onConfirm}
           onCancel={pendingWarning.onCancel}
-        />
-      )}
-      {clearConfirm && (
-        <WarningModal
-          title="Clear this day?"
-          message="Removes every shift, desk, VR and 1-1 for this day and takes staff off its one-off events. People on repeating or multi-day events keep those."
-          confirmLabel="Clear Day"
-          onConfirm={() => {
-            setClearConfirm(false);
-            // Saves through the normal auto-save, so it's version-checked like any edit.
-            const { staff: cleared, clearEventIds } = clearDaySchedule(orderedStaff, todayEvents);
-            setOrderedStaff(sortByShift(cleared));
-            clearEventIds.forEach(id => schedule.updateEvent(id, { assignedStaff: [] }));
-          }}
-          onCancel={() => setClearConfirm(false)}
         />
       )}
       {finalizeWarning && (

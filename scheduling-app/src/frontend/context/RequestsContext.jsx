@@ -195,6 +195,8 @@ export function RequestsProvider({ children }) {
       events: existing?.events ?? [],
       finalized: existing?.finalized ?? true,
       suppressNotify: true,
+      // Stamped on the day as an approved request rather than a hand edit.
+      source: 'request',
       // Guards against the day being edited between resolveDay and here. A 409
       // surfaces to the manager as "could not apply", which is right — approving
       // must not silently discard whatever the other writer just did.

@@ -8,7 +8,18 @@ const scheduleSchema = new Schema({
   staff:       [Schema.Types.Mixed], // snapshot of orderedStaff array
   events:      [Schema.Types.Mixed], // snapshot of todayEvents array
   finalized:   { type: Boolean, default: true },
-  finalizedAt: { type: Date, default: Date.now },
+  // Who last saved this day and when, stamped by the server from the signed-in
+  // account on every write — never taken from the request body. The name is a
+  // snapshot so the stamp still reads right after a rename or removal.
+  // `lastEditSource` is "request" when the save came from approving a
+  // request rather than a hand edit, and null otherwise.
+  lastEditedBy:   { id: String, name: String },
+  lastEditedAt:   { type: Date, default: null },
+  lastEditSource: { type: String, default: null },
+  // Who published the version employees see. Only set on a finalizing save,
+  // unlike lastEditedAt, which every debounced auto-save moves.
+  finalizedBy: { id: String, name: String },
+  finalizedAt: { type: Date, default: null },
   // The staff snapshot as of the last time this day was *published* (finalized).
   // Schedule-change notifications diff against this rather than `staff`, because
   // the editor's debounced auto-save already writes `staff` while the manager is
