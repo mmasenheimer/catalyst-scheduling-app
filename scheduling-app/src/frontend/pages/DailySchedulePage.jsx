@@ -17,6 +17,8 @@ import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
+// Half-hour marks drawn faintly across each timeline row.
+const HALF_HOUR_MARKS = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i + 0.5);
 
 const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
@@ -286,6 +288,14 @@ function ScheduleGrid({
                 if (hasBar)     onBarDrop(e, i);
               }}
             >
+              {/* Faint :30 marks, behind everything else on the row */}
+              {HALF_HOUR_MARKS.map(h => (
+                <div key={`hh-${h}`} style={{
+                  position: 'absolute', top: 0, bottom: 0, width: 1, pointerEvents: 'none',
+                  left: `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`,
+                  background: 'rgba(255,255,255,0.05)',
+                }} />
+              ))}
               {/* Availability background — sits behind all bars */}
               {getPersonAvailability?.(person.id).map((block, bi) => (
                 <div
@@ -1107,6 +1117,11 @@ export default function DailySchedulePage() {
   const justLoadedRef  = useRef(true);
   const baselineSigRef = useRef('');
   const autoSaveTimerRef = useRef(null);
+  // True once the day on screen has its saved copy loaded (or is known not to
+  // have one). Nothing may be auto-saved before then — see the change watcher.
+  const loadedRef      = useRef(false);
+  // Whether the change watcher's previous pass had real data to compare against.
+  const wasReadyRef    = useRef(false);
 
   // The version of the day this editor loaded. Every save sends it, and the
   // server refuses the write if the day has moved on since — otherwise a second
@@ -1164,6 +1179,14 @@ export default function DailySchedulePage() {
   useEffect(() => {
     const dateStr = toDateStr(schedule.currentDate);
 
+    // Until this lands, what's on screen is the previous day or a placeholder.
+    // Any save queued from it now would write that onto this date, so drop it.
+    // (A real edit to the day being left was already flushed by the cleanup below.)
+    loadedRef.current = false;
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = null;
+    pendingSaveRef.current = null;
+
     schedulesApi.getDay(dateStr)
       .then(saved => {
         // Saved schedule found in DB — restore shift/desk overrides, but merge them onto
@@ -1181,6 +1204,7 @@ export default function DailySchedulePage() {
         setStamp(editStampOf(saved));
         setConflict(false);
         justLoadedRef.current = true;
+        loadedRef.current = true;
       })
       .catch(() => {
         // 404 or backend unreachable — fall back to whatever is in memory. With
@@ -1199,6 +1223,7 @@ export default function DailySchedulePage() {
         setConflict(false);
         setFinalized(true);
         justLoadedRef.current = true;
+        loadedRef.current = true;
       });
   }, [schedule.currentDate.toDateString(), schedule.staff]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1206,7 +1231,18 @@ export default function DailySchedulePage() {
   // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
   useEffect(() => {
     const sig = JSON.stringify({ staff: orderedStaff, events: todayEvents });
-    if (justLoadedRef.current) {
+    // Only a change made on top of real data is an edit. Until both this day's
+    // saved copy and the events list have loaded, whatever changes on screen is
+    // the page filling in, so it becomes the baseline instead of being saved.
+    //
+    // This used to wipe days. The events list landing first, or the date
+    // changing under the previous day's rows, looked like an edit and queued a
+    // save of what was on screen; the day's own fetch then landed in time to
+    // hand that save a valid version, and the server accepted it — writing an
+    // empty day, or the previous day's schedule, over the real one.
+    const ready = loadedRef.current && schedule.eventsLoaded;
+    if (!ready || justLoadedRef.current || !wasReadyRef.current) {
+      wasReadyRef.current = ready;
       justLoadedRef.current = false;
       baselineSigRef.current = sig;
       return;
@@ -1229,7 +1265,7 @@ export default function DailySchedulePage() {
       // in the meantime has already advanced it.
       if (pending) writeDay(pending, versionRef.current);
     }, 600);
-  }, [orderedStaff, todayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orderedStaff, todayEvents, schedule.eventsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaving the day with an edit still inside the debounce window.
   //
@@ -2168,14 +2204,18 @@ export default function DailySchedulePage() {
   const trashActive = trashHtmlOver;
 
   async function doFinalize() {
+    // Never publish a placeholder (or the previous day's rows) over the real day.
+    if (!loadedRef.current) return;
     const date = toDateStr(schedule.currentDate);
     try {
       const saved = await schedulesApi.saveDay(date, {
         staff: staffForSave(), events: todayEvents, finalized: true,
         expectedVersion: versionRef.current,
       });
-      versionRef.current = saved.version ?? versionRef.current + 1;
-      if (currentDateStrRef.current === date) setStamp(editStampOf(saved));
+      if (currentDateStrRef.current === date) {
+        versionRef.current = saved.version ?? versionRef.current + 1;
+        setStamp(editStampOf(saved));
+      }
     } catch (err) {
       handleSaveError(err);
       if (isConflict(err)) return; // don't claim it's published when it isn't
@@ -2187,6 +2227,7 @@ export default function DailySchedulePage() {
   }
 
   async function handleUnfinalize() {
+    if (!loadedRef.current) return;
     setFinalized(false);
     const date = toDateStr(schedule.currentDate);
     try {
@@ -2194,8 +2235,10 @@ export default function DailySchedulePage() {
         staff: staffForSave(), events: todayEvents, finalized: false,
         expectedVersion: versionRef.current,
       });
-      versionRef.current = saved.version ?? versionRef.current + 1;
-      if (currentDateStrRef.current === date) setStamp(editStampOf(saved));
+      if (currentDateStrRef.current === date) {
+        versionRef.current = saved.version ?? versionRef.current + 1;
+        setStamp(editStampOf(saved));
+      }
     } catch (err) {
       handleSaveError(err);
       if (!isConflict(err)) console.warn('Schedule save failed — unfinalized locally only:', err.message);

@@ -21,12 +21,18 @@ export function useSchedule() {
       .catch(() => { /* backend not running — mock data stays */ });
   }, []);
   const [events, setEvents] = useState(initialEvents);
+  // False until the first events fetch settles. The schedule editors treat a
+  // change in a day's events as an edit to save, so until the real list has
+  // arrived they must not — the swap from placeholder to real events is not
+  // something the manager did.
+  const [eventsLoaded, setEventsLoaded] = useState(false);
 
   // Load events from the API on mount; fall back to mock data if the server is unreachable.
   useEffect(() => {
     eventsApi.getAll()
       .then(data => setEvents(data))
-      .catch(() => { /* backend not running — mock data stays */ });
+      .catch(() => { /* backend not running — mock data stays */ })
+      .finally(() => setEventsLoaded(true));
   }, []);
 
   // Live ref of events so assign/unassignStaffToEvent can stay referentially
@@ -214,6 +220,7 @@ export function useSchedule() {
   return {
     staff,
     events,
+    eventsLoaded,
     // `availability` is the re-render signal (its identity changes when a fetch
     // lands); `getAvailability` is the stable reader. Memoized consumers need
     // both — see the comment where they're defined.

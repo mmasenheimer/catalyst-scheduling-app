@@ -105,7 +105,8 @@ function posStyle(start, end) {
 // Hour grid lines depend only on module constants — compute once so the value is
 // reference-stable and doesn't defeat StaffRow memoization.
 const HOURS      = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
-const HALF_HOURS = Array.from({ length: (TOTAL_HOURS) * 2 - 1 }, (_, i) => HOURS_START + 0.5 + i * 0.5).filter(h => h < HOURS_END);
+// The :30 marks only — whole hours have their own, stronger line.
+const HALF_HOURS = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i + 0.5);
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
@@ -363,7 +364,7 @@ const StaffRow = React.memo(function StaffRow({
       >
         {/* Grid lines */}
         {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'var(--color-border)',opacity:0.4,pointerEvents:'none'}}/>)}
-        {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:'25%',height:'50%',left:pct(hr),width:1,background:'var(--color-border)',opacity:0.2,pointerEvents:'none'}}/>)}
+        {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.05)',pointerEvents:'none'}}/>)}
 
         {/* Availability */}
         {availBlocks.map((blk,bi) => (
@@ -479,7 +480,7 @@ const StaffRow = React.memo(function StaffRow({
 
 // ── DayEditor ──────────────────────────────────────────────────────────────────
 
-const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, onFinalizedChange, onLoadingChange, onReloadDay, onHoursChange, getAvailability }, ref) {
+const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaff, dayEvents, getDaySchedule, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, templates, onFinalizedChange, onLoadingChange, onReloadDay, onHoursChange, getAvailability, eventsLoaded }, ref) {
   // NOTE: `availability` is also passed in but deliberately not destructured —
   // nothing in here reads it. It exists so the memo comparator below can detect
   // that a fetch landed; React.memo sees every prop whether destructured or not.
@@ -556,6 +557,12 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // Skips the change-detector's next pass right after a load/finalize, so
   // restoring saved data isn't mistaken for an edit that should unfinalize the day.
   const justLoadedRef    = useRef(true);
+  // True once this day's saved copy has arrived (or is known not to exist).
+  // Nothing may be auto-saved before then: what's on screen is a placeholder,
+  // and saving it would overwrite the real day. See the change watcher below.
+  const loadedRef        = useRef(false);
+  // Whether the change watcher's previous pass had real data to compare against.
+  const wasReadyRef      = useRef(false);
   const baselineSigRef   = useRef('');
   const autoSaveTimerRef = useRef(null);
 
@@ -586,6 +593,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // date from elsewhere) can force a re-sync without remounting the day.
   const reloadFromBackend = useCallback(() => {
     onLoadingChange(dateStr, true);
+    // A save queued now was built from what's on screen before this load — by
+    // definition not the day's real contents — so it must never fire.
+    loadedRef.current = false;
+    clearTimeout(autoSaveTimerRef.current);
     return schedulesApi.getDay(dateStr)
       .then(saved => {
         // Merge saved shift overrides onto the live roster (not the raw snapshot) so
@@ -597,6 +608,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         setStamp(editStampOf(saved));
         setConflict(false);
         justLoadedRef.current = true;
+        loadedRef.current = true;
 
         // Publish into the shared day cache. Until this, the cache was written
         // only by edits, so anything reading it on a freshly loaded week — the
@@ -618,6 +630,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         versionRef.current = 0;
         setStamp(null);
         setConflict(false);
+        justLoadedRef.current = true;
+        loadedRef.current = true;
       })
       .finally(() => onLoadingChange(dateStr, false));
   }, [dateStr, allStaff, onLoadingChange, saveDaySchedule]);
@@ -628,7 +642,17 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // back to a draft and persists it, so a refresh doesn't silently revert to "finalized".
   useEffect(() => {
     const sig = JSON.stringify({ staff: orderedStaff, events: dayEvents });
-    if (justLoadedRef.current) {
+    // Only a change made on top of real data is an edit. Until both this day's
+    // saved copy and the events list have loaded, whatever changes on screen is
+    // the page filling in, so it becomes the baseline instead of being saved.
+    //
+    // This used to be the cause of whole days being wiped: the events list
+    // landing before the day's own fetch looked like an edit, queued a save of
+    // the still-empty placeholder, and the day's fetch then landed in time to
+    // hand that save a valid version — so the server accepted an empty day.
+    const ready = loadedRef.current && eventsLoaded;
+    if (!ready || justLoadedRef.current || !wasReadyRef.current) {
+      wasReadyRef.current = ready;
       justLoadedRef.current = false;
       baselineSigRef.current = sig;
       return;
@@ -648,7 +672,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         .then(saved => { adoptSaved(saved); })
         .catch(handleSaveError);
     }, 600);
-  }, [orderedStaff, dayEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orderedStaff, dayEvents, eventsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Being assigned to an event means being scheduled to work it, so shifts are
   // widened to cover assigned events on the way out. Dragging an event onto a
@@ -663,6 +687,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // Commit this day: persist to in-memory schedule state (both key formats the
   // rest of the app reads) and push to the backend as finalized.
   function commitFinalize() {
+    // Never publish a placeholder over the real day.
+    if (!loadedRef.current) return;
     const staff = staffForSave();
     saveDaySchedule(dateStr, staff);
     saveDaySchedule(date.toDateString(), staff);
@@ -679,6 +705,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   }
 
   async function handleUnfinalize() {
+    if (!loadedRef.current) return;
     setFinalized(false);
     try {
       const saved = await schedulesApi.saveDay(dateStr, {
@@ -1545,13 +1572,14 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
          // `availability` is the one that actually changes, and it has to be
          // compared or a landed fetch would never redraw the blue bars.
          prev.getAvailability === next.getAvailability &&
-         prev.availability === next.availability;
+         prev.availability === next.availability &&
+         prev.eventsLoaded === next.eventsLoaded;
 });
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function WeeklyViewPage() {
-  const { events, currentDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, setWeeklyViewLoading, availability, getAvailability } = useScheduleContext();
+  const { events, currentDate, getDaySchedule, staff, saveDaySchedule, assignStaffToEvent, unassignStaffFromEvent, updateEvent, removeEvent, setWeeklyViewLoading, availability, getAvailability, eventsLoaded } = useScheduleContext();
   const { templates, addTemplate } = useTemplates();
   const [weekStart,    setWeekStart]    = useState(() => getMondayOf(currentDate));
   const [saveModal,    setSaveModal]    = useState(false);
@@ -1810,6 +1838,7 @@ export default function WeeklyViewPage() {
             dayEvents={dayEvents}
             availability={availability}
             getAvailability={getAvailability}
+            eventsLoaded={eventsLoaded}
             getDaySchedule={getDaySchedule}
             saveDaySchedule={saveDaySchedule}
             assignStaffToEvent={assignStaffToEvent}
