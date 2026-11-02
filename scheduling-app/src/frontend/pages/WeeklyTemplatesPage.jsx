@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
-import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, sweepDutiesAfterResize, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
+import { buildTemplateAlerts, formatTime, orphanedByShiftRemoval, sweepDutiesAfterResize, withRangeStart, withRangeEnd, WEEK_DAY_NAMES, deskBoundsFor, vrBoundsFor } from '../utils/scheduleUtils';
 import { useTemplates } from '../context/TemplatesContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
@@ -227,11 +227,11 @@ function EditModal({ target, orderedStaff, onSave, onClose }) {
             <>
               <div>
                 <label style={fieldLabel}>Shift Start</label>
-                <TimeSelect value={form.shiftStart} onChange={v => setForm(f => ({ ...f, shiftStart: Math.min(v, f.shiftEnd - 0.5) }))} max={form.shiftEnd - 0.5} />
+                <TimeSelect value={form.shiftStart} onChange={v => setForm(f => { const r = withRangeStart({ start: f.shiftStart, end: f.shiftEnd }, v); return { ...f, shiftStart: r.start, shiftEnd: r.end }; })} max={HOURS_END - 0.5} />
               </div>
               <div>
                 <label style={fieldLabel}>Shift End</label>
-                <TimeSelect value={form.shiftEnd} onChange={v => setForm(f => ({ ...f, shiftEnd: Math.max(v, f.shiftStart + 0.5) }))} min={form.shiftStart + 0.5} />
+                <TimeSelect value={form.shiftEnd} onChange={v => setForm(f => { const r = withRangeEnd({ start: f.shiftStart, end: f.shiftEnd }, v); return { ...f, shiftStart: r.start, shiftEnd: r.end }; })} min={HOURS_START + 0.5} />
               </div>
             </>
           )}

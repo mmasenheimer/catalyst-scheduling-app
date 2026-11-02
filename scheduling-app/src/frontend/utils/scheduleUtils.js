@@ -1008,3 +1008,22 @@ export function describeEditStamp(stamp, finalized, now = new Date()) {
   }
   return null;
 }
+
+/**
+ * Set a time range's start from a picker, keeping the range valid. A start at or
+ * past the current end moves the whole range there, keeping its length (cut
+ * short at closing), rather than refusing — so a 9–12 shift can be moved to 2–5
+ * by picking 2 as the start.
+ */
+export function withRangeStart(range, start) {
+  if (start < range.end) return { start, end: range.end };
+  const end = Math.min(start + (range.end - range.start), HOURS_END);
+  return { start: Math.min(start, end - 0.5), end };
+}
+
+/** The mirror of withRangeStart: an end at or before the start moves the range back. */
+export function withRangeEnd(range, end) {
+  if (end > range.start) return { start: range.start, end };
+  const start = Math.max(end - (range.end - range.start), HOURS_START);
+  return { start, end: Math.max(end, start + 0.5) };
+}

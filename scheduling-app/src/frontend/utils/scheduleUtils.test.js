@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { HOURS_START, HOURS_END } from '../../data/mockData';
 import {
   shiftsOf,
   deskShiftsOf,
@@ -23,6 +24,8 @@ import {
   editStampOf,
   describeEditStamp,
   formatEditTime,
+  withRangeStart,
+  withRangeEnd,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -544,5 +547,35 @@ describe('edit stamps', () => {
 
   it('shows nothing for days saved before stamping existed', () => {
     expect(describeEditStamp(editStampOf({ version: 3 }), true, now)).toBe(null);
+  });
+});
+
+describe('withRangeStart / withRangeEnd', () => {
+  const nine2noon = { start: 9, end: 12 };
+
+  it('just sets the start when it lands before the end', () => {
+    expect(withRangeStart(nine2noon, 10)).toEqual({ start: 10, end: 12 });
+    expect(withRangeStart(nine2noon, 7)).toEqual({ start: 7, end: 12 });
+  });
+
+  it('moves the shift, keeping its length, when the start passes the end', () => {
+    expect(withRangeStart(nine2noon, 14)).toEqual({ start: 14, end: 17 });
+    expect(withRangeStart(nine2noon, 12)).toEqual({ start: 12, end: 15 });
+  });
+
+  it('cuts the moved shift short at closing rather than running past it', () => {
+    expect(withRangeStart(nine2noon, HOURS_END - 1)).toEqual({ start: HOURS_END - 1, end: HOURS_END });
+  });
+
+  it('just sets the end when it lands after the start', () => {
+    expect(withRangeEnd(nine2noon, 15)).toEqual({ start: 9, end: 15 });
+  });
+
+  it('moves the shift back, keeping its length, when the end passes the start', () => {
+    expect(withRangeEnd({ start: 14, end: 17 }, 11)).toEqual({ start: 8, end: 11 });
+  });
+
+  it('never moves the start before opening', () => {
+    expect(withRangeEnd(nine2noon, HOURS_START + 1)).toEqual({ start: HOURS_START, end: HOURS_START + 1 });
   });
 });
