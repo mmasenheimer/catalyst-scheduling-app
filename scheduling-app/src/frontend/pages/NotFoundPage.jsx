@@ -41,7 +41,7 @@ export default function NotFoundPage() {
         <button
           onClick={handleBack}
           className="px-6 py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white' }}
+          style={{ background: 'var(--color-button)', color: 'var(--color-button-text)' }}
         >
           {backLabel}
         </button>

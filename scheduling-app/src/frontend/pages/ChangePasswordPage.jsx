@@ -148,7 +148,7 @@ export default function ChangePasswordPage() {
             type="submit"
             disabled={submitting}
             className="py-2.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-accent)', color: 'white', opacity: submitting ? 0.6 : 1 }}
+            style={{ background: 'var(--color-button)', color: 'var(--color-button-text)', opacity: submitting ? 0.6 : 1 }}
           >
             {submitting ? 'Saving…' : 'Save Password'}
           </button>

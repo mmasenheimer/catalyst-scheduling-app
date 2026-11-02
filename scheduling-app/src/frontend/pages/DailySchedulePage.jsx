@@ -294,7 +294,7 @@ function ScheduleGrid({
                 <div key={`h-${h}`} style={{
                   position: 'absolute', top: 0, bottom: 0, width: 1, pointerEvents: 'none',
                   left: `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`,
-                  background: 'rgba(255,255,255,0.09)',
+                  background: 'rgba(255,255,255,0.13)',
                 }} />
               ))}
               {HALF_HOUR_MARKS.map(h => (
@@ -887,7 +887,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
           </button>
           <button
             onClick={() => onSave(form)}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
           >
             Save Changes
           </button>
@@ -979,7 +979,7 @@ function SaveAsDayTemplateModal({ currentDate, staff, onSave, onClose }) {
             Cancel
           </button>
           <button onClick={handleSave}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}>
             Save Template
           </button>
         </div>
@@ -1028,7 +1028,7 @@ function WarningModal({ title, message, confirmLabel, onConfirm, onCancel }) {
           </button>
           <button
             onClick={onConfirm}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
           >
             {confirmLabel}
           </button>

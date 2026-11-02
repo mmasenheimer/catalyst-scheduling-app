@@ -270,7 +270,7 @@ function EditModal({ target, orderedStaff, onSave, onClose }) {
           </button>
           <button
             onClick={() => onSave(form)}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
           >
             Save Changes
           </button>
@@ -1656,7 +1656,7 @@ export default function WeeklyTemplatesPage() {
               </button>
               <button
                 onClick={saveAndSwitch}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-button)', color: 'var(--color-button-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               >
                 Save and switch
               </button>

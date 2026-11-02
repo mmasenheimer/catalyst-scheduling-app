@@ -271,7 +271,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
         </div>
         <div className="flex gap-2 mt-5 justify-end">
           <button onClick={onClose} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, cursor:'pointer', background:'var(--color-muted)', color:'var(--color-text-dim)', border:'1px solid var(--color-border)' }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', background:'var(--color-accent)', color:'white', border:'none' }}>Save Changes</button>
+          <button onClick={()=>onSave(form)} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', background:'var(--color-button)', color:'var(--color-button-text)', border:'none' }}>Save Changes</button>
         </div>
       </div>
     </div>
@@ -298,7 +298,7 @@ function WarningModal({ title, message, confirmLabel, onConfirm, onCancel }) {
         </div>
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, cursor:'pointer', background:'var(--color-muted)', color:'var(--color-text-dim)', border:'1px solid var(--color-border)' }}>Cancel</button>
-          <button onClick={onConfirm} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', background:'var(--color-accent)', color:'white', border:'none' }}>{confirmLabel}</button>
+          <button onClick={onConfirm} style={{ padding:'7px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', background:'var(--color-button)', color:'var(--color-button-text)', border:'none' }}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -363,7 +363,7 @@ const StaffRow = React.memo(function StaffRow({
         }}
       >
         {/* Grid lines */}
-        {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.09)',pointerEvents:'none'}}/>)}
+        {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.13)',pointerEvents:'none'}}/>)}
         {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.05)',pointerEvents:'none'}}/>)}
 
         {/* Availability */}
@@ -1871,7 +1871,7 @@ export default function WeeklyViewPage() {
             </div>
             <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
               <button onClick={()=>setSaveModal(false)} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid var(--color-border)', background:'var(--color-muted)', color:'var(--color-text)', fontSize:13, cursor:'pointer' }}>Cancel</button>
-              <button onClick={handleSaveTemplate} style={{ padding:'8px 16px', borderRadius:8, border:'none', background:'var(--color-accent)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>Save Template</button>
+              <button onClick={handleSaveTemplate} style={{ padding:'8px 16px', borderRadius:8, border:'none', background:'var(--color-button)', color:'var(--color-button-text)', fontSize:13, fontWeight:600, cursor:'pointer' }}>Save Template</button>
             </div>
           </div>
         </div>

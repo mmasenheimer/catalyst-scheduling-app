@@ -10,7 +10,7 @@
 // widest button it's used on, so a long label needs a larger value.
 //
 // `tone` picks the colour:
-//   accent — the default orange, for ordinary actions.
+//   accent — the default pale blue-gray, for ordinary actions.
 //   green  — the finalize actions, which are green by design.
 //   red    — destructive actions, so they read as dangerous before you click.
 //   done    — the muted green of an already-finalized state.
@@ -18,8 +18,8 @@
 // circle matches the button instead of flashing orange across it.
 const TONES = {
   accent: {
-    background: 'var(--color-accent)',
-    color: 'white',
+    background: 'var(--color-button)',
+    color: 'var(--color-button-text)',
   },
   green: {
     background: 'var(--color-green)',

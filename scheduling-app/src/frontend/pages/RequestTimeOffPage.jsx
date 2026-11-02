@@ -151,7 +151,7 @@ export default function RequestTimeOffPage() {
           <button
             onClick={() => navigate('/my-schedule')}
             className="mt-6 px-6 py-2 rounded-lg text-sm font-medium cursor-pointer"
-            style={{ background: 'var(--color-accent)', color: 'white' }}
+            style={{ background: 'var(--color-button)', color: 'var(--color-button-text)' }}
           >
             Back to My Schedule
           </button>
@@ -272,7 +272,7 @@ export default function RequestTimeOffPage() {
             type="submit"
             disabled={saving}
             className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
+            style={{ background: 'var(--color-button)', color: 'var(--color-button-text)', opacity: saving ? 0.6 : 1 }}
           >
             {saving ? 'Submitting…' : 'Submit Request'}
           </button>

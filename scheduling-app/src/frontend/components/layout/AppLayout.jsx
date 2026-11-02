@@ -569,7 +569,7 @@ function AppLayoutInner() {
                   <button onClick={closeNewTpl} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-dim)', fontSize: 13, cursor: 'pointer' }}>
                     Cancel
                   </button>
-                  <button onClick={createTemplate} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  <button onClick={createTemplate} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--color-button)', color: 'var(--color-button-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     Create Day Template
                   </button>
                 </div>

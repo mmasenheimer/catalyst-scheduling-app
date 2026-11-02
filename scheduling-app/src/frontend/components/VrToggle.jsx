@@ -51,15 +51,15 @@ export function VrToggle() {
             // 28x14 box rather than shifting with the border.
             position: 'relative', boxSizing: 'border-box',
             width: 30, height: 16, borderRadius: 999, flexShrink: 0,
-            background: vrEnabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.3)',
-            border: `1px solid ${vrEnabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.25)'}`,
+            background: vrEnabled ? 'var(--color-button-text)' : 'rgba(0,0,0,0.15)',
+            border: `1px solid ${vrEnabled ? 'var(--color-button-text)' : 'rgba(0,0,0,0.3)'}`,
             transition: 'background 0.15s, border-color 0.15s',
           }}
         >
           <span style={{
             position: 'absolute', top: 1, left: vrEnabled ? 15 : 1,
             width: 12, height: 12, borderRadius: '50%',
-            background: vrEnabled ? 'var(--color-accent)' : '#fff',
+            background: vrEnabled ? 'var(--color-button)' : '#fff',
             transition: 'left 0.15s, background 0.15s',
             boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
           }} />

@@ -269,7 +269,7 @@ export default function NotificationsPage() {
           <button
             onClick={dismissAll}
             className="text-sm px-4 py-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: 'var(--color-accent)', color: 'white', border: 'none' }}
+            style={{ background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
           >
             Dismiss all
           </button>

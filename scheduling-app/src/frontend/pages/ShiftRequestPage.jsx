@@ -395,7 +395,7 @@ function RequestForm({ type, target, day, me, note, onNoteChange, onSubmit, onCa
           onClick={onSubmit}
           disabled={saving}
           className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--color-accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
+          style={{ background: 'var(--color-button)', color: 'var(--color-button-text)', opacity: saving ? 0.6 : 1 }}
         >
           {saving ? 'Sending…' : 'Send Request'}
         </button>

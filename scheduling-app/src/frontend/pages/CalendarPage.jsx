@@ -105,7 +105,7 @@ function EditEventModal({ evt, onSave, onClose }) {
         </div>
         <div className="flex gap-2 mt-5 justify-end">
           <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>Cancel</button>
-          <button onClick={() => onSave(form)} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}>Save Changes</button>
+          <button onClick={() => onSave(form)} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}>Save Changes</button>
         </div>
       </div>
     </div>

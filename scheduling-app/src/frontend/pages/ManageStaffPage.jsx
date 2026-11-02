@@ -339,7 +339,7 @@ export default function ManageStaffPage() {
               <button onClick={closeForm} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
                 Cancel
               </button>
-              <button onClick={handleAdd} disabled={saving} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none', opacity: saving ? 0.6 : 1 }}>
+              <button onClick={handleAdd} disabled={saving} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Adding…' : 'Add Employee'}
               </button>
             </div>
@@ -388,7 +388,7 @@ export default function ManageStaffPage() {
               <button
                 onClick={copyCode}
                 className="cursor-pointer hover:opacity-80"
-                style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: 'var(--color-accent)', color: 'white', border: 'none' }}
+                style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
               >
                 {copied ? 'Copied' : 'Copy both'}
               </button>
@@ -402,7 +402,7 @@ export default function ManageStaffPage() {
             <div className="flex justify-end">
               <button
                 onClick={() => setInviteResult(null)}
-                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: 'white', border: 'none' }}
+                style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}
               >
                 Done
               </button>
