@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, withRangeEnd, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -213,7 +213,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
         <div className="flex flex-col gap-3">
           {target.type === 'shift' && (<>
             <div><label style={fl}>Shift Start</label><TimeSelect value={form.shiftStart} onChange={v=>setForm(f=>{const r=withRangeStart({start:f.shiftStart,end:f.shiftEnd},v);return {...f,shiftStart:r.start,shiftEnd:r.end};})} max={HOURS_END-0.5}/></div>
-            <div><label style={fl}>Shift End</label><TimeSelect value={form.shiftEnd} onChange={v=>setForm(f=>{const r=withRangeEnd({start:f.shiftStart,end:f.shiftEnd},v);return {...f,shiftStart:r.start,shiftEnd:r.end};})} min={HOURS_START+0.5}/></div>
+            <div><label style={fl}>Shift End</label><TimeSelect value={form.shiftEnd} onChange={v=>setForm(f=>({...f,shiftEnd:Math.max(v,f.shiftStart+0.5)}))} min={form.shiftStart+0.5}/></div>
           </>)}
           {target.type === 'desk' && (<>
             <div><label style={fl}>Desk Start</label><TimeSelect value={form.deskStart} onChange={v=>setForm(f=>({...f,deskStart:Math.min(v,f.deskEnd-0.5)}))} max={form.deskEnd-0.5}/></div>
@@ -363,7 +363,7 @@ const StaffRow = React.memo(function StaffRow({
         }}
       >
         {/* Grid lines */}
-        {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'var(--color-border)',opacity:0.4,pointerEvents:'none'}}/>)}
+        {HOURS.map(hr => hr>HOURS_START && <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.09)',pointerEvents:'none'}}/>)}
         {HALF_HOURS.map(hr => <div key={hr} style={{position:'absolute',top:0,bottom:0,left:pct(hr),width:1,background:'rgba(255,255,255,0.05)',pointerEvents:'none'}}/>)}
 
         {/* Availability */}

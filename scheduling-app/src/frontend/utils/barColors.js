@@ -115,11 +115,6 @@ paint(current);
 
 function getBarHues() { return current; }
 
-/** The hue in effect for one kind, chosen or default. */
-function hueFor(kind) {
-  return current[kind] ?? DEFAULT_HUES[kind];
-}
-
 function commit(next) {
   current = next;
   paint(next);

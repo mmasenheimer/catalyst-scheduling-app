@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, withRangeEnd, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -17,7 +17,8 @@ import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
-// Half-hour marks drawn faintly across each timeline row.
+// Grid lines across each timeline row: every hour, plus a fainter one at :30.
+const HOUR_MARKS      = Array.from({ length: TOTAL_HOURS - 1 }, (_, i) => HOURS_START + i + 1);
 const HALF_HOUR_MARKS = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i + 0.5);
 
 const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
@@ -288,7 +289,14 @@ function ScheduleGrid({
                 if (hasBar)     onBarDrop(e, i);
               }}
             >
-              {/* Faint :30 marks, behind everything else on the row */}
+              {/* Hour lines and fainter :30 marks, behind everything else on the row */}
+              {HOUR_MARKS.map(h => (
+                <div key={`h-${h}`} style={{
+                  position: 'absolute', top: 0, bottom: 0, width: 1, pointerEvents: 'none',
+                  left: `${((h - HOURS_START) / TOTAL_HOURS) * 100}%`,
+                  background: 'rgba(255,255,255,0.09)',
+                }} />
+              ))}
               {HALF_HOUR_MARKS.map(h => (
                 <div key={`hh-${h}`} style={{
                   position: 'absolute', top: 0, bottom: 0, width: 1, pointerEvents: 'none',
@@ -732,7 +740,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
               </div>
               <div>
                 <label style={fieldLabel}>Shift End</label>
-                <TimeSelect value={form.shiftEnd} onChange={v => setForm(f => { const r = withRangeEnd({ start: f.shiftStart, end: f.shiftEnd }, v); return { ...f, shiftStart: r.start, shiftEnd: r.end }; })} min={HOURS_START + 0.5} />
+                <TimeSelect value={form.shiftEnd} onChange={v => setForm(f => ({ ...f, shiftEnd: Math.max(v, f.shiftStart + 0.5) }))} min={form.shiftStart + 0.5} />
               </div>
             </>
           )}

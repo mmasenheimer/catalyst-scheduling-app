@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HOURS_START, HOURS_END } from '../../data/mockData';
+import { HOURS_END } from '../../data/mockData';
 import {
   shiftsOf,
   deskShiftsOf,
@@ -25,7 +25,6 @@ import {
   describeEditStamp,
   formatEditTime,
   withRangeStart,
-  withRangeEnd,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -550,7 +549,7 @@ describe('edit stamps', () => {
   });
 });
 
-describe('withRangeStart / withRangeEnd', () => {
+describe('withRangeStart', () => {
   const nine2noon = { start: 9, end: 12 };
 
   it('just sets the start when it lands before the end', () => {
@@ -567,15 +566,4 @@ describe('withRangeStart / withRangeEnd', () => {
     expect(withRangeStart(nine2noon, HOURS_END - 1)).toEqual({ start: HOURS_END - 1, end: HOURS_END });
   });
 
-  it('just sets the end when it lands after the start', () => {
-    expect(withRangeEnd(nine2noon, 15)).toEqual({ start: 9, end: 15 });
-  });
-
-  it('moves the shift back, keeping its length, when the end passes the start', () => {
-    expect(withRangeEnd({ start: 14, end: 17 }, 11)).toEqual({ start: 8, end: 11 });
-  });
-
-  it('never moves the start before opening', () => {
-    expect(withRangeEnd(nine2noon, HOURS_START + 1)).toEqual({ start: HOURS_START, end: HOURS_START + 1 });
-  });
 });

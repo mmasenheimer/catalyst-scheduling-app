@@ -1020,10 +1020,3 @@ export function withRangeStart(range, start) {
   const end = Math.min(start + (range.end - range.start), HOURS_END);
   return { start: Math.min(start, end - 0.5), end };
 }
-
-/** The mirror of withRangeStart: an end at or before the start moves the range back. */
-export function withRangeEnd(range, end) {
-  if (end > range.start) return { start: range.start, end };
-  const start = Math.max(end - (range.end - range.start), HOURS_START);
-  return { start, end: Math.max(end, start + 0.5) };
-}
