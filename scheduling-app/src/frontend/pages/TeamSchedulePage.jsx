@@ -45,11 +45,11 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
   const hours    = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'hidden' }}>
       {/* Day header */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
-        <span style={{ fontSize:13, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
-        {isToday && <span style={{ fontSize:9, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'1px 5px', borderRadius:4 }}>Today</span>}
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:isToday?'var(--color-today-tint)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
+        <span style={{ fontSize:13, fontWeight:700, color:isToday?'var(--color-today)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
+        {isToday && <span style={{ fontSize:9, fontWeight:600, color:'var(--color-today)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--color-today-chip)', padding:'1px 5px', borderRadius:4 }}>Today</span>}
       </div>
 
       {/* Hour header */}

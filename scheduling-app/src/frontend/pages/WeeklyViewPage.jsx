@@ -12,6 +12,7 @@ import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
+import { ContextMenu } from '../components/ContextMenu';
 import { BarColorPicker } from '../components/BarColorPicker';
 import { VrToggle } from '../components/VrToggle';
 import { RippleButton } from '../components/RippleButton';
@@ -153,24 +154,6 @@ function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, 
   );
 }
 
-function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onClose(); };
-    const onDown = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown); };
-  }, [onClose]);
-  const btn = (color) => ({ display:'block', width:'100%', padding:'9px 16px', textAlign:'left', background:'transparent', border:'none', cursor:'pointer', fontSize:13, color: color || 'var(--color-text)' });
-  return (
-    <div ref={ref} style={{ position:'fixed', left:x, top:y, zIndex:9999, minWidth:140, background:'var(--color-surface)', border:'1px solid var(--color-border)', borderRadius:8, boxShadow:'0 4px 20px rgba(0,0,0,0.5)', overflow:'hidden' }}>
-      <button style={btn()} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.06)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'} onClick={onEdit}>✏️  Edit</button>
-      <div style={{ height:1, background:'var(--color-border)' }} />
-      <button style={{...btn('#f07070'), display:'flex', alignItems:'center', gap:6}} onMouseEnter={e=>e.currentTarget.style.background='rgba(200,64,64,0.1)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'} onClick={onDelete}><DeleteIcon size={13} /> Delete</button>
-    </div>
-  );
-}
 
 function TimeSelect({ value, onChange, min, max }) {
   const opts = TIME_STEPS.filter(t => t >= (min ?? HOURS_START) && t <= (max ?? HOURS_END));
@@ -1365,13 +1348,16 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   };
 
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-accent)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'rgba(176,80,48,0.08)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-          <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-accent)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
-          {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-accent)', textTransform:'uppercase', letterSpacing:'0.06em', background:'rgba(176,80,48,0.15)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'var(--color-today-tint)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
+        {/* Baseline, not center: the title, Today tag and stamp are different
+            sizes, and Nunito's tall descent makes centered boxes put the small
+            text visibly higher than the title. */}
+        <div style={{ display:'flex', alignItems:'baseline', gap:9 }}>
+          <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-today)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
+          {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-today)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--color-today-chip)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
           {describeEditStamp(stamp, finalized) && (
             <span style={{ fontSize:11, color:'var(--color-text-dim)' }}>{describeEditStamp(stamp, finalized)}</span>
           )}
@@ -1788,8 +1774,13 @@ export default function WeeklyViewPage() {
           at narrow widths nothing could push anything else aside and the buttons
           simply printed over the title and arrows.
           The two side regions share flex:1, which keeps the nav optically centred
-          when there's room without needing absolute positioning to do it. */}
-      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:14, marginBottom:22, paddingTop:4 }}>
+          when there's room without needing absolute positioning to do it.
+          Sits on the same glass card as the Daily header. Lifted above the cards
+          below it for the same reason too: glass-surface makes each card its own
+          stacking context, so without this the bar-color picker's popover would
+          paint under the day cards. */}
+      <div className="p-4 sm:p-5 rounded-md mb-6 border glass-surface"
+        style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:14, borderColor:'var(--color-border)', position:'relative', zIndex:20 }}>
         <h2 style={{ flex:'1 1 auto', fontSize:22, fontWeight:700, color:'var(--color-text)', margin:0, whiteSpace:'nowrap' }}>
           Weekly Schedule
         </h2>

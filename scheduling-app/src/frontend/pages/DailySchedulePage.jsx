@@ -12,6 +12,7 @@ import { RangeCalendar } from '../components/RangeCalendar';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
+import { ContextMenu } from '../components/ContextMenu';
 import { BarColorPicker } from '../components/BarColorPicker';
 import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
@@ -101,6 +102,9 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
             Apply Template
           </RippleButton>
         )}
+        <RippleButton onClick={onSaveAsTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
+          Save as Template
+        </RippleButton>
         {!finalized && (
           <RippleButton
             onClick={onClearDay}
@@ -112,9 +116,6 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
             Clear Day
           </RippleButton>
         )}
-        <RippleButton onClick={onSaveAsTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
-          Save as Template
-        </RippleButton>
         {/* Recolors every event bar on the schedule — not gated on `finalized`,
             since it's a display preference rather than an edit to the day. */}
         <BarColorPicker align="left" />
@@ -610,56 +611,6 @@ function DragChip({ label, isActive, color, borderColor, bg, icon, onDragStart, 
     >
       <span style={{ pointerEvents: 'none' }}>{icon}</span>
       <span className="truncate" style={{ pointerEvents: 'none' }}>{label}</span>
-    </div>
-  );
-}
-
-// ── Context menu ───────────────────────────────────────────────────────────────
-
-function ContextMenu({ x, y, onEdit, onDelete, onClose }) {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
-    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) onClose(); }
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-    };
-  }, [onClose]);
-
-  const menuStyle = {
-    position: 'fixed', left: x, top: y, zIndex: 9999, minWidth: 140,
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-    borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', overflow: 'hidden',
-  };
-  const btn = (color) => ({
-    display: 'block', width: '100%', padding: '9px 16px', textAlign: 'left',
-    background: 'transparent', border: 'none', cursor: 'pointer',
-    fontSize: 13, color: color || 'var(--color-text)',
-  });
-
-  return (
-    <div ref={ref} style={menuStyle}>
-      <button
-        style={btn()}
-        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        onClick={onEdit}
-      >
-        ✏️  Edit
-      </button>
-      <div style={{ height: 1, background: 'var(--color-border)' }} />
-      <button
-        style={{ ...btn('#f07070'), display: 'flex', alignItems: 'center', gap: 6 }}
-        onMouseEnter={e => e.currentTarget.style.background = 'rgba(200,64,64,0.1)'}
-        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        onClick={onDelete}
-      >
-        <DeleteIcon size={13} /> Delete
-      </button>
     </div>
   );
 }

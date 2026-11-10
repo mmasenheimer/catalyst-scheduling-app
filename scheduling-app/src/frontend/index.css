@@ -34,6 +34,12 @@
   --color-button-text: #ffffff;
   --color-button-ripple: rgba(110, 185, 210, 0.55);
 
+  /* The current day's outline and label in the week views, and the sidebar
+     clock — the same blue as the buttons. */
+  --color-today: rgb(33, 111, 138);
+  --color-today-tint: rgba(33, 111, 138, 0.10);
+  --color-today-chip: rgba(33, 111, 138, 0.20);
+
   /* ── Schedule bar colors ───────────────────────────────────────────────
      The four bar kinds a manager can recolor: desk duty, VR duty, events, and
      1-1s. Each derives its whole set of shades from one hue, which the color
