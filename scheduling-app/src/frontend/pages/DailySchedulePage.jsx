@@ -122,7 +122,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
       </div>
       <div className="flex items-center gap-2">
         {stampText && (
-          <span className="text-xs mr-2" style={{ color: 'var(--color-text-dim)' }}>{stampText}</span>
+          <span className="text-xs mr-2" style={{ color: 'var(--color-today)' }}>{stampText}</span>
         )}
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
           style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}><ArrowLeftIcon size={16} /></button>

@@ -177,6 +177,14 @@ export function useSchedule() {
     staffApi.update(staffId, { maxHoursPerWeek }).catch(() => {});
   }, []);
 
+  // Awaited, unlike the other staff updates: a rename can be refused (a name
+  // already on the roster), and the Manage Staff dialog has to show why.
+  const updateStaffName = useCallback(async (staffId, name) => {
+    const updated = await staffApi.update(staffId, { name });
+    setStaff(prev => prev.map(s => s.id === staffId ? { ...s, name: updated.name } : s));
+    return updated;
+  }, []);
+
   const addStaff = useCallback(async (person) => {
     const created = await staffApi.create(person);
     setStaff(prev => [...prev, created]);
@@ -233,6 +241,7 @@ export function useSchedule() {
     assignStaffToEvent,
     unassignStaffFromEvent,
     updateStaffMaxHours,
+    updateStaffName,
     addStaff,
     removeStaff,
     goToNextDay,

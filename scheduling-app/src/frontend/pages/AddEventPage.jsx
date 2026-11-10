@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import {
@@ -228,6 +228,27 @@ export default function AddEventPage() {
     setTimeout(() => navigate('/'), 1500);
   }
 
+  // Centre the header and form top-to-bottom in the space below the page's own
+  // top bar, so a form shorter than the window doesn't leave all the slack at
+  // the bottom. Sized from the window rather than from <main>, whose height grows
+  // with its content — measuring that would never shrink back after a resize.
+  // Only a minimum: a form taller than the window grows and the page scrolls.
+  const pageRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = pageRef.current;
+    const main = el?.closest('main');
+    if (!el || !main) return;
+    const fit = () => {
+      const cs = getComputedStyle(main);
+      const mainTop = main.getBoundingClientRect().top + window.scrollY;
+      const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      el.style.minHeight = `${Math.max(0, window.innerHeight - mainTop - pad)}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
+
   if (submitted) {
     return (
       <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
@@ -250,15 +271,12 @@ export default function AddEventPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div ref={pageRef} className="max-w-xl mx-auto flex flex-col justify-center">
       <div className="mb-6 p-4 sm:p-5 rounded-md border glass-surface text-center"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>
           Add Event
         </h2>
-        <p className="text-sm mt-1" style={{ color: 'var(--color-text-dim)' }}>
-          Create a new event. Assign staff from the Daily Schedule view after saving.
-        </p>
       </div>
 
       <form
@@ -269,7 +287,7 @@ export default function AddEventPage() {
         {/* Event Name */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Event Name <span style={{ color: 'var(--color-red)' }}>*</span>
+            Event Name
           </label>
           <input
             type="text"
@@ -283,7 +301,7 @@ export default function AddEventPage() {
         {/* Event Type */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Event Type <span style={{ color: 'var(--color-red)' }}>*</span>
+            Event Type
           </label>
           <select
             value={form.type}
@@ -303,7 +321,7 @@ export default function AddEventPage() {
         <div className="flex gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-              Start Time <span style={{ color: 'var(--color-red)' }}>*</span>
+              Start Time
             </label>
             <select
               value={form.start}
@@ -318,7 +336,7 @@ export default function AddEventPage() {
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-              End Time <span style={{ color: 'var(--color-red)' }}>*</span>
+              End Time
             </label>
             <select
               value={form.end}
@@ -336,7 +354,7 @@ export default function AddEventPage() {
         {/* Date(s) */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Date(s) <span style={{ color: 'var(--color-red)' }}>*</span>
+            Date(s)
           </label>
           <div className="flex gap-2 mb-2">
             <DateInput
@@ -428,7 +446,7 @@ export default function AddEventPage() {
         {form.days.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
-              Assign Staff <span style={{ color: 'var(--color-red)' }}>*</span>
+              Assign Staff
             </label>
             <p className="text-xs mb-2.5" style={{ color: 'var(--color-text-dim)' }}>
               Showing availability for {formatTime(form.start)} – {formatTime(form.end)}.
@@ -525,7 +543,7 @@ export default function AddEventPage() {
         {/* Staff Needed */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Staff Needed <span style={{ color: 'var(--color-red)' }}>*</span>
+            Staff Needed
           </label>
           <input
             type="number"
@@ -541,7 +559,7 @@ export default function AddEventPage() {
         {/* Notes */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Other Information <span style={{ color: 'var(--color-red)' }}>*</span>
+            Other Information
           </label>
           <textarea
             value={form.notes}

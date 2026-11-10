@@ -34,18 +34,39 @@ router.get("/", async (req, res) => {
 });
 
 // PATCH /api/staff/:id
-// This updates specidic fields on a staff member - shift times, desk/VR times, or weekly hour limit
+// This updates specific fields on a staff member - their name, shift times,
+// desk/VR times, or weekly hour limit
+
+const MAX_NAME_LENGTH = 60;
 
 router.patch("/:id", requireManager, async (req, res) => {
   try {
     const { shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek } =
       req.body;
-    const person = await Staff.findByIdAndUpdate(
-      req.params.id,
-      { shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek },
-      { new: true, runValidators: true },
-    );
+    const update = { shiftStart, shiftEnd, deskStart, deskEnd, vrStart, vrEnd, maxHoursPerWeek };
+
+    let name;
+    if ("name" in req.body) {
+      name = String(req.body.name ?? "").trim();
+      if (!name) return res.status(400).json({ error: "Name can't be empty" });
+      if (name.length > MAX_NAME_LENGTH) {
+        return res.status(400).json({ error: `Name must be ${MAX_NAME_LENGTH} characters or fewer` });
+      }
+      // Case-insensitive, so "jamie t." can't sit beside "Jamie T.".
+      const clash = await Staff.findOne({ _id: { $ne: Number(req.params.id) }, name })
+        .collation({ locale: "en", strength: 2 })
+        .lean();
+      if (clash) return res.status(409).json({ error: "Someone on the roster already has that name" });
+      update.name = name;
+    }
+
+    const person = await Staff.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
     if (!person) return res.status(404).json({ error: "Not found" });
+
+    // Their login carries a display name too (the sidebar, edit stamps). Keep it
+    // in step, so a rename shows everywhere rather than only on the roster.
+    if (name) await User.updateOne({ staffId: person._id }, { $set: { name } });
+
     res.json(person);
   } catch (err) {
     sendWriteError(res, err);

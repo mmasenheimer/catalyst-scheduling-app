@@ -24,7 +24,7 @@ function suggestUsername(name) {
 }
 
 export default function ManageStaffPage() {
-  const { staff, addStaff, removeStaff, updateStaffMaxHours } = useScheduleContext();
+  const { staff, addStaff, removeStaff, updateStaffMaxHours, updateStaffName } = useScheduleContext();
   const { user } = useAuth();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -59,6 +59,10 @@ export default function ManageStaffPage() {
   // list rather than in a browser alert.
   const [actionError, setActionError] = useState('');
   const [inviteResult, setInviteResult] = useState(null);
+  // { id, name, original } while the rename dialog is open.
+  const [renaming, setRenaming] = useState(null);
+  const [renameError, setRenameError] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
   function openForm() { setForm(emptyForm); setError(''); setFormOpen(true); }
@@ -132,6 +136,29 @@ export default function ManageStaffPage() {
       setActionError(`Couldn't remove ${person.name} — ${err.message}`);
     } finally {
       setRemovingId(null);
+    }
+  }
+
+  function openRename(person) {
+    setRenaming({ id: person.id, name: person.name, original: person.name });
+    setRenameError('');
+  }
+
+  async function saveRename() {
+    const name = renaming.name.trim();
+    if (!name) { setRenameError('Name is required.'); return; }
+    if (name === renaming.original) { setRenaming(null); return; }
+    if (staff.some(s => s.id !== renaming.id && s.name.toLowerCase() === name.toLowerCase())) {
+      setRenameError('Someone on the roster already has that name.'); return;
+    }
+    setRenameSaving(true);
+    try {
+      await updateStaffName(renaming.id, name);
+      setRenaming(null);
+    } catch (err) {
+      setRenameError(err.message || 'Could not rename.');
+    } finally {
+      setRenameSaving(false);
     }
   }
 
@@ -258,6 +285,14 @@ export default function ManageStaffPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
+                    onClick={() => openRename(person)}
+                    title="Change how this employee's name appears"
+                    className="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{ background: 'transparent', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
+                  >
+                    Edit Name
+                  </button>
+                  <button
                     onClick={() => handleReset(person)}
                     disabled={resettingId === person.id}
                     title="Generate a new temporary password for this employee"
@@ -284,6 +319,48 @@ export default function ManageStaffPage() {
       {/* The owner also manages the manager accounts. */}
       {user?.owner && (
         <ManagersPanel onCredentials={result => { setCopied(false); setInviteResult(result); }} />
+      )}
+
+      {/* Rename modal */}
+      {renaming && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setRenaming(null)}
+        >
+          <div
+            className="w-full max-w-sm mx-4 rounded-xl border p-5"
+            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Edit Name</h3>
+              <button onClick={() => setRenaming(null)} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <label style={fieldLabel}>Name</label>
+            <input
+              autoFocus
+              type="text"
+              value={renaming.name}
+              onChange={e => { setRenaming(r => ({ ...r, name: e.target.value })); setRenameError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setRenaming(null); }}
+              style={textInput}
+            />
+            <p className="text-xs mt-2" style={{ color: 'var(--color-text-dim)' }}>
+              Their login username stays the same.
+            </p>
+            {renameError && <div style={{ fontSize: 12, color: 'var(--color-red)', marginTop: 8 }}>{renameError}</div>}
+            <div className="flex gap-2 mt-5 justify-end">
+              <button onClick={() => setRenaming(null)} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
+                Cancel
+              </button>
+              <RippleButton onClick={saveRename} disabled={renameSaving}
+                style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, opacity: renameSaving ? 0.6 : 1 }}>
+                {renameSaving ? 'Saving…' : 'Save'}
+              </RippleButton>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add employee modal */}

@@ -1359,7 +1359,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-today)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
           {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-today)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--color-today-chip)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
           {describeEditStamp(stamp, finalized) && (
-            <span style={{ fontSize:11, color:'var(--color-text-dim)' }}>{describeEditStamp(stamp, finalized)}</span>
+            <span style={{ fontSize:11, color:'var(--color-today)' }}>{describeEditStamp(stamp, finalized)}</span>
           )}
         </div>
         <div style={{ display:'flex', gap:12, alignItems:'center' }}>

@@ -190,7 +190,7 @@ button.round-button {
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-accent) transparent;
+  scrollbar-color: var(--color-button) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -203,12 +203,12 @@ button.round-button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-accent);
+  background: var(--color-button);
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent-bright);
+  background: rgb(60, 145, 175);
 }
 
 ::-webkit-scrollbar-corner {
