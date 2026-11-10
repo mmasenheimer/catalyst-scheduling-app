@@ -27,13 +27,12 @@
      hover reads as the button warming up rather than changing color. */
   --color-accent-ripple: rgba(224, 112, 80, 0.55);
 
-  /* Primary buttons. A pale blue-gray rather than the orange accent, which now
-     marks only highlights (today, links, badges). Light enough that the label
-     has to be dark — white text on it would be unreadable. The hover circle is
-     a brighter wash of the same color. */
-  --color-button: rgb(201, 217, 231);
-  --color-button-text: #1b2430;
-  --color-button-ripple: rgba(255, 255, 255, 0.55);
+  /* Primary buttons — a deep teal-blue with white labels. Their own variables,
+     separate from the orange accent (today, links, badges), so the button color
+     changes in one place. The hover circle is a lighter wash of the same blue. */
+  --color-button: rgb(33, 111, 138);
+  --color-button-text: #ffffff;
+  --color-button-ripple: rgba(110, 185, 210, 0.55);
 
   /* ── Schedule bar colors ───────────────────────────────────────────────
      The four bar kinds a manager can recolor: desk duty, VR duty, events, and
@@ -102,7 +101,7 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family:
-    "Inter",
+    "Nunito",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",

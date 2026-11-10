@@ -1020,3 +1020,20 @@ export function withRangeStart(range, start) {
   const end = Math.min(start + (range.end - range.start), HOURS_END);
   return { start: Math.min(start, end - 0.5), end };
 }
+
+/**
+ * Starting times for a shift created from the right-click menu: from the
+ * clicked hour, rounded down to the half hour, running four hours (cut short at
+ * closing). Without a click position — the name column — it defaults to 9–5.
+ */
+export function newShiftAt(hour = null) {
+  if (hour == null) return { start: Math.max(9, HOURS_START), end: Math.min(17, HOURS_END) };
+  const start = Math.min(Math.max(Math.floor(hour * 2) / 2, HOURS_START), HOURS_END - 0.5);
+  return { start, end: Math.min(start + 4, HOURS_END) };
+}
+
+/** The hour under the pointer on a timeline row. */
+export function hourAtPointer(e, timelineEl) {
+  const r = timelineEl.getBoundingClientRect();
+  return HOURS_START + ((e.clientX - r.left) / r.width) * (HOURS_END - HOURS_START);
+}

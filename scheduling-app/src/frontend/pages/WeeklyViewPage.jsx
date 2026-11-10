@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
-import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, newShiftAt, hourAtPointer, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -184,7 +184,7 @@ function TimeSelect({ value, onChange, min, max }) {
 
 function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
   const [form, setForm] = useState(() => {
-    if (target.type === 'shift') { const sh = orderedStaff[target.staffIndex].shifts[target.shiftIndex]; return { shiftStart: sh.start, shiftEnd: sh.end }; }
+    if (target.type === 'shift') { const sh = target.isNew ? target : orderedStaff[target.staffIndex].shifts[target.shiftIndex]; return { shiftStart: sh.start, shiftEnd: sh.end }; }
     if (target.type === 'desk')  { const dk = orderedStaff[target.staffIndex].deskShifts[target.deskIndex]; return { deskStart: dk.start, deskEnd: dk.end }; }
     if (target.type === 'vr')    { const v = orderedStaff[target.staffIndex].vrShifts[target.vrIndex]; return { vrStart: v.start, vrEnd: v.end }; }
     if (target.type === 'oneOnOne') { const o = orderedStaff[target.staffIndex].oneOnOnes[target.oneOnOneIndex]; return { oooKind: o.kind ?? '', oooWith: o.withWhom ?? '', oooStart: o.start, oooEnd: o.end }; }
@@ -196,7 +196,7 @@ function EditModal({ target, orderedStaff, dayEvents, onSave, onClose }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const title = target.type === 'shift' ? 'Edit Shift' : target.type === 'desk' ? 'Edit Desk Shift' : target.type === 'vr' ? 'Edit VR Shift' : target.type === 'oneOnOne' ? 'Edit 1-1' : 'Edit Event';
+  const title = target.type === 'shift' ? (target.isNew ? 'New Shift' : 'Edit Shift') : target.type === 'desk' ? 'Edit Desk Shift' : target.type === 'vr' ? 'Edit VR Shift' : target.type === 'oneOnOne' ? 'Edit 1-1' : 'Edit Event';
   const staffName = (target.type === 'shift' || target.type === 'desk' || target.type === 'vr' || target.type === 'oneOnOne') ? orderedStaff[target.staffIndex]?.name : null;
   const fl = { display:'block', fontSize:12, color:'var(--color-text-dim)', marginBottom:4 };
   const ti = { width:'100%', padding:'6px 8px', borderRadius:6, fontSize:13, boxSizing:'border-box', background:'var(--color-muted)', border:'1px solid var(--color-border)', color:'var(--color-text)' };
@@ -338,7 +338,8 @@ const StaffRow = React.memo(function StaffRow({
   return (
     <div style={{ display:'flex', borderBottom: !isLast ? '1px solid var(--color-border)' : 'none', opacity: person.shifts.length>0 ? 1 : 0.38, transition:'opacity 0.15s' }}>
       {/* Name */}
-      <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
+      <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}
+        onContextMenu={e=>{ if(!e.defaultPrevented&&!finalized&&person.shifts.length===0){ e.preventDefault(); h.handleNewShiftContextMenu(rowIndex, null); } }}>
         <div style={{ width:18, height:18, borderRadius:'50%', background:'var(--color-muted)', color:'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
           {person.name.split(' ').map(n=>n[0]).join('')}
         </div>
@@ -351,6 +352,7 @@ const StaffRow = React.memo(function StaffRow({
       </div>
       {/* Timeline */}
       <div data-timeline="true" style={{ flex:1, position:'relative', height:ROW_H }}
+        onContextMenu={e=>{ if(!e.defaultPrevented&&!finalized&&person.shifts.length===0){ e.preventDefault(); h.handleNewShiftContextMenu(rowIndex, hourAtPointer(e, e.currentTarget)); } }}
         onDragOver={e=>{
           const hasT=!!activeDragType; const hasB=!!draggingBarInfo;
           if(!hasT&&!hasB) return; e.preventDefault(); e.stopPropagation();
@@ -1024,6 +1026,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     }
   }
   function handleContextMenuEdit() { setEditModal(contextMenu.target); setContextMenu(null); }
+  // Right-clicking an unscheduled person opens the shift editor for a new shift.
+  function handleNewShiftContextMenu(staffIndex, hour) {
+    setEditModal({ type:'shift', staffIndex, isNew:true, ...newShiftAt(hour) });
+  }
   async function handleDeleteEvent(evt) {
     try {
       await removeEvent(evt.id);
@@ -1033,7 +1039,13 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   }
   function handleEditSave(data) {
     const t = editModal; setEditModal(null);
-    if (t.type === 'shift') {
+    if (t.type === 'shift' && t.isNew) {
+      setOrderedStaff(prev => {
+        const next=[...prev]; const p=next[t.staffIndex];
+        next[t.staffIndex]={...p,scheduled:true,shifts:[...(p.shifts??[]),{id:`s${Date.now()}`,start:data.shiftStart,end:data.shiftEnd}]};
+        return sortByShift(next);
+      });
+    } else if (t.type === 'shift') {
       setOrderedStaff(prev => {
         const next=[...prev]; const p={...next[t.staffIndex],shifts:[...next[t.staffIndex].shifts]};
         const before=p.shifts[t.shiftIndex];
@@ -1349,7 +1361,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     handleTimelineDragOver, handleBarDragOver, handleTimelineDrop, handleBarDrop,
     handleShiftBarDragStart, handleDeskBarDragStart, handleVrBarDragStart, handleOneOnOneBarDragStart, handleEventBarDragStart,
     handleBarDragEnd, handleBarContextMenu, handleBarMouseDown, handleDeskBarMouseDown, handleVrBarMouseDown,
-    handleOneOnOneBarMouseDown, handleEventBarMouseDown,
+    handleOneOnOneBarMouseDown, handleEventBarMouseDown, handleNewShiftContextMenu,
   };
 
   return (

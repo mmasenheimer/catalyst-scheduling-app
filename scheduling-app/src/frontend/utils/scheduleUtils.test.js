@@ -25,6 +25,7 @@ import {
   describeEditStamp,
   formatEditTime,
   withRangeStart,
+  newShiftAt,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -566,4 +567,23 @@ describe('withRangeStart', () => {
     expect(withRangeStart(nine2noon, HOURS_END - 1)).toEqual({ start: HOURS_END - 1, end: HOURS_END });
   });
 
+});
+
+describe('newShiftAt', () => {
+  it('starts at the clicked half hour and runs four hours', () => {
+    expect(newShiftAt(10.7)).toEqual({ start: 10.5, end: 14.5 });
+    expect(newShiftAt(13)).toEqual({ start: 13, end: 17 });
+  });
+
+  it('cuts the shift short at closing', () => {
+    expect(newShiftAt(HOURS_END - 1.2)).toEqual({ start: HOURS_END - 1.5, end: HOURS_END });
+  });
+
+  it('keeps a click past the last slot inside opening hours', () => {
+    expect(newShiftAt(HOURS_END)).toEqual({ start: HOURS_END - 0.5, end: HOURS_END });
+  });
+
+  it('defaults to 9–5 without a click position', () => {
+    expect(newShiftAt(null)).toEqual({ start: 9, end: 17 });
+  });
 });

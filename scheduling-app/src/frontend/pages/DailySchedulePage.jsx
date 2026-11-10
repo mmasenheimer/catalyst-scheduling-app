@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
-import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
+import { buildAlerts, formatTime, mergeStaffOverrides, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, newShiftAt, hourAtPointer, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, toDateStr, stretchShiftsToCoverEvents, mergeStaffShifts, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
@@ -188,6 +188,7 @@ function ScheduleGrid({
   onShiftBarDragStart, onDeskBarDragStart, onVrBarDragStart, onOneOnOneBarDragStart, onEventBarDragStart, onBarDragEnd,
   onBarDragOver, onBarDrop,
   onBarContextMenu,
+  onNewShift,
   getPersonAvailability,
   previewInfo,
 }) {
@@ -246,7 +247,13 @@ function ScheduleGrid({
           >
             {/* Name column */}
             <div className="w-48 shrink-0 px-2 py-1.5 text-xs border-r flex items-center gap-1.5"
-              style={{ borderColor: 'var(--color-border)' }}>
+              style={{ borderColor: 'var(--color-border)' }}
+              onContextMenu={e => {
+                // A bar on the row handles its own right-click first.
+                if (e.defaultPrevented || finalized || person.shifts.length > 0) return;
+                e.preventDefault();
+                onNewShift(i, null);
+              }}>
               <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                 style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)' }}>
                 {person.name.split(' ').map(n => n[0]).join('')}
@@ -270,6 +277,14 @@ function ScheduleGrid({
               className="flex-1 relative"
               data-timeline="true"
               style={{ height: 46 }}
+              // Right-clicking an unscheduled person opens the shift editor for
+              // a new shift starting where they clicked.
+              onContextMenu={e => {
+                // A bar on the row handles its own right-click first.
+                if (e.defaultPrevented || finalized || person.shifts.length > 0) return;
+                e.preventDefault();
+                onNewShift(i, hourAtPointer(e, e.currentTarget));
+              }}
               onDragOver={e => {
                 const hasToolbar = !!activeDragType;
                 const hasBar     = !!draggingBarInfo;
@@ -673,7 +688,7 @@ function TimeSelect({ value, onChange, min, max }) {
 function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     if (target.type === 'shift') {
-      const shift = orderedStaff[target.staffIndex].shifts[target.shiftIndex];
+      const shift = target.isNew ? target : orderedStaff[target.staffIndex].shifts[target.shiftIndex];
       return { shiftStart: shift.start, shiftEnd: shift.end };
     }
     if (target.type === 'desk') {
@@ -698,7 +713,7 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const title = target.type === 'shift' ? 'Edit Shift'
+  const title = target.type === 'shift' ? (target.isNew ? 'New Shift' : 'Edit Shift')
     : target.type === 'desk' ? 'Edit Desk Shift'
     : target.type === 'vr' ? 'Edit VR Shift'
     : target.type === 'oneOnOne' ? 'Edit 1-1' : 'Edit Event';
@@ -1712,7 +1727,17 @@ export default function DailySchedulePage() {
   function handleEditSave(data) {
     const t = editModal;
     setEditModal(null);
-    if (t.type === 'shift') {
+    if (t.type === 'shift' && t.isNew) {
+      setOrderedStaff(prev => {
+        const next = [...prev];
+        const p = next[t.staffIndex];
+        next[t.staffIndex] = {
+          ...p, scheduled: true,
+          shifts: [...(p.shifts ?? []), { id: `s${Date.now()}`, start: data.shiftStart, end: data.shiftEnd }],
+        };
+        return sortByShift(next);
+      });
+    } else if (t.type === 'shift') {
       setOrderedStaff(prev => {
         const next = [...prev];
         const p = { ...next[t.staffIndex], shifts: [...next[t.staffIndex].shifts] };
@@ -2467,6 +2492,7 @@ export default function DailySchedulePage() {
         onBarDragOver={handleBarDragOver}
         onBarDrop={handleBarDrop}
         onBarContextMenu={handleBarContextMenu}
+        onNewShift={(staffIndex, hour) => setEditModal({ type: 'shift', staffIndex, isNew: true, ...newShiftAt(hour) })}
         getPersonAvailability={id => getAvailability(id, currentDow)}
       />
 
