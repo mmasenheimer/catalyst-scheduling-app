@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useImperative
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
+import { useStickyHeader } from '../hooks/useStickyHeader';
 import { buildAlerts, formatTime, removeShiftAndSweep, sweepDutiesAfterResize, clearDaySchedule, withRangeStart, newShiftAt, hourAtPointer, editStampOf, describeEditStamp, formatEditTime, getEventsForDate, stretchShiftsToCoverEvents, mergeStaffShifts, buildSavedScheduleMap, deskBoundsFor, vrBoundsFor, dutyBoundsFor, oneOnOneLabel } from '../utils/scheduleUtils';
 import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // Availability comes from ScheduleContext (backed by the database), not from a
@@ -542,6 +543,10 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
   // Skips the change-detector's next pass right after a load/finalize, so
   // restoring saved data isn't mistaken for an edit that should unfinalize the day.
   const justLoadedRef    = useRef(true);
+  // This day's rows and its hour row, for pinning the hours while scrolling.
+  const dayRowsRef       = useRef(null);
+  const timeHeadRef      = useRef(null);
+  useStickyHeader(dayRowsRef, timeHeadRef);
   // True once this day's saved copy has arrived (or is known not to exist).
   // Nothing may be auto-saved before then: what's on screen is a placeholder,
   // and saving it would overwrite the real day. See the change watcher below.
@@ -1347,11 +1352,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     handleOneOnOneBarMouseDown, handleEventBarMouseDown, handleNewShiftContextMenu,
   };
 
-  // overflow: clip rather than hidden on the card — both round the corners, but
-  // hidden makes the card a scroll container, which would trap the sticky hour
-  // row inside the card instead of letting it stick to the window.
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'clip', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
 
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'var(--color-today-tint)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
@@ -1368,8 +1370,8 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         <div style={{ display:'flex', gap:12, alignItems:'center' }}>
           {isToday && (
             <div style={{ display:'flex', gap:12, fontSize:12, color:'var(--color-text-dim)' }}>
-              <span><strong style={{ color:'var(--color-accent-bright)' }}>{scheduledToday.length}</strong> on shift today</span>
-              <span><strong style={{ color:'var(--color-accent-bright)' }}>{onShiftNow}</strong> on shift now</span>
+              <span><strong style={{ color:'var(--color-button)' }}>{scheduledToday.length}</strong> on shift today</span>
+              <span><strong style={{ color:'var(--color-button)' }}>{onShiftNow}</strong> on shift now</span>
             </div>
           )}
           {!finalized && (
@@ -1489,16 +1491,18 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       )}
 
-      {/* Time header + Staff rows. The hour row sticks to the top of the window
-          while this day's rows scroll past, then leaves with the last row —
-          its parent is this wrapper, so it can't follow into the next day. */}
-      <div>
+      {/* Time header + Staff rows. The hour row stays pinned to the top of the
+          window while this day's rows scroll past, then leaves with the last
+          row (useStickyHeader — plain sticky can't work here, see the hook). */}
+      <div ref={dayRowsRef}>
 
-      <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)', position:'sticky', top:'var(--sticky-top)', zIndex:15, background:'var(--color-surface)' }}>
+      <div ref={timeHeadRef} style={{ display:'flex', borderBottom:'1px solid var(--color-border)', position:'relative', zIndex:15, background:'var(--color-surface)' }}>
         <div style={{ width:NAME_COL, flexShrink:0, padding:'3px 8px', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--color-text-dim)', borderRight:'1px solid var(--color-border)' }}>Staff</div>
         <div style={{ flex:1, display:'flex' }}>
           {hours.map((h,hi) => (
-            <div key={h} style={{ flex:1, padding:'3px 0', fontSize:9, textAlign:'center', color:'var(--color-text-dim)', borderRight: hi < hours.length-1 ? '1px solid var(--color-border)' : 'none' }}>{formatTime(h)}</div>
+            // One hour wide exactly (minWidth 0) and flex-centred, so the label
+            // stays centred over its hour even when it's wider than the cell.
+            <div key={h} style={{ flex:1, minWidth:0, padding:'3px 0', fontSize:9, display:'flex', justifyContent:'center', whiteSpace:'nowrap', color:'var(--color-text-dim)', borderRight: hi < hours.length-1 ? '1px solid var(--color-border)' : 'none' }}>{formatTime(h)}</div>
           ))}
         </div>
       </div>

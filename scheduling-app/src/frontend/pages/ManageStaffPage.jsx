@@ -153,7 +153,14 @@ export default function ManageStaffPage() {
     }
     setRenameSaving(true);
     try {
-      await updateStaffName(renaming.id, name);
+      const updated = await updateStaffName(renaming.id, name);
+      // A backend from before renaming existed accepts the request but ignores
+      // the name, so it "succeeds" with nothing changed. Say so rather than
+      // closing as if it worked.
+      if (updated?.name !== name) {
+        setRenameError("The server didn't save the new name. The backend may need restarting after the last update.");
+        return;
+      }
       setRenaming(null);
     } catch (err) {
       setRenameError(err.message || 'Could not rename.');
@@ -251,7 +258,7 @@ export default function ManageStaffPage() {
                           style={{ ...textInput, width: 70, padding: '3px 6px', fontSize: 12 }}
                         />
                         <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>h/week</span>
-                        <button onClick={() => saveEdit(person)} className="text-xs font-semibold cursor-pointer hover:opacity-80" style={{ color: 'var(--color-accent)', background: 'none', border: 'none', padding: '2px 4px' }}>Save</button>
+                        <button onClick={() => saveEdit(person)} className="text-xs font-semibold cursor-pointer hover:opacity-80" style={{ color: 'var(--color-button)', background: 'none', border: 'none', padding: '2px 4px' }}>Save</button>
                         <button onClick={cancelEdit} className="text-xs cursor-pointer hover:opacity-80" style={{ color: 'var(--color-text-dim)', background: 'none', border: 'none', padding: '2px 4px' }}>Cancel</button>
                         {editError && <span className="text-xs" style={{ color: 'var(--color-red)' }}>{editError}</span>}
                       </div>
@@ -261,7 +268,7 @@ export default function ManageStaffPage() {
                         <button
                           onClick={() => startEdit(person)}
                           className="cursor-pointer hover:opacity-80"
-                          style={{ color: 'var(--color-accent)', background: 'none', border: 'none', padding: 0, fontSize: 11, fontWeight: 600 }}
+                          style={{ color: 'var(--color-button)', background: 'none', border: 'none', padding: 0, fontSize: 11, fontWeight: 600 }}
                         >
                           Edit
                         </button>

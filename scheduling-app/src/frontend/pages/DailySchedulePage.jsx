@@ -138,7 +138,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
           { label: 'Events',       value: events.length },
         ].map(({ label, value }) => (
           <div key={label} className="text-center">
-            <div className="text-xl font-bold" style={{ color: 'var(--color-accent-bright)' }}>{value}</div>
+            <div className="text-xl font-bold" style={{ color: 'var(--color-button)' }}>{value}</div>
             <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-text-dim)' }}>{label}</div>
           </div>
         ))}
@@ -233,8 +233,12 @@ function ScheduleGrid({
         <div className="w-48 shrink-0 p-3 text-xs uppercase tracking-wide border-r"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>Staff</div>
         <div className="flex-1 flex relative">
+          {/* Each cell is exactly one hour wide (min-width 0, so a longer label
+              like "10:00 AM" can't widen its column out of line with the hour
+              lines below) and centres its label as a flex item, which stays
+              centred even when the label is a touch wider than the cell. */}
           {hours.map(h => (
-            <div key={h} className="flex-1 p-2 text-xs text-center border-r last:border-r-0"
+            <div key={h} className="flex-1 min-w-0 py-2 text-xs border-r last:border-r-0 flex justify-center whitespace-nowrap"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>
               {formatTime(h)}
             </div>

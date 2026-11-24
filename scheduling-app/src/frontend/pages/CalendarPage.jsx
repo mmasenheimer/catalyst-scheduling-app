@@ -214,7 +214,7 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts,
         padding: '8px',
         borderRight: '1px solid var(--color-border)',
         borderBottom: '1px solid var(--color-border)',
-        background: isSelected ? 'var(--color-muted)' : isToday ? 'rgba(176,80,48,0.08)' : 'transparent',
+        background: isSelected ? 'var(--color-muted)' : isToday ? 'var(--color-today-tint)' : 'transparent',
         opacity: isCurrentMonth ? 1 : 0.3,
         transition: 'background 0.1s',
       }}
@@ -230,7 +230,7 @@ function DayCell({ date, isCurrentMonth, isToday, isSelected, onClick, myShifts,
         {isToday ? (
           <span
             className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold leading-none"
-            style={{ background: 'var(--color-accent)', color: 'white' }}
+            style={{ background: 'var(--color-button)', color: 'white' }}
           >
             {date.getDate()}
           </span>
