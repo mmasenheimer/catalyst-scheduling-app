@@ -26,6 +26,7 @@ import {
   formatEditTime,
   withRangeStart,
   newShiftAt,
+  subtractRange,
 } from './scheduleUtils';
 
 // Every case below corresponds to a bug that actually shipped and survived in
@@ -585,5 +586,36 @@ describe('newShiftAt', () => {
 
   it('defaults to 9–5 without a click position', () => {
     expect(newShiftAt(null)).toEqual({ start: 9, end: 17 });
+  });
+});
+
+describe('subtractRange', () => {
+  const day = [{ id: 'a', start: 9, end: 17 }];
+
+  it('trims the end of a shift', () => {
+    expect(subtractRange(day, { start: 14, end: 17 })).toEqual([{ id: 'a', start: 9, end: 14 }]);
+  });
+
+  it('trims the start of a shift', () => {
+    expect(subtractRange(day, { start: 9, end: 12 })).toEqual([{ id: 'a', start: 12, end: 17 }]);
+  });
+
+  it('splits a shift around a range in the middle', () => {
+    expect(subtractRange(day, { start: 12, end: 14 })).toEqual([
+      { id: 'a', start: 9, end: 12 },
+      { id: 'a-b', start: 14, end: 17 },
+    ]);
+  });
+
+  it('removes a shift the range covers entirely', () => {
+    expect(subtractRange(day, { start: 9, end: 17 })).toEqual([]);
+  });
+
+  it('leaves shifts the range does not touch', () => {
+    const two = [{ id: 'a', start: 8, end: 11 }, { id: 'b', start: 13, end: 17 }];
+    expect(subtractRange(two, { start: 14, end: 17 })).toEqual([
+      { id: 'a', start: 8, end: 11 },
+      { id: 'b', start: 13, end: 14 },
+    ]);
   });
 });

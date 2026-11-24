@@ -42,6 +42,15 @@ function formatRelativeTime(date) {
 // stage and who's looking at it.
 function actionModeFor(request, user) {
   if (!request) return null;
+
+  // A shift board post: the poster can take it down only while it's still on
+  // the board; once picked up it's the manager's to decide.
+  if (request.type === 'pickup') {
+    if (request.status === 'open') return request.staffId === user?.staffId ? 'requester' : null;
+    if (request.status === 'pending') return user?.role === 'manager' ? 'manager' : null;
+    return null;
+  }
+
   const waiting = request.status === 'pending_peer' || request.status === 'pending';
 
   // Checked first: on a request you raised yourself, withdrawing is the only
@@ -107,6 +116,14 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, onWithdraw, use
                 ✕ Denied
               </span>
             )}
+            {requestStatus === 'open' && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'var(--color-today-chip)', color: 'var(--color-today)', border: '1px solid var(--color-today)' }}
+              >
+                On the board
+              </span>
+            )}
             {requestStatus === 'withdrawn' && (
               <span
                 className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -157,7 +174,7 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, onWithdraw, use
               className="text-xs px-3 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity font-medium"
               style={{ background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}
             >
-              ↩ Withdraw request
+              {request?.type === 'pickup' ? '↩ Take down' : '↩ Withdraw request'}
             </button>
           </div>
         )}

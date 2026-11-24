@@ -192,4 +192,7 @@ export const requestsApi = {
     request("/requests", { method: "POST", body: JSON.stringify(body) }),
   update: (id, body) =>
     request(`/requests/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  // Pick up a shift from the board. Atomic on the server — if someone else got
+  // there first it fails with 409.
+  claim: (id) => request(`/requests/${id}/claim`, { method: "POST" }),
 };

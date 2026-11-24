@@ -20,6 +20,7 @@ const managerNav = [
   { to: "/templates",      label: "Templates" },
   { to: "/add-event",      label: "Add Event" },
   { to: "/manage-staff",       label: "Manage Staff" },
+  { to: "/shift-board",        label: "Shift Board" },
   { to: "/notifications",      label: "Notifications" },
 ];
 
@@ -27,8 +28,7 @@ const employeeNav = [
   { to: "/my-schedule",       label: "My Schedule" },
   { to: "/team-schedule",     label: "Weekly Schedule" },
   { to: "/calendar",          label: "Events by Month" },
-  // Hidden from the nav for now; the page and its route are left intact.
-  // { to: "/shift-requests",    label: "Shift Requests" },
+  { to: "/shift-board",       label: "Shift Board" },
   { to: "/request-time-off",  label: "Drop Shift" },
   { to: "/availability",      label: "Availability" },
   { to: "/notifications",     label: "Notifications" },

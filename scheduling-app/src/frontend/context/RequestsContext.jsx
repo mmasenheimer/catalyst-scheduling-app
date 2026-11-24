@@ -4,19 +4,19 @@ import { useNotifications } from './NotificationsContext';
 import { useAuth } from './AuthContext';
 import {
   getStaffForDate, getEventsForDate, mergeStaffOverrides, mergeStaffShifts,
-  coveredBy, notCoveredBy, sortByShift, formatTime,
+  coveredBy, notCoveredBy, sortByShift, formatTime, subtractRange, sweepDutiesAfterResize,
 } from '../utils/scheduleUtils';
 import { requestsApi, schedulesApi } from '../utils/api';
 import { useLiveRefetch } from '../hooks/useLiveRefetch';
 
-// type: 'time_off' | 'cover' | 'swap'
-// { id, type, status: 'pending_peer'|'pending'|'approved'|'denied'|'declined',
+// type: 'time_off' | 'cover' | 'swap' | 'pickup'
+// { id, type, status: 'open'|'pending_peer'|'pending'|'approved'|'denied'|'declined'|'withdrawn',
 //   staffId, staffName,
 //   targetStaffId, targetName, date /* YYYY-MM-DD */, dayLabel, note, createdAt }
 
 const RequestsContext = createContext(null);
 
-const TYPE_LABEL = { time_off: 'drop shift', cover: 'cover', swap: 'swap' };
+const TYPE_LABEL = { time_off: 'drop shift', cover: 'cover', swap: 'swap', pickup: 'shift pickup' };
 
 /** Same hours, ignoring order and the shift ids (which are regenerated freely). */
 function sameHours(a, b) {
@@ -75,6 +75,31 @@ function assertNotSelfTargeted(req) {
     throw new Error(
       `This ${TYPE_LABEL[req.type]} request names ${req.staffName} as both sides, `
       + `so there is nothing to exchange. Deny it and ask them to send a new one.`,
+    );
+  }
+}
+
+/**
+ * Throws if a shift board pickup can no longer happen as posted: the poster no
+ * longer has those hours, or the person picking up is now working during them.
+ * Either can change in the days between the claim and the manager's decision.
+ */
+function assertPickupStillPossible(req, currentStaff) {
+  const shiftsOf = id => currentStaff.find(p => p.id === id)?.shifts ?? [];
+  const range = req.requesterShift;
+  const posterHas = shiftsOf(req.staffId).some(sh => sh.start <= range.start && sh.end >= range.end);
+  if (!posterHas) {
+    throw new Error(
+      `${req.staffName} is no longer scheduled ${describeShift(range)} on ${req.dayLabel} `
+      + `(they now have ${describeHours(shiftsOf(req.staffId))}). Deny it and ask them to take the post down.`,
+    );
+  }
+  const busy = shiftsOf(req.targetStaffId).some(sh => sh.start < range.end && sh.end > range.start);
+  if (busy) {
+    throw new Error(
+      `${req.targetName} is now scheduled during ${describeShift(range)} on ${req.dayLabel} `
+      + `(they have ${describeHours(shiftsOf(req.targetStaffId))}), so they can't pick it up. `
+      + `Deny it and it goes back on the board.`,
     );
   }
 }
@@ -245,13 +270,31 @@ export function RequestsProvider({ children }) {
     }
   }, [requests]);
 
+  // Pick up a shift from the board. The server does the claim atomically and
+  // tells the manager; the post leaves the board for everyone on their next fetch.
+  const claimShift = useCallback(async (id) => {
+    if (processingRef.current.has(id)) return;
+    processingRef.current.add(id);
+    try {
+      const updated = await requestsApi.claim(id);
+      setRequests(prev => prev.map(r => r.id === id ? updated : r));
+    } finally {
+      processingRef.current.delete(id);
+    }
+  }, []);
+
   // Taking back your own request, from either waiting state. Nothing has touched
   // the schedule yet — that only happens on manager approval — so this is always
   // safe up until a decision is made. The server authorizes it by matching on
   // staffId, and raises the notification to whoever was waiting on it.
   const withdrawRequest = useCallback(async (id) => {
     const req = requests.find(r => r.id === id);
-    if (!req || !['pending_peer', 'pending'].includes(req.status)) return;
+    // A board post can only come down while it's still open; the server enforces
+    // the same rule.
+    const canWithdraw = req?.type === 'pickup'
+      ? req.status === 'open'
+      : ['pending_peer', 'pending'].includes(req?.status);
+    if (!req || !canWithdraw) return;
     if (processingRef.current.has(id)) return;
     processingRef.current.add(id);
 
@@ -294,7 +337,8 @@ export function RequestsProvider({ children }) {
       //    decidable.
       assertNotSelfTargeted(req);
       const { current } = await resolveDay(req.date);
-      assertStillMatchesAgreement(req, current);
+      if (req.type === 'pickup') assertPickupStillPossible(req, current);
+      else assertStillMatchesAgreement(req, current);
 
       // 2. Record the decision. This is authoritative and idempotent, so if a
       //    later step fails the request can't be approved a second time —
@@ -347,6 +391,32 @@ export function RequestsProvider({ children }) {
         // auto-assigned to those events — taking a shift isn't agreeing to run
         // someone's event — so the event shows short and the manager is alerted.
         releaseOrphanedEvents(req.date, req.staffId, requesterKeeps);
+      } else if (req.type === 'pickup') {
+        // The posted hours move from the poster to whoever picked them up. The
+        // poster keeps the rest of the shift — a split if the hours were in the
+        // middle — and loses any desk/VR/1-1 time that sat on what they gave.
+        // The person picking up gets the hours as a plain shift: taking a shift
+        // isn't agreeing to the poster's desk or VR post.
+        const range = req.requesterShift;
+        let posterKeeps = [];
+        await applyScheduleChange(req.date, list => list.map(s => {
+          if (s.id === req.staffId) {
+            posterKeeps = subtractRange(s.shifts ?? [], range);
+            return sweepDutiesAfterResize(
+              { ...s, shifts: posterKeeps, scheduled: posterKeeps.length > 0 },
+              range,
+            );
+          }
+          if (s.id === req.targetStaffId) {
+            return {
+              ...s, scheduled: true,
+              shifts: [...(s.shifts ?? []), { id: `s${Date.now()}-p`, start: range.start, end: range.end }],
+            };
+          }
+          return s;
+        }));
+        // Their events in the hours they gave away have nobody on them now.
+        releaseOrphanedEvents(req.date, req.staffId, posterKeeps);
       } else if (req.type === 'swap') {
         // Captured from inside the mutation so the release step below can check
         // each person's assignments against the shifts they ended up with.
@@ -389,6 +459,23 @@ export function RequestsProvider({ children }) {
 
       // 3. Notify affected staff — best-effort; a failed notification must not
       //    fail the approval that already went through.
+      if (req.type === 'pickup') {
+        addNotification({
+          type: 'approval',
+          title: 'Pickup Approved',
+          message: `${req.targetName} is now working your ${describeShift(req.requesterShift)} on ${req.dayLabel}.`,
+          from: 'Manager',
+          recipients: [req.staffId],
+        }).catch(() => {});
+        addNotification({
+          type: 'shift_change',
+          title: 'Pickup Approved',
+          message: `You're now working ${req.staffName}'s ${describeShift(req.requesterShift)} on ${req.dayLabel}.`,
+          from: 'Manager',
+          recipients: [req.targetStaffId],
+        }).catch(() => {});
+        return;
+      }
       addNotification({
         type: 'approval',
         title: 'Request Approved',
@@ -423,7 +510,29 @@ export function RequestsProvider({ children }) {
     processingRef.current.add(id);
 
     try {
-      await requestsApi.update(id, { status: 'denied' });
+      const updated = await requestsApi.update(id, { status: 'denied' });
+
+      // A denied pickup goes back on the board (the server reopens it), so the
+      // post isn't over — tell both people it's up for grabs again.
+      if (req.type === 'pickup') {
+        setRequests(prev => prev.map(r => r.id === id ? updated : r));
+        addNotification({
+          type: 'approval',
+          title: 'Pickup Not Approved',
+          message: `The manager didn't approve your pickup of ${req.staffName}'s ${describeShift(req.requesterShift)} on ${req.dayLabel}. It's back on the board.`,
+          from: 'Manager',
+          recipients: [req.targetStaffId],
+        }).catch(() => {});
+        addNotification({
+          type: 'shift_change',
+          title: 'Back on the Board',
+          message: `${req.targetName}'s pickup of your ${describeShift(req.requesterShift)} on ${req.dayLabel} wasn't approved, so it's back on the board.`,
+          from: 'Manager',
+          recipients: [req.staffId],
+        }).catch(() => {});
+        return;
+      }
+
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'denied' } : r));
       addNotification({
         type: 'approval',
@@ -439,7 +548,7 @@ export function RequestsProvider({ children }) {
 
   return (
     <RequestsContext.Provider
-      value={{ requests, submitRequest, acceptPeerRequest, declinePeerRequest, withdrawRequest, approveRequest, denyRequest }}
+      value={{ requests, submitRequest, claimShift, acceptPeerRequest, declinePeerRequest, withdrawRequest, approveRequest, denyRequest }}
     >
       {children}
     </RequestsContext.Provider>

@@ -17,7 +17,7 @@ const { formatTime, formatDayLabel } = require("./scheduleDiff");
 // Emitting is deliberately best-effort: a request transition that succeeded must
 // not be reported as failed because a notification insert didn't land.
 
-const TYPE_LABEL = { time_off: "drop shift", cover: "cover", swap: "swap" };
+const TYPE_LABEL = { time_off: "drop shift", cover: "cover", swap: "swap", pickup: "shift pickup" };
 
 // A day can hold more than one shift, so naming the hours is the difference
 // between "cover my Tuesday" and something the reader can actually act on.
@@ -95,6 +95,9 @@ async function notifyRequestSubmitted(request) {
 async function notifyRequestWithdrawn(request, previousStatus) {
   const { type, staffName, targetStaffId, dayLabel } = request;
   const label = TYPE_LABEL[type] ?? type;
+
+  // A board post taken down before anyone claimed it — nobody was waiting on it.
+  if (previousStatus === "open") return null;
 
   if (previousStatus === "pending_peer") {
     return emit({
@@ -248,8 +251,51 @@ async function notifyEventUnassigned(event, staffIds, reason = "removed") {
   })));
 }
 
+/**
+ * Someone picked up a shift from the board. The manager gets the card with
+ * Approve/Deny on it (it carries the requestId); the poster and the person who
+ * picked it up each get a receipt saying it's now waiting on the manager.
+ *
+ * `overLimit`, when set, is { hours, cap }: the week this would put the picker
+ * at, and their weekly limit. Picking up is allowed regardless — the manager is
+ * the one who decides — so it's said on their card rather than refused.
+ */
+async function notifyPickupClaimed(request, overLimit = null) {
+  const { staffId, staffName, targetStaffId, targetName, dayLabel, requesterShift } = request;
+  const hours = shiftPhrase(requesterShift);
+  const warning = overLimit
+    ? ` This would put ${targetName} at ${overLimit.hours}h this week, over their ${overLimit.cap}h limit.`
+    : "";
+
+  await emit({
+    requestId: String(request._id),
+    type: "coverage",
+    title: "Shift Pickup",
+    message: `${targetName} wants to pick up ${staffName}'s ${hours} on ${dayLabel}.${warning}`,
+    from: targetName,
+    recipients: "manager",
+  });
+  await emit({
+    requestId: String(request._id),
+    type: "shift_change",
+    title: "Your Shift Was Picked Up",
+    message: `${targetName} picked up your ${hours} on ${dayLabel}. It's with the manager for approval — until then it's still yours.`,
+    from: targetName,
+    recipients: [staffId],
+  });
+  return emit({
+    requestId: String(request._id),
+    type: "shift_change",
+    title: "Pickup Sent",
+    message: `You picked up ${staffName}'s ${hours} on ${dayLabel}. You'll hear back once the manager approves it.`,
+    from: targetName,
+    recipients: [targetStaffId],
+  });
+}
+
 module.exports = {
   notifyRequestSubmitted,
+  notifyPickupClaimed,
   notifyPeerAccepted,
   notifyPeerDeclined,
   notifyRequestWithdrawn,

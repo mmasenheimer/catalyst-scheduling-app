@@ -1,16 +1,64 @@
 "use strict";
 const router = require("express").Router();
 const Request = require("../models/Request");
+const Schedule = require("../models/Schedule");
+const Staff = require("../models/Staff");
 const { sendWriteError } = require("../utils/respond");
 const { unknownStaffIds } = require("../utils/roster");
+const { validateDateString } = require("../utils/validate");
 const {
   notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined, notifyRequestWithdrawn,
+  notifyPickupClaimed,
 } = require("../utils/notify");
 
+// ── Shift board helpers ──────────────────────────────────────────────────────
+
+// YYYY-MM-DD for a Date in the server's local time.
+const ymd = d =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Yesterday rather than today, so a server running in UTC doesn't refuse a
+// same-day post made in the evening west of Greenwich. The board itself hides
+// past days; this only stops posts and pickups for days long gone.
+function earliestBoardDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+
+const overlaps = (a, b) => a.start < b.end && a.end > b.start;
+
+// A person's shifts on a date, from the saved day. A day nobody has saved yet
+// has no shifts to clash with, so it reads as empty.
+async function shiftsOn(date, staffId) {
+  const day = await Schedule.findOne({ date }).lean();
+  const row = (day?.staff ?? []).find(p => p?.id === staffId);
+  return Array.isArray(row?.shifts) ? row.shifts : [];
+}
+
+// Hours a person is scheduled for in the Monday–Sunday week containing `date`,
+// counting saved days only.
+async function weekHours(date, staffId) {
+  const [y, m, d] = date.split("-").map(Number);
+  const day = new Date(y, m - 1, d);
+  const monday = new Date(day);
+  monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const days = await Schedule.find({ date: { $gte: ymd(monday), $lte: ymd(sunday) } }).lean();
+  let total = 0;
+  for (const row of days) {
+    const person = (row.staff ?? []).find(p => p?.id === staffId);
+    for (const sh of person?.shifts ?? []) total += Number(sh.end) - Number(sh.start);
+  }
+  return total;
+}
+
 // GET /api/requests
-// The manager needs every request (to approve/deny); an employee only gets the
-// ones they're involved in (as requester or target), based on the verified
-// identity on the session token.
+// The manager needs every request (to approve/deny); an employee gets the ones
+// they're involved in (as requester or target), based on the verified identity
+// on the session token — plus every open post on the shift board, which is
+// meant for everyone to see.
 
 router.get("/", async (req, res) => {
   try {
@@ -18,7 +66,7 @@ router.get("/", async (req, res) => {
     const filter =
       role === "manager"
         ? {}
-        : { $or: [{ staffId }, { targetStaffId: staffId }] };
+        : { $or: [{ staffId }, { targetStaffId: staffId }, { type: "pickup", status: "open" }] };
     res.json(await Request.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     sendWriteError(res, err);
@@ -36,6 +84,44 @@ router.post("/", async (req, res) => {
     // An employee may only file requests as themselves.
     if (req.user.role !== "manager" && staffId !== req.user.staffId) {
       return res.status(403).json({ error: "Cannot submit a request for another staff member" });
+    }
+
+    // A shift board post. Goes straight onto the board as 'open' — nobody is
+    // named yet, so there's nobody to notify until someone picks it up.
+    if (type === "pickup") {
+      if (req.user.staffId == null || staffId !== req.user.staffId) {
+        return res.status(403).json({ error: "Only an employee can post their own shift" });
+      }
+      const dateError = validateDateString(date);
+      if (dateError) return res.status(400).json({ error: dateError });
+      if (date < earliestBoardDate()) {
+        return res.status(400).json({ error: "That day has already passed" });
+      }
+      const start = Number(requesterShift?.start);
+      const end = Number(requesterShift?.end);
+      const onGrid = n => Number.isFinite(n) && Number.isInteger(n * 2);
+      if (!onGrid(start) || !onGrid(end) || start >= end) {
+        return res.status(400).json({ error: "Pick a start and end on the half hour, start before end" });
+      }
+      const range = { start, end };
+
+      // Posting the same hours twice would let two people claim one shift.
+      const mine = await Request.find({
+        type: "pickup", staffId, date, status: { $in: ["open", "pending"] },
+      }).lean();
+      if (mine.some(r => r.requesterShift && overlaps(r.requesterShift, range))) {
+        return res.status(409).json({ error: "You've already posted those hours" });
+      }
+
+      const isShift = s => s && Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end));
+      const request = await Request.create({
+        type, status: "open", staffId, staffName: req.user.name, date, dayLabel,
+        requesterShift: range,
+        requesterShifts: Array.isArray(requesterShifts)
+          ? requesterShifts.filter(isShift).map(sh => ({ start: Number(sh.start), end: Number(sh.end) }))
+          : undefined,
+      });
+      return res.status(201).json(request);
     }
 
     // Nobody can cover for themselves or swap with themselves — there is no
@@ -128,6 +214,62 @@ router.post("/", async (req, res) => {
 // schedule yet — the change only happens on manager approval. Once a request is
 // decided it's terminal, so there's nothing left to take back.
 
+// POST /api/requests/:id/claim
+// Pick up a shift from the board. The precondition lives in the update filter,
+// so two people clicking at once can't both get it: whoever's update lands first
+// moves it to 'pending', and the other matches nothing.
+
+router.post("/:id/claim", async (req, res) => {
+  try {
+    const me = req.user.staffId;
+    if (me == null) {
+      return res.status(403).json({ error: "Only employees can pick up shifts" });
+    }
+    const post = await Request.findById(req.params.id).lean();
+    if (!post || post.type !== "pickup") return res.status(404).json({ error: "Not found" });
+    if (post.staffId === me) {
+      return res.status(400).json({ error: "You can't pick up your own shift" });
+    }
+    if (post.status !== "open") {
+      return res.status(409).json({ error: "Someone already picked this shift up", status: post.status });
+    }
+    if (post.date < earliestBoardDate()) {
+      return res.status(400).json({ error: "That day has already passed" });
+    }
+
+    // Can't take hours you're already working.
+    const range = post.requesterShift;
+    const clash = (await shiftsOn(post.date, me)).find(sh => overlaps(sh, range));
+    if (clash) {
+      return res.status(409).json({ error: "You're already working during those hours" });
+    }
+
+    const request = await Request.findOneAndUpdate(
+      { _id: req.params.id, type: "pickup", status: "open", staffId: { $ne: me } },
+      { status: "pending", targetStaffId: me, targetName: req.user.name },
+      { new: true, runValidators: true },
+    );
+    if (!request) {
+      return res.status(409).json({ error: "Someone already picked this shift up" });
+    }
+
+    // Allowed over the weekly limit — the manager decides — but they're told.
+    let overLimit = null;
+    const person = await Staff.findById(me).lean();
+    if (person?.maxHoursPerWeek != null) {
+      const hours = (await weekHours(post.date, me)) + (range.end - range.start);
+      if (hours > person.maxHoursPerWeek) {
+        overLimit = { hours: Math.round(hours * 10) / 10, cap: person.maxHoursPerWeek };
+      }
+    }
+
+    await notifyPickupClaimed(request, overLimit);
+    res.json(request);
+  } catch (err) {
+    sendWriteError(res, err);
+  }
+});
+
 const MANAGER_DECISIONS = ["approved", "denied"];
 const PEER_DECISIONS = ["pending", "declined"]; // 'pending' == the peer accepted
 const WITHDRAWN = "withdrawn";
@@ -151,16 +293,33 @@ router.patch("/:id", async (req, res) => {
       // who raised the request can withdraw it, and only while it's still
       // waiting on somebody. A manager has no staffId, so this never matches for
       // them — they deny rather than withdraw.
+      //
+      // A shift board post is the exception: it can only come down while it's
+      // still 'open'. Once someone has picked it up it's the manager's call.
       filter = {
         _id: req.params.id,
-        status: { $in: WAITING_STATES },
         staffId: req.user?.staffId ?? null,
+        $or: [
+          { type: { $ne: "pickup" }, status: { $in: WAITING_STATES } },
+          { type: "pickup", status: "open" },
+        ],
       };
     } else if (isManagerDecision) {
       if (req.user?.role !== "manager") {
         return res.status(403).json({ error: "Manager access required" });
       }
       filter = { _id: req.params.id, status: "pending" };
+
+      // A denied pickup goes back on the board for someone else — the denial
+      // was about who'd take it, not about the poster giving it up.
+      if (status === "denied") {
+        const reopened = await Request.findOneAndUpdate(
+          { _id: req.params.id, status: "pending", type: "pickup" },
+          { status: "open", targetStaffId: null, targetName: null },
+          { new: true, runValidators: true },
+        );
+        if (reopened) return res.json(reopened);
+      }
     } else {
       // Matching on targetStaffId does the authorization and the state guard in
       // the same query: only the coworker the request actually names can accept
@@ -190,6 +349,13 @@ router.patch("/:id", async (req, res) => {
 
       if (isPeerDecision && existing.status === "pending_peer") {
         return res.status(403).json({ error: "This request wasn't sent to you" });
+      }
+      if (isWithdrawal && existing.type === "pickup" && existing.status === "pending"
+        && existing.staffId === req.user?.staffId) {
+        return res.status(409).json({
+          error: "Someone already picked this shift up — it's with the manager now.",
+          status: existing.status,
+        });
       }
       if (isWithdrawal && WAITING_STATES.includes(existing.status)) {
         return res.status(403).json({ error: "You can only withdraw your own request" });

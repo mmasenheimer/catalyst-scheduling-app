@@ -1037,3 +1037,24 @@ export function hourAtPointer(e, timelineEl) {
   const r = timelineEl.getBoundingClientRect();
   return HOURS_START + ((e.clientX - r.left) / r.width) * (HOURS_END - HOURS_START);
 }
+
+/**
+ * Someone's shifts with a range of hours taken out — what they keep after
+ * handing part of their day to someone else on the shift board. A shift the
+ * range only clips gets shorter; one the range sits inside splits in two
+ * (9–5 minus 12–2 leaves 9–12 and 2–5); one it covers entirely goes.
+ *
+ * The first piece of a split keeps the shift's id, the second gets a new one, so
+ * keys stay unique.
+ */
+export function subtractRange(shifts, range) {
+  const out = [];
+  for (const sh of shifts ?? []) {
+    if (!(range.start < sh.end && range.end > sh.start)) { out.push(sh); continue; }
+    if (sh.start < range.start) out.push({ ...sh, start: sh.start, end: range.start });
+    if (range.end < sh.end) {
+      out.push({ ...sh, id: sh.start < range.start ? `${sh.id ?? 's'}-b` : sh.id, start: range.end, end: sh.end });
+    }
+  }
+  return out;
+}

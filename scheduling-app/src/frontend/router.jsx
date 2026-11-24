@@ -10,7 +10,7 @@ import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import NotFoundPage from './pages/NotFoundPage';
-import ShiftRequestPage from './pages/ShiftRequestPage';
+import ShiftBoardPage from './pages/ShiftBoardPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import ManageStaffPage from './pages/ManageStaffPage';
@@ -36,7 +36,8 @@ export const router = createBrowserRouter([
       // Built around the signed-in employee's own shifts — a manager has no
       // staffId, so these can't render anything meaningful for them.
       { path: 'request-time-off', element: <ProtectedRoute employeeOnly><RequestTimeOffPage /></ProtectedRoute> },
-      { path: 'shift-requests',   element: <ProtectedRoute employeeOnly><ShiftRequestPage /></ProtectedRoute> },
+      // Everyone signed in: employees post and pick up, managers watch.
+      { path: 'shift-board',      element: <ShiftBoardPage /> },
       { path: 'availability',     element: <ProtectedRoute employeeOnly><AvailabilityPage /></ProtectedRoute> },
       { path: 'manage-staff',        element: <ProtectedRoute managerOnly><ManageStaffPage /></ProtectedRoute> },
       { path: 'notifications',    element: <NotificationsPage /> },

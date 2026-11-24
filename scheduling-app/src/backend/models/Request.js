@@ -1,15 +1,22 @@
 "use strict";
 const { Schema, model } = require("mongoose");
 
-// type: 'time_off' | 'cover' | 'swap'
+// type: 'time_off' | 'cover' | 'swap' | 'pickup'
+//
+// 'pickup' is a post on the shift board: someone puts up all or part of one of
+// their shifts, anyone else can claim it, and the claim goes to the manager.
+// staffId/staffName are the poster, targetStaffId/targetName whoever claimed it
+// (null while it's still up for grabs), and requesterShift the hours posted.
 //
 // status — a cover/swap request has to clear the coworker it names before it
 // reaches the manager, so there are two waiting states:
+//   open          on the shift board, not claimed yet (pickup only)
 //   pending_peer  waiting on the target coworker to accept (cover/swap only)
 //   pending       waiting on the manager (where time_off starts, and where
 //                 cover/swap land once the peer accepts)
 //   approved      manager approved; the schedule change has been applied
-//   denied        manager said no
+//   denied        manager said no (a denied pickup goes back to 'open' instead,
+//                 so the shift returns to the board for someone else)
 //   declined      the target coworker said no — terminal, never reaches the manager
 //   withdrawn     the person who asked took it back, from either waiting state
 //
@@ -21,10 +28,10 @@ const { Schema, model } = require("mongoose");
 // withdraw from both — the change only happens on manager approval.
 const requestSchema = new Schema(
   {
-    type: { type: String, enum: ["time_off", "cover", "swap"], required: true },
+    type: { type: String, enum: ["time_off", "cover", "swap", "pickup"], required: true },
     status: {
       type: String,
-      enum: ["pending_peer", "pending", "approved", "denied", "declined", "withdrawn"],
+      enum: ["open", "pending_peer", "pending", "approved", "denied", "declined", "withdrawn"],
       default: "pending",
     },
     staffId: { type: Number, required: true },
