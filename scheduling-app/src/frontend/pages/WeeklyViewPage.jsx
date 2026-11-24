@@ -1347,8 +1347,11 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
     handleOneOnOneBarMouseDown, handleEventBarMouseDown, handleNewShiftContextMenu,
   };
 
+  // overflow: clip rather than hidden on the card — both round the corners, but
+  // hidden makes the card a scroll container, which would trap the sticky hour
+  // row inside the card instead of letting it stick to the window.
   return (
-    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'hidden', contain:'content' }}>
+    <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'clip', contain:'content' }}>
 
       {/* Day header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:isToday?'var(--color-today-tint)':'var(--color-muted)', borderBottom:'1px solid var(--color-border)' }}>
@@ -1359,7 +1362,7 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
           <span style={{ fontSize:15, fontWeight:700, color:isToday?'var(--color-today)':'var(--color-text)' }}>{dayName} · {monthDay}</span>
           {isToday && <span style={{ fontSize:10, fontWeight:600, color:'var(--color-today)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--color-today-chip)', padding:'2px 6px', borderRadius:4 }}>Today</span>}
           {describeEditStamp(stamp, finalized) && (
-            <span style={{ fontSize:11, color:'var(--color-today)' }}>{describeEditStamp(stamp, finalized)}</span>
+            <span style={{ fontSize:11, fontWeight:700, color:'var(--color-today)' }}>{describeEditStamp(stamp, finalized)}</span>
           )}
         </div>
         <div style={{ display:'flex', gap:12, alignItems:'center' }}>
@@ -1486,10 +1489,12 @@ const DayEditor = React.memo(React.forwardRef(function DayEditor({ date, allStaf
         </div>
       )}
 
-      {/* Time header + Staff rows */}
+      {/* Time header + Staff rows. The hour row sticks to the top of the window
+          while this day's rows scroll past, then leaves with the last row —
+          its parent is this wrapper, so it can't follow into the next day. */}
       <div>
 
-      <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)' }}>
+      <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)', position:'sticky', top:'var(--sticky-top)', zIndex:15, background:'var(--color-surface)' }}>
         <div style={{ width:NAME_COL, flexShrink:0, padding:'3px 8px', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--color-text-dim)', borderRight:'1px solid var(--color-border)' }}>Staff</div>
         <div style={{ flex:1, display:'flex' }}>
           {hours.map((h,hi) => (

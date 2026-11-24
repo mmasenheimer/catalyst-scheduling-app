@@ -6,6 +6,7 @@ import { HOURS_START, HOURS_END, EVENT_TYPES } from '../../data/mockData';
 // hardcoded file — see the note on `availability` in hooks/useSchedule.js.
 import { useTemplates } from '../context/TemplatesContext';
 import { useDragAutoScroll } from '../hooks/useDragAutoScroll';
+import { useStickyHeader } from '../hooks/useStickyHeader';
 import { schedulesApi, isConflict } from '../utils/api';
 import { ApplyTemplateCalendarModal } from '../components/ApplyTemplateCalendarModal';
 import { RangeCalendar } from '../components/RangeCalendar';
@@ -122,7 +123,7 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
       </div>
       <div className="flex items-center gap-2">
         {stampText && (
-          <span className="text-xs mr-2" style={{ color: 'var(--color-today)' }}>{stampText}</span>
+          <span className="text-xs font-bold mr-2" style={{ color: 'var(--color-today)' }}>{stampText}</span>
         )}
         <button onClick={onPrev} className="px-3 py-1.5 rounded-md text-sm border cursor-pointer flex items-center justify-center"
           style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}><ArrowLeftIcon size={16} /></button>
@@ -196,6 +197,13 @@ function ScheduleGrid({
   const { vrEnabled } = useSettings();
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
+  // The hour labels stay pinned to the top of the window while the grid scrolls
+  // past, so the times are always readable. See useStickyHeader for why this
+  // isn't plain `position: sticky`.
+  const gridBoxRef = useRef(null);
+  const timeHeadRef = useRef(null);
+  useStickyHeader(gridBoxRef, timeHeadRef);
+
   function posStyle(start, end) {
     const left  = ((start - HOURS_START) / TOTAL_HOURS) * 100;
     const width = ((end   - start)       / TOTAL_HOURS) * 100;
@@ -216,11 +224,12 @@ function ScheduleGrid({
 
   return (
     <>
-    <div className="rounded-md border overflow-x-auto mb-6 glass-surface"
+    <div ref={gridBoxRef} className="rounded-md border overflow-x-auto mb-6 glass-surface"
       style={{ borderColor: 'var(--color-border)' }}>
 
-      {/* Time header */}
-      <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 972 }}>
+      {/* Time header — opaque and lifted, since rows pass under it while pinned */}
+      <div ref={timeHeadRef} className="flex border-b"
+        style={{ borderColor: 'var(--color-border)', minWidth: 972, position: 'relative', zIndex: 15, background: 'var(--color-surface)' }}>
         <div className="w-48 shrink-0 p-3 text-xs uppercase tracking-wide border-r"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}>Staff</div>
         <div className="flex-1 flex relative">

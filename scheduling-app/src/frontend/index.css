@@ -40,6 +40,10 @@
   --color-today-tint: rgba(33, 111, 138, 0.10);
   --color-today-chip: rgba(33, 111, 138, 0.20);
 
+  /* Where a schedule's hour labels stick while scrolling: the top of the
+     window, or just under the mobile top bar where that's shown (below lg). */
+  --sticky-top: 0px;
+
   /* ── Schedule bar colors ───────────────────────────────────────────────
      The four bar kinds a manager can recolor: desk duty, VR duty, events, and
      1-1s. Each derives its whole set of shades from one hue, which the color
@@ -115,6 +119,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
+}
+
+@media (max-width: 1023.98px) {
+  :root { --sticky-top: 57px; }
 }
 
 /* ── Button corners ───────────────────────────────────────────────────────── */
