@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { HOURS_START, HOURS_END } from '../../data/mockData';
@@ -12,6 +12,7 @@ import {
 } from '../utils/scheduleUtils';
 import { useSettings } from '../context/SettingsContext';
 import { schedulesApi } from '../utils/api';
+import { useFillToWindowBottom } from '../hooks/useFillToWindowBottom';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
 
@@ -116,13 +117,19 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
   const { vrEnabled } = useSettings();
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
+  // The week stretches to the bottom of the window and the seven days share the
+  // extra height, so the schedule fills the page instead of stopping short.
+  const gridRef = useRef(null);
+  useFillToWindowBottom(gridRef);
+
   return (
     <>
       <div
-        className="rounded-md border overflow-x-auto mb-4 glass-surface"
+        ref={gridRef}
+        className="rounded-md border overflow-x-auto mb-4 glass-surface flex flex-col"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="flex border-b" style={{ borderColor: 'var(--color-border)', minWidth: 900 }}>
+        <div className="flex border-b shrink-0" style={{ borderColor: 'var(--color-border)', minWidth: 900 }}>
           <div
             className="w-40 shrink-0 p-3 text-xs uppercase tracking-wide border-r"
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-dim)' }}
@@ -160,7 +167,8 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
               style={{
                 borderColor: 'var(--color-border)',
                 minWidth: 900,
-                background: today ? 'rgba(176, 80, 48, 0.04)' : 'transparent',
+                flex: '1 0 64px',
+                background: today ? 'rgba(33,111,138,0.04)' : 'transparent',
                 opacity: scheduled ? 1 : 0.45,
               }}
             >
@@ -196,21 +204,21 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                 )}
               </div>
 
-              <div className="flex-1 relative" style={{ height: 64 }}>
+              <div className="flex-1 relative">
                 {scheduled ? (
                   <>
                     {/* One bar per shift — a day can have more than one. */}
                     {shifts.map(sh => (
                       <div
                         key={sh.id ?? `${sh.start}-${sh.end}`}
-                        className="absolute top-3 h-8 rounded select-none"
+                        className="absolute top-3 bottom-3 rounded select-none"
                         style={{ ...posStyle(sh.start, sh.end), background: 'var(--color-green)', opacity: 0.65 }}
                       />
                     ))}
                     {deskShifts.map(dk => (
                       <div
                         key={dk.id ?? `${dk.start}-${dk.end}`}
-                        className="absolute top-3 h-8 rounded select-none"
+                        className="absolute top-3 bottom-3 rounded select-none"
                         style={{ ...posStyle(dk.start, dk.end), background: 'var(--color-bar-desk)', opacity: 0.75, zIndex: 2 }}
                       >
                         <span
@@ -224,7 +232,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                     {vrEnabled && vrShifts.map(v => (
                       <div
                         key={v.id ?? `${v.start}-${v.end}`}
-                        className="absolute top-3 h-8 rounded select-none"
+                        className="absolute top-3 bottom-3 rounded select-none"
                         style={{ ...posStyle(v.start, v.end), background: 'var(--color-bar-vr)', opacity: 0.75, zIndex: 3 }}
                       >
                         <span
@@ -238,7 +246,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                     {oneOnOnes.map(ooo => (
                       <div
                         key={ooo.id ?? `${ooo.start}-${ooo.end}`}
-                        className="absolute top-3 h-8 rounded select-none"
+                        className="absolute top-3 bottom-3 rounded select-none"
                         title={oneOnOneLabel(ooo)}
                         style={{ ...posStyle(ooo.start, ooo.end), background: 'var(--color-bar-oneone)', opacity: 0.85, zIndex: 4 }}
                       >
@@ -254,7 +262,7 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
                       return (
                         <div
                           key={evt.id}
-                          className="absolute top-3 h-8 rounded select-none"
+                          className="absolute top-3 bottom-3 rounded select-none"
                           title={`${evt.name} — you're working this`}
                           style={{
                             ...posStyle(evt.start, evt.end),
@@ -286,19 +294,6 @@ function MyScheduleGrid({ me, weekDays, events, personFor }) {
         })}
       </div>
 
-      <div className="flex items-center gap-5 px-1 flex-wrap">
-        {[
-          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-green)', opacity: 0.7 }} />, label: 'Shift' },
-          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-desk)', opacity: 0.75 }} />, label: 'Desk' },
-        ...(vrEnabled ? [{ swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-vr)', opacity: 0.75 }} />, label: 'VR' }] : []),
-        { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-oneone)', opacity: 0.85 }} />, label: '1-1' },
-          { swatch: <div style={{ width: 28, height: 12, borderRadius: 3, background: 'var(--color-bar-event)', opacity: 0.9 }} />, label: 'Event' },
-        ].map(({ swatch, label }) => (
-          <div key={label} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-dim)' }}>
-            {swatch}{label}
-          </div>
-        ))}
-      </div>
     </>
   );
 }

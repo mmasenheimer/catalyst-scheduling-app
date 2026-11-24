@@ -122,7 +122,7 @@ export function RangeCalendar({ from, until, onChange, highlightDow }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer',
                 border: sameDay(d, today) && !isEdge ? '1px solid var(--color-accent)' : '1px solid transparent',
-                background: isEdge ? 'var(--color-accent)' : between ? 'rgba(176,80,48,0.18)' : 'transparent',
+                background: isEdge ? 'var(--color-accent)' : between ? 'rgba(33,111,138,0.18)' : 'transparent',
                 color: isEdge ? 'white' : isRecurring ? 'var(--color-accent-bright)' : 'var(--color-text)',
               }}
             >

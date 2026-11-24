@@ -67,7 +67,7 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
         {staff.map((person, i) => {
           const isMe = person.id === currentStaffId;
           return (
-          <div key={person.id} style={{ display:'flex', borderBottom: i < staff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts?.length>0 ? 1 : 0.38, background: isMe ? 'rgba(176,80,48,0.16)' : undefined }}>
+          <div key={person.id} style={{ display:'flex', borderBottom: i < staff.length-1 ? '1px solid var(--color-border)' : 'none', opacity: person.shifts?.length>0 ? 1 : 0.38, background: isMe ? 'rgba(33,111,138,0.16)' : undefined }}>
             <div style={{ width:NAME_COL, flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'0 6px', height:ROW_H, borderRight:'1px solid var(--color-border)' }}>
               <div style={{ width:18, height:18, borderRadius:'50%', background: isMe ? 'var(--color-accent)' : 'var(--color-muted)', color: isMe ? 'white' : 'var(--color-text-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, flexShrink:0 }}>
                 {person.name.split(' ').map(n=>n[0]).join('')}

@@ -4,7 +4,7 @@ import { useRequests } from '../context/RequestsContext';
 import { useAuth } from '../context/AuthContext';
 
 const TYPE_CONFIG = {
-  coverage:      { label: 'Coverage',      dot: '#e07050', bg: 'rgba(224, 112, 80, 0.12)',  border: 'rgba(224, 112, 80, 0.3)'  },
+  coverage:      { label: 'Coverage',      dot: 'rgb(33, 111, 138)', bg: 'rgba(33, 111, 138, 0.12)',  border: 'rgba(33, 111, 138, 0.3)'  },
   shift_change:  { label: 'Shift Change',  dot: '#c89438', bg: 'rgba(200, 148, 56, 0.12)',  border: 'rgba(200, 148, 56, 0.3)'  },
   // Losing a shift is a different kind of news from having one moved — red
   // rather than amber, because it's something taken away rather than adjusted.

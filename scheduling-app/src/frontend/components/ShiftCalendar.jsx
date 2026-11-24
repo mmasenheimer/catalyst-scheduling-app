@@ -113,15 +113,15 @@ export function ShiftCalendar({ value, onChange, isSelectable, startMonth }) {
                 border: isToday && !isSel ? '1px solid var(--color-accent)' : '1px solid transparent',
                 background: isSel
                   ? 'var(--color-accent)'
-                  : selectable ? 'rgba(176,80,48,0.14)' : 'transparent',
+                  : selectable ? 'rgba(33,111,138,0.14)' : 'transparent',
                 color: isSel
                   ? 'white'
                   : selectable ? 'var(--color-accent-bright)' : 'var(--color-text-dim)',
                 opacity: selectable || isSel ? 1 : 0.35,
                 transition: 'background 0.12s, opacity 0.12s',
               }}
-              onMouseEnter={e => { if (selectable && !isSel) e.currentTarget.style.background = 'rgba(176,80,48,0.28)'; }}
-              onMouseLeave={e => { if (selectable && !isSel) e.currentTarget.style.background = 'rgba(176,80,48,0.14)'; }}
+              onMouseEnter={e => { if (selectable && !isSel) e.currentTarget.style.background = 'rgba(33,111,138,0.28)'; }}
+              onMouseLeave={e => { if (selectable && !isSel) e.currentTarget.style.background = 'rgba(33,111,138,0.14)'; }}
             >
               {cell.getDate()}
             </button>
@@ -131,7 +131,7 @@ export function ShiftCalendar({ value, onChange, isSelectable, startMonth }) {
 
       {/* Legend */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: 'var(--color-text-dim)' }}>
-        <span style={{ width: 12, height: 12, borderRadius: 3, background: 'rgba(176,80,48,0.14)', border: '1px solid var(--color-accent)', display: 'inline-block' }} />
+        <span style={{ width: 12, height: 12, borderRadius: 3, background: 'rgba(33,111,138,0.14)', border: '1px solid var(--color-accent)', display: 'inline-block' }} />
         Days you're scheduled
       </div>
     </div>

@@ -395,7 +395,7 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
         style={{
           padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
           border: `1px solid ${sel ? 'var(--color-accent)' : 'var(--color-border)'}`,
-          background: sel ? 'rgba(176,80,48,0.1)' : 'transparent',
+          background: sel ? 'rgba(33,111,138,0.1)' : 'transparent',
           transition: 'border-color 0.1s, background 0.1s',
         }}
       >
@@ -513,7 +513,7 @@ export function ApplyTemplateCalendarModal({ templates, allStaff, saveDaySchedul
                   let fontWeight = 400;
 
                   if (isSelDay || isSelWeek)      { bg = 'var(--color-accent)'; color = 'white'; fontWeight = 600; }
-                  else if (isHovDay || isHovWeek) { bg = 'rgba(176,80,48,0.18)'; color = 'var(--color-accent)'; }
+                  else if (isHovDay || isHovWeek) { bg = 'rgba(33,111,138,0.18)'; color = 'var(--color-accent)'; }
                   else if (isToday && inMonth)    { border = '1px solid var(--color-accent)'; }
 
                   return (

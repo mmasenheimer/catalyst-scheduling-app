@@ -47,7 +47,11 @@ export function barFill(hue) { return `hsl(${hue} ${SAT}% ${LUM}%)`; }
 /** The outline shade — matches `--color-bar-<kind>-bright`. */
 export function barBright(hue) { return `hsl(${hue} ${SAT}% ${LUM_BRIGHT}%)`; }
 
-/** Twelve one-click hues, evenly spread so each reads as a distinct color. */
+/**
+ * The picker's eighteen one-click hues — three rows of six, ordered around the
+ * color wheel so each row reads as a stretch of the spectrum. Spaced so every
+ * neighbour is a distinct color, since the presets are the only way to pick.
+ */
 export const HUE_PRESETS = [
   { hue: 257, label: 'Purple' },
   { hue: 230, label: 'Indigo' },
@@ -55,12 +59,18 @@ export const HUE_PRESETS = [
   { hue: 190, label: 'Cyan' },
   { hue: 172, label: 'Teal' },
   { hue: 146, label: 'Green' },
+  { hue: 124, label: 'Leaf' },
   { hue: 100, label: 'Olive' },
+  { hue:  76, label: 'Lime' },
   { hue:  52, label: 'Amber' },
   { hue:  28, label: 'Orange' },
+  { hue:  16, label: 'Coral' },
   { hue:   4, label: 'Red' },
+  { hue: 345, label: 'Rose' },
   { hue: 330, label: 'Pink' },
+  { hue: 312, label: 'Orchid' },
   { hue: 292, label: 'Magenta' },
+  { hue: 275, label: 'Violet' },
 ];
 
 function normalizeHue(value, fallback) {

@@ -303,7 +303,7 @@ function TemplateGrid({
           onDrop={() => { if (poolDragId) onPoolDrop(poolDragId); }}
           style={{
             minWidth: 972, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 160,
-            background: poolDragId ? 'rgba(176,80,48,0.1)' : 'transparent',
+            background: poolDragId ? 'rgba(33,111,138,0.1)' : 'transparent',
             transition: 'background 0.15s',
           }}
         >

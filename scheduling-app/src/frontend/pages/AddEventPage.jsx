@@ -1,5 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useFillToWindowBottom } from '../hooks/useFillToWindowBottom';
 import { useScheduleContext } from '../context/ScheduleContext';
 import {
   formatTime,
@@ -228,26 +229,11 @@ export default function AddEventPage() {
     setTimeout(() => navigate('/'), 1500);
   }
 
-  // Centre the header and form top-to-bottom in the space below the page's own
-  // top bar, so a form shorter than the window doesn't leave all the slack at
-  // the bottom. Sized from the window rather than from <main>, whose height grows
-  // with its content — measuring that would never shrink back after a resize.
-  // Only a minimum: a form taller than the window grows and the page scrolls.
+  // Centre the header and form top-to-bottom in the space down to the bottom of
+  // the window, so a form shorter than the window doesn't leave all the slack
+  // at the bottom.
   const pageRef = useRef(null);
-  useLayoutEffect(() => {
-    const el = pageRef.current;
-    const main = el?.closest('main');
-    if (!el || !main) return;
-    const fit = () => {
-      const cs = getComputedStyle(main);
-      const mainTop = main.getBoundingClientRect().top + window.scrollY;
-      const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-      el.style.minHeight = `${Math.max(0, window.innerHeight - mainTop - pad)}px`;
-    };
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  });
+  useFillToWindowBottom(pageRef);
 
   if (submitted) {
     return (
@@ -382,7 +368,7 @@ export default function AddEventPage() {
                   key={d}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
                   style={{
-                    background: 'rgba(176,80,48,0.12)',
+                    background: 'rgba(33,111,138,0.12)',
                     color: 'var(--color-accent-bright)',
                     border: '1px solid var(--color-accent)',
                   }}
@@ -465,7 +451,7 @@ export default function AddEventPage() {
                     className="text-xs px-2.5 py-1 rounded-md cursor-pointer transition-all"
                     style={{
                       border: `1px solid ${isActive ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                      background: isActive ? 'rgba(176,80,48,0.12)' : 'transparent',
+                      background: isActive ? 'rgba(33,111,138,0.12)' : 'transparent',
                       color: isActive ? 'var(--color-accent-bright)' : 'var(--color-text-dim)',
                     }}
                   >
@@ -499,7 +485,7 @@ export default function AddEventPage() {
                       className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
                       style={{
                         borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
-                        background: assigned ? 'rgba(176,80,48,0.08)' : 'transparent',
+                        background: assigned ? 'rgba(33,111,138,0.08)' : 'transparent',
                         opacity: tier === 0 ? 0.45 : 1,
                       }}
                     >
