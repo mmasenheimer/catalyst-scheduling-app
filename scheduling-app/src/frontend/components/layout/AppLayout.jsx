@@ -27,7 +27,8 @@ const employeeNav = [
   { to: "/my-schedule",       label: "My Schedule" },
   { to: "/team-schedule",     label: "Weekly Schedule" },
   { to: "/calendar",          label: "Events by Month" },
-  { to: "/shift-requests",    label: "Shift Requests" },
+  // Hidden from the nav for now; the page and its route are left intact.
+  // { to: "/shift-requests",    label: "Shift Requests" },
   { to: "/request-time-off",  label: "Drop Shift" },
   { to: "/availability",      label: "Availability" },
   { to: "/notifications",     label: "Notifications" },

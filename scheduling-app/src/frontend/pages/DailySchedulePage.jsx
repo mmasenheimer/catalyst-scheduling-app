@@ -23,8 +23,6 @@ const TOTAL_HOURS = HOURS_END - HOURS_START;
 const HOUR_MARKS      = Array.from({ length: TOTAL_HOURS - 1 }, (_, i) => HOURS_START + i + 1);
 const HALF_HOUR_MARKS = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i + 0.5);
 
-const DOW_TO_DAY    = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
-
 function snapHalf(h)        { return Math.round(h * 2) / 2; }
 function clamp(v, lo, hi)   { return Math.max(lo, Math.min(hi, v)); }
 
@@ -68,7 +66,7 @@ function firstFreeSlot(bars, duration, from = HOURS_START, to = HOURS_END, avoid
 
 // ── Stats header ───────────────────────────────────────────────────────────────
 
-function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onSaveAsTemplate, onClearDay, stampText }) {
+function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, onFinalize, onUnfinalize, onApplyTemplate, onClearDay, stampText }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
@@ -103,9 +101,6 @@ function StatsHeader({ staff, events, currentDate, onPrev, onNext, finalized, on
             Apply Template
           </RippleButton>
         )}
-        <RippleButton onClick={onSaveAsTemplate} className="px-3 py-1 rounded-md text-xs font-semibold">
-          Save as Template
-        </RippleButton>
         {!finalized && (
           <RippleButton
             onClick={onClearDay}
@@ -876,97 +871,6 @@ function EditModal({ target, orderedStaff, allEvents, onSave, onClose }) {
   );
 }
 
-// ── Save as day template modal ─────────────────────────────────────────────────
-
-function SaveAsDayTemplateModal({ currentDate, staff, onSave, onClose }) {
-  const [name,      setName]      = useState('');
-  const [desc,      setDesc]      = useState('');
-  const [nameError, setNameError] = useState('');
-  const dayName = DOW_TO_DAY[currentDate.getDay()] ?? 'Monday';
-
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  async function handleSave() {
-    const trimmed = name.trim();
-    if (!trimmed) { setNameError('Template name is required.'); return; }
-    // A duplicate name isn't rejected — addTemplate numbers the copy.
-    try {
-      await onSave({
-        type: 'day',
-        day: dayName,
-        name: trimmed,
-        description: desc.trim(),
-        staff: staff.filter(s => s.shifts?.length > 0),
-      });
-      onClose();
-    } catch (err) {
-      setNameError(err.message || 'Failed to save template.');
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="w-full max-w-sm mx-4 rounded-xl border p-5"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
-        onClick={e => e.stopPropagation()}>
-
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Save as Day Template</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
-        </div>
-        <p className="text-xs mb-4" style={{ color: 'var(--color-text-dim)' }}>
-          Saving {staff.filter(s => s.shifts?.length > 0).length} scheduled staff for <strong style={{ color: 'var(--color-text)' }}>{dayName}</strong>
-        </p>
-
-        <div className="mb-3">
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Template Name *</label>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => { setName(e.target.value); setNameError(''); }}
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
-            placeholder={`e.g. Busy ${dayName}`}
-            style={{
-              width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13,
-              background: 'var(--color-muted)', border: `1px solid ${nameError ? 'var(--color-red)' : 'var(--color-border)'}`,
-              color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box',
-            }}
-          />
-          {nameError && <div style={{ fontSize: 11, color: 'var(--color-red)', marginTop: 4 }}>{nameError}</div>}
-        </div>
-        <div className="mb-5">
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 5 }}>Description (optional)</label>
-          <input
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            placeholder="Optional notes"
-            style={{
-              width: '100%', padding: '8px 10px', borderRadius: 7, fontSize: 13,
-              background: 'var(--color-muted)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text)', outline: 'none', boxSizing: 'border-box',
-            }}
-          />
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'var(--color-muted)', color: 'var(--color-text-dim)', border: '1px solid var(--color-border)' }}>
-            Cancel
-          </button>
-          <button onClick={handleSave}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--color-button)', color: 'var(--color-button-text)', border: 'none' }}>
-            Save Template
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Warning modal ──────────────────────────────────────────────────────────────
 
 function WarningModal({ title, message, confirmLabel, onConfirm, onCancel }) {
@@ -1024,7 +928,7 @@ export default function DailySchedulePage() {
   // Stable reader; `schedule.availability` is what changes identity when a fetch
   // lands, and it's already part of `schedule` so this page re-renders with it.
   const { getAvailability } = schedule;
-  const { templates, addTemplate } = useTemplates();
+  const { templates } = useTemplates();
 
   const trashRef = useRef(null);
 
@@ -1064,7 +968,6 @@ export default function DailySchedulePage() {
   const [editModal,       setEditModal]        = useState(null);   // { type, ... }
   const [pendingWarning,    setPendingWarning]     = useState(null);   // { title, message, confirmLabel, onConfirm, onCancel }
   const [applyTplOpen,    setApplyTplOpen]     = useState(false);
-  const [saveTplOpen,     setSaveTplOpen]      = useState(false);
   const [finalizeWarning, setFinalizeWarning]  = useState(null);   // alert list when finalizing with issues
   const [previewInfo,     setPreviewInfo]      = useState(null);   // { staffIndex, start, end, valid }
 
@@ -2289,7 +2192,6 @@ export default function DailySchedulePage() {
         onPrev={handlePrevDay} onNext={handleNextDay}
         finalized={finalized} onFinalize={handleFinalize} onUnfinalize={handleUnfinalize}
         onApplyTemplate={() => setApplyTplOpen(true)}
-        onSaveAsTemplate={() => setSaveTplOpen(true)}
         stampText={describeEditStamp(stamp, finalized)}
         onClearDay={() => {
           // Saves through the normal auto-save, so it's version-checked like any edit.
@@ -2488,14 +2390,6 @@ export default function DailySchedulePage() {
               setOrderedStaff(sortByShift(newStaff));
             }
           }}
-        />
-      )}
-      {saveTplOpen && (
-        <SaveAsDayTemplateModal
-          currentDate={schedule.currentDate}
-          staff={orderedStaff}
-          onSave={addTemplate}
-          onClose={() => setSaveTplOpen(false)}
         />
       )}
       {pendingWarning && (

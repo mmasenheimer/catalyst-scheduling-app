@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { useAuth } from '../context/AuthContext';
 import { formatTime, getStaffForDate, mergeStaffOverrides, toDateStr, getEventsForDate, oneOnOneLabel } from '../utils/scheduleUtils';
@@ -7,6 +7,7 @@ import { HOURS_START, HOURS_END } from '../../data/mockData';
 import { schedulesApi } from '../utils/api';
 import { ArrowLeftIcon } from '../components/ArrowLeftIcon';
 import { ArrowRightIcon } from '../components/ArrowRightIcon';
+import { useStickyHeader } from '../hooks/useStickyHeader';
 
 const TOTAL_HOURS = HOURS_END - HOURS_START;
 const NAME_COL    = 140;
@@ -44,6 +45,12 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
   const monthDay = date.toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const hours    = Array.from({ length: TOTAL_HOURS }, (_, i) => HOURS_START + i);
 
+  // The hour row stays pinned to the top of the window while this day's rows
+  // scroll past, then leaves with the last row — same as the manager's view.
+  const dayRowsRef  = useRef(null);
+  const timeHeadRef = useRef(null);
+  useStickyHeader(dayRowsRef, timeHeadRef);
+
   return (
     <div className="glass-surface" style={{ marginBottom:10, borderRadius:6, border:`1px solid ${isToday?'var(--color-today)':'var(--color-border)'}`, overflow:'hidden' }}>
       {/* Day header */}
@@ -52,12 +59,16 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
         {isToday && <span style={{ fontSize:9, fontWeight:600, color:'var(--color-today)', textTransform:'uppercase', letterSpacing:'0.06em', background:'var(--color-today-chip)', padding:'1px 5px', borderRadius:4 }}>Today</span>}
       </div>
 
-      {/* Hour header */}
-      <div style={{ display:'flex', borderBottom:'1px solid var(--color-border)' }}>
+      {/* Hour header + staff rows, wrapped so the pinned hour row can't follow
+          past this day's last row. */}
+      <div ref={dayRowsRef}>
+      <div ref={timeHeadRef} style={{ display:'flex', borderBottom:'1px solid var(--color-border)', position:'relative', zIndex:15, background:'var(--color-surface)' }}>
         <div style={{ width:NAME_COL, flexShrink:0, padding:'3px 8px', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--color-text-dim)', borderRight:'1px solid var(--color-border)' }}>Staff</div>
         <div style={{ flex:1, display:'flex' }}>
           {hours.map((h,hi) => (
-            <div key={h} style={{ flex:1, padding:'3px 0', fontSize:9, textAlign:'center', color:'var(--color-text-dim)', borderRight: hi < hours.length-1 ? '1px solid var(--color-border)' : 'none' }}>{formatTime(h)}</div>
+            // One hour wide exactly (minWidth 0) and flex-centred, so the label
+            // stays centred over its hour even when it's wider than the cell.
+            <div key={h} style={{ flex:1, minWidth:0, padding:'3px 0', fontSize:9, display:'flex', justifyContent:'center', whiteSpace:'nowrap', color:'var(--color-text-dim)', borderRight: hi < hours.length-1 ? '1px solid var(--color-border)' : 'none' }}>{formatTime(h)}</div>
           ))}
         </div>
       </div>
@@ -132,15 +143,6 @@ function ReadOnlyDayBox({ date, staff, events, currentStaffId }) {
           );
         })}
       </div>
-
-      {/* Legend */}
-      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'4px 10px', borderTop:'1px solid var(--color-border)' }}>
-        {[{color:'var(--color-green)',opacity:0.7,label:'Shift'},{color:'var(--color-bar-desk)',opacity:0.75,label:'Desk'},...(vrEnabled?[{color:'var(--color-bar-vr)',opacity:0.75,label:'VR'}]:[]),{color:'var(--color-bar-oneone)',opacity:0.85,label:'1-1'},{color:'var(--color-bar-event)',opacity:0.9,label:'Event'}].map(({color,opacity,label})=>(
-          <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'var(--color-text-dim)' }}>
-            <div style={{ width:18, height:7, borderRadius:2, background:color, opacity }}/>
-            {label}
-          </div>
-        ))}
       </div>
     </div>
   );

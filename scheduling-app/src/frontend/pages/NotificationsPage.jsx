@@ -181,10 +181,7 @@ function NotificationCard({ notif, onDismiss, onApprove, onDeny, onWithdraw, use
           </div>
         )}
 
-        <div className="flex items-center justify-between">
-          <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>
-            From: {notif.from}
-          </span>
+        <div className="flex items-center justify-end">
           <button
             onClick={() => onDismiss(notif.id)}
             className="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"

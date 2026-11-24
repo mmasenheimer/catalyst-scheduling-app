@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRequests } from '../context/RequestsContext';
 import { useScheduleContext } from '../context/ScheduleContext';
 import { ShiftCalendar } from '../components/ShiftCalendar';
+import { useFillToWindowBottom } from '../hooks/useFillToWindowBottom';
 import { schedulesApi } from '../utils/api';
 import {
   buildSavedScheduleMap, hasShiftOn, personForDate, shiftsLabel, toDateStr,
@@ -12,12 +13,6 @@ import {
 // How far ahead to look for droppable shifts. One request covers the whole
 // window; paging the calendar past it shows no selectable days.
 const LOOKAHEAD_DAYS = 180;
-
-const inputStyle = {
-  background: 'var(--color-bg)',
-  borderColor: 'var(--color-border)',
-  color: 'var(--color-text)',
-};
 
 function formatDisplay(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
@@ -33,7 +28,6 @@ export default function RequestTimeOffPage() {
   const [shiftDate, setShiftDate] = useState('');
   const [savedByDate, setSavedByDate] = useState({});
   const [loadingShifts, setLoadingShifts] = useState(true);
-  const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [dateError, setDateError] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -114,7 +108,6 @@ export default function RequestTimeOffPage() {
         targetName: null,
         date: shiftDate,
         dayLabel: formatDisplay(shiftDate),
-        note: notes,
         // The shift being dropped, as it stands now. If the manager reschedules
         // it before approving, the approval refuses rather than clearing hours
         // that are no longer the ones asked about.
@@ -128,6 +121,11 @@ export default function RequestTimeOffPage() {
     setSaving(false);
     setSubmitted(true);
   }
+
+  // Centre the header and form top-to-bottom in the space down to the bottom of
+  // the window, so the two panes sit in the middle of the screen.
+  const pageRef = useRef(null);
+  useFillToWindowBottom(pageRef);
 
   if (submitted) {
     return (
@@ -163,7 +161,7 @@ export default function RequestTimeOffPage() {
   const initials = user?.name?.split(' ').map(n => n[0]).join('') ?? '?';
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div ref={pageRef} className="max-w-xl mx-auto flex flex-col justify-center">
       <div className="mb-6 p-4 sm:p-5 rounded-md border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Drop Shift</h2>
@@ -237,22 +235,6 @@ export default function RequestTimeOffPage() {
               )}
             </p>
           )}
-        </div>
-
-        {/* Notes */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
-            Notes{' '}
-            <span style={{ color: 'var(--color-text-dim)', fontWeight: 'normal' }}>(optional)</span>
-          </label>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Any context for your manager…"
-            rows={3}
-            className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none"
-            style={inputStyle}
-          />
         </div>
 
         {submitError && (

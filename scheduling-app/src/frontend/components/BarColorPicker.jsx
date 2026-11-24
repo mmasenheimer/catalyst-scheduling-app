@@ -3,6 +3,7 @@ import {
   useBarColors, BAR_KINDS, HUE_PRESETS, barFill, barBright,
 } from '../utils/barColors';
 import { useSettings } from '../context/SettingsContext';
+import paletteIcon from '../assets/palette.png';
 
 // The color picker for the schedule's bar kinds: desk duty, VR duty, 1-1s and
 // events. Pick a kind, then pick its color from the presets. Choices are saved
@@ -14,11 +15,15 @@ import { useSettings } from '../context/SettingsContext';
 //
 // Shift bars aren't offered — they stay green as the base layer the rest sit on.
 
-// The trigger's rainbow ring. Stops every 20° — enough that the RGB
-// interpolation between them reads as a continuous sweep. Built once.
-const RING_GRADIENT = `conic-gradient(${
-  Array.from({ length: 19 }, (_, i) => `${barBright(i * 20)} ${i * 20}deg`).join(', ')
-})`;
+// The trigger is a paint palette. The PNG is used as a mask over a solid fill
+// rather than shown as-is, so the icon takes the button color from the CSS
+// variable and follows it if that ever changes.
+const PALETTE_MASK = {
+  WebkitMaskImage: `url(${paletteIcon})`, maskImage: `url(${paletteIcon})`,
+  WebkitMaskSize: 'contain', maskSize: 'contain',
+  WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+  WebkitMaskPosition: 'center', maskPosition: 'center',
+};
 
 const SWATCH = 22;   // px, each preset circle
 
@@ -53,29 +58,22 @@ export function BarColorPicker({ align = 'right' }) {
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-      {/* A hue ring around a single dot. The dot is the selected kind's current
-          color, so the button stays one clear swatch rather than a four-way
-          split nobody can read at 28px. */}
       <button
         type="button"
-        className="round-button"
         onClick={() => setOpen(o => !o)}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Schedule bar colors"
         title="Bar colors"
+        className="hover:opacity-80 transition-opacity"
         style={{
-          width: 28, height: 28, padding: 3, borderRadius: '50%', cursor: 'pointer',
+          width: 32, height: 32, padding: 3, cursor: 'pointer',
           display: 'flex', alignItems: 'stretch',
-          background: RING_GRADIENT,
-          border: `1px solid ${open ? 'var(--color-accent)' : 'var(--color-border)'}`,
-          boxShadow: open ? '0 0 0 2px var(--color-accent-ripple)' : 'none',
+          background: open ? 'var(--color-muted)' : 'transparent',
+          border: `1px solid ${open ? 'var(--color-border)' : 'transparent'}`,
         }}
       >
-        <span style={{
-          flex: 1, borderRadius: '50%', background: barFill(hue),
-          border: '1.5px solid var(--color-surface)', pointerEvents: 'none',
-        }} />
+        <span aria-hidden="true" style={{ flex: 1, background: 'var(--color-button)', pointerEvents: 'none', ...PALETTE_MASK }} />
       </button>
 
       {open && (

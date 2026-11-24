@@ -15,7 +15,8 @@ import { ArrowRightIcon } from '../components/ArrowRightIcon';
 import { DeleteIcon } from '../components/DeleteIcon';
 import { ContextMenu } from '../components/ContextMenu';
 import { BarColorPicker } from '../components/BarColorPicker';
-import { VrToggle } from '../components/VrToggle';
+// Hidden for now — see the header below. Kept so it can come straight back.
+// import { VrToggle } from '../components/VrToggle';
 import { RippleButton } from '../components/RippleButton';
 import { useSettings } from '../context/SettingsContext';
 
@@ -1803,7 +1804,8 @@ export default function WeeklyViewPage() {
               are settings rather than edits to the schedule, so neither is gated
               on whether the week is finalized. */}
           <BarColorPicker />
-          <VrToggle />
+          {/* VR switch hidden for now; uncomment (and its import) to bring it back. */}
+          {/* <VrToggle /> */}
           {/* The same accent button with the ripple hover as the Daily header's,
               so the two pages' action rows match. */}
           <RippleButton onClick={()=>setApplyTplOpen(true)}
