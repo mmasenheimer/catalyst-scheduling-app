@@ -261,8 +261,9 @@ async function notifyEventUnassigned(event, staffIds, reason = "removed") {
  * the one who decides — so it's said on their card rather than refused.
  */
 async function notifyPickupClaimed(request, overLimit = null) {
-  const { staffId, staffName, targetStaffId, targetName, dayLabel, requesterShift } = request;
+  const { staffId, staffName, targetStaffId, targetName, dayLabel, requesterShift, note } = request;
   const hours = shiftPhrase(requesterShift);
+  const quoted = note ? ` ${staffName}'s note: "${note}"` : "";
   const warning = overLimit
     ? ` This would put ${targetName} at ${overLimit.hours}h this week, over their ${overLimit.cap}h limit.`
     : "";
@@ -271,7 +272,7 @@ async function notifyPickupClaimed(request, overLimit = null) {
     requestId: String(request._id),
     type: "coverage",
     title: "Shift Pickup",
-    message: `${targetName} wants to pick up ${staffName}'s ${hours} on ${dayLabel}.${warning}`,
+    message: `${targetName} wants to pick up ${staffName}'s ${hours} on ${dayLabel}.${quoted}${warning}`,
     from: targetName,
     recipients: "manager",
   });
@@ -279,7 +280,7 @@ async function notifyPickupClaimed(request, overLimit = null) {
     requestId: String(request._id),
     type: "shift_change",
     title: "Your Shift Was Picked Up",
-    message: `${targetName} picked up your ${hours} on ${dayLabel}. It's with the manager for approval — until then it's still yours.`,
+    message: `${targetName} picked up your ${hours} on ${dayLabel}. Waiting on manager approval.`,
     from: targetName,
     recipients: [staffId],
   });

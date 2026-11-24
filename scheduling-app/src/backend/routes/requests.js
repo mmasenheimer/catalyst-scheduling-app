@@ -5,7 +5,7 @@ const Schedule = require("../models/Schedule");
 const Staff = require("../models/Staff");
 const { sendWriteError } = require("../utils/respond");
 const { unknownStaffIds } = require("../utils/roster");
-const { validateDateString } = require("../utils/validate");
+const { validateDateString, validateNote } = require("../utils/validate");
 const {
   notifyRequestSubmitted, notifyPeerAccepted, notifyPeerDeclined, notifyRequestWithdrawn,
   notifyPickupClaimed,
@@ -104,6 +104,8 @@ router.post("/", async (req, res) => {
         return res.status(400).json({ error: "Pick a start and end on the half hour, start before end" });
       }
       const range = { start, end };
+      const noteError = validateNote(note);
+      if (noteError) return res.status(400).json({ error: noteError });
 
       // Posting the same hours twice would let two people claim one shift.
       const mine = await Request.find({
@@ -116,6 +118,7 @@ router.post("/", async (req, res) => {
       const isShift = s => s && Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end));
       const request = await Request.create({
         type, status: "open", staffId, staffName: req.user.name, date, dayLabel,
+        note: String(note ?? "").trim(),
         requesterShift: range,
         requesterShifts: Array.isArray(requesterShifts)
           ? requesterShifts.filter(isShift).map(sh => ({ start: Number(sh.start), end: Number(sh.end) }))

@@ -128,12 +128,6 @@ export function ShiftCalendar({ value, onChange, isSelectable, startMonth }) {
           );
         })}
       </div>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: 'var(--color-text-dim)' }}>
-        <span style={{ width: 12, height: 12, borderRadius: 3, background: 'rgba(33,111,138,0.14)', border: '1px solid var(--color-accent)', display: 'inline-block' }} />
-        Days you're scheduled
-      </div>
     </div>
   );
 }

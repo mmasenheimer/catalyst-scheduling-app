@@ -36,6 +36,7 @@ function PostShiftModal({ me, myName, staff, onPost, onClose }) {
   const [date, setDate] = useState('');
   const [shiftIdx, setShiftIdx] = useState(0);
   const [range, setRange] = useState(null);   // { start, end }
+  const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -111,6 +112,7 @@ function PostShiftModal({ me, myName, staff, onPost, onClose }) {
         dayLabel: dayLabelOf(date),
         requesterShift: range,
         requesterShifts: shifts.map(s => ({ start: s.start, end: s.end })),
+        note: note.trim(),
       });
       onClose();
     } catch (err) {
@@ -192,6 +194,21 @@ function PostShiftModal({ me, myName, staff, onPost, onClose }) {
               <p className="text-xs mt-2" style={{ color: 'var(--color-text-dim)' }}>
                 {longDayOf(date)} · {lengthText(range)}. It stays yours until someone picks it up and the manager approves.
               </p>
+            </div>
+          )}
+
+          {shift && range && (
+            <div>
+              <label style={label}>Description</label>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="What the shift involves, anything someone picking it up should know…"
+                className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none"
+                style={{ background: 'var(--color-muted)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              />
             </div>
           )}
 
@@ -327,6 +344,11 @@ export default function ShiftBoardPage() {
                     <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
                       {mine ? 'Posted by you' : `Posted by ${r.staffName}`}
                     </div>
+                    {r.note && (
+                      <p className="text-sm mt-1.5" style={{ color: 'var(--color-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                        {r.note}
+                      </p>
+                    )}
                   </div>
                   {mine ? (
                     <button
@@ -359,7 +381,7 @@ export default function ShiftBoardPage() {
       {waiting.length > 0 && (
         <div className="rounded-md border overflow-hidden glass-surface" style={card}>
           <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--color-border)' }}>
-            <span style={sectionTitle}>Waiting on the Manager</span>
+            <span style={sectionTitle}>Pending on Manager</span>
           </div>
           {waiting.map(r => (
             <div key={r.id} className="px-4 py-3 border-t first:border-t-0 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>

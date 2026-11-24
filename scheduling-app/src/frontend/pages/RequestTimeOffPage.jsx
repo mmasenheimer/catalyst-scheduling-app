@@ -158,10 +158,8 @@ export default function RequestTimeOffPage() {
     );
   }
 
-  const initials = user?.name?.split(' ').map(n => n[0]).join('') ?? '?';
-
   return (
-    <div ref={pageRef} className="max-w-xl mx-auto flex flex-col justify-center">
+    <div ref={pageRef} className="max-w-2xl mx-auto flex flex-col justify-center">
       <div className="mb-6 p-4 sm:p-5 rounded-md border glass-surface"
         style={{ borderColor: 'var(--color-border)' }}>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Drop Shift</h2>
@@ -175,22 +173,6 @@ export default function RequestTimeOffPage() {
         className="p-6 rounded-md border flex flex-col gap-5 glass-surface"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        {/* Submitting as */}
-        <div
-          className="flex items-center gap-3 px-4 py-3 rounded-lg"
-          style={{ background: 'var(--color-bg)' }}
-        >
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-            style={{ background: 'var(--color-accent)', color: 'white' }}
-          >
-            {initials}
-          </div>
-          <div>
-            <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{user?.name}</div>
-          </div>
-        </div>
-
         {/* Shift date */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>
@@ -211,8 +193,7 @@ export default function RequestTimeOffPage() {
               className="px-4 py-4 rounded-lg border text-sm"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-dim)' }}
             >
-              You have no scheduled shifts more than 2 weeks out yet. Once your
-              manager schedules you, those days will show up here.
+              No shifts 2 weeks out!
             </div>
           ) : (
             <ShiftCalendar
